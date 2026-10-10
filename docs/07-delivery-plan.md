@@ -28,7 +28,7 @@
 2. Agent membuat branch `wp/<nn>-<slug>` dari `main`, menulis acceptance test lebih dulu, lalu implementasi.
 3. Agent membuka merge request berjudul Conventional Commits dengan WP sebagai scope, mis. `feat(WP-14): skor prioritas` (STD-GIT-02). Pipeline MR wajib hijau.
 4. Orchestrator me-review terhadap PRD, 04, dan brief → minta perbaikan atau merge ke `main`.
-5. `main` ter-deploy otomatis ke staging; orchestrator memastikan `/readyz` staging sehat.
+5. `main` ter-deploy otomatis ke staging; orchestrator memastikan `/readyz` staging sehat dan smoke J-2 hijau.
 6. Akhir fase: orchestrator menyerahkan laporan gerbang → founder menyetujui → tag `vX.Y.Z` → deploy production.
 
 ### 1.3 Aturan
@@ -50,7 +50,7 @@ Penomoran: Fase 0 = `WP-01..08`, F1 = `WP-10..25`, F2 dan seterusnya mulai `WP-3
 
 ## 2. Fase 0 — Bootstrap
 
-Sampai WP-06 selesai, pekerjaan berjalan di repo saat ini. Setelah itu repo utama pindah ke GitLab (D-18, Q-08).
+Sampai WP-06 selesai, pekerjaan berjalan di repo saat ini. Setelah itu repo utama pindah ke GitLab (D-18). Q-08 sudah diputuskan: GitLab adalah repo utama; mirror GitHub opsional dan tanpa CI.
 
 | WP | Outcome | Acceptance | Butuh |
 |---|---|---|---|
@@ -58,9 +58,9 @@ Sampai WP-06 selesai, pekerjaan berjalan di repo saat ini. Setelah itu repo utam
 | WP-02 | `contracts/openapi.yaml` skeleton (`/api/v1`, format error, health) + codegen oapi-codegen (Go) dan `packages/api-client` (TS) | Codegen tanpa diff di CI; handler health memakai kode hasil generate | 01 |
 | WP-03 | Migrasi baseline goose (PostGIS, pg_trgm) + sqlc + helper RLS (konteks workspace per transaksi) + `msp migrate` | Integration test: query tanpa konteks workspace → 0 baris; migrasi jalan dari DB kosong | 01 |
 | WP-04 | Docker Compose `local`: `caddy`, `web`, `api`, `worker`, `kratos`, `postgres` | `docker compose up` → `/readyz` OK | 01, 03 |
-| WP-05 | Bootstrap server `ops` (`gitlab`, `gitlab-runner`, `prometheus`, `alertmanager`, `grafana`) dan `prod` (Docker, Caddy) | GitLab + registry hidup, runner terdaftar, Grafana bisa dibuka | Q-08, Q-09, domain |
+| WP-05 | Bootstrap server `ops` (stack `/opt/ops` sesuai README) dan `prod` (Docker, Caddy) | GitLab + registry hidup, runner terdaftar, Grafana bisa dibuka | Q-09, domain |
 | WP-06 | GitLab CI `check` (lint, unit, integration dengan Postgres) dan `build` (image `<registry>/msp/api:<git-sha>`, `<registry>/msp/web:<git-sha>`) + deploy otomatis `main` → staging | Pipeline MR & `main` hijau; commit di `main` muncul di staging | 01, 04, 05 |
-| WP-07 | Paket `packages/design-tokens` dari `docs/02-design-system/tokens` → CSS variables + preset Tailwind | `web` memakai token; build token deterministik | 01 |
+| WP-07 | Paket `packages/design-tokens` langsung dari output `docs/02-design-system/tokens/build.mjs` (CSS variables + preset Tailwind; tanpa migrasi ke Style Dictionary) | `web` memakai token; `make generate` tanpa diff | 01 |
 | WP-08 | Integrasi Kratos: daftar/login email + password, verifikasi email, middleware sesi di `msp api`, halaman auth dasar di `web` | E2E: daftar → verifikasi → login → endpoint terproteksi 200; tanpa sesi 401 | 02, 04 |
 
 Paralel: WP-01 dan WP-05 mulai bersamaan; setelah WP-01 → WP-02, 03, 07; lalu WP-04 → WP-06, 08.
@@ -76,21 +76,21 @@ Target: semua FR PRD §9, lalu Gerbang F1 (§4). Lane A–F mengikuti area kerja
 | WP | Outcome | FR | Butuh | Acceptance (test yang membuktikan) | Lane |
 |---|---|---|---|---|---|
 | WP-10 | **Kontrak F1**: migrasi semua tabel F1 (data global + data workspace, D-03) dengan policy RLS dan `audit_log` append-only; OpenAPI semua endpoint F1 + codegen | PRIV-01, OPS-02 | Gerbang F0 | Integration: data workspace A tidak terbaca dari workspace B (semua tabel workspace); UPDATE/DELETE `audit_log` ditolak; lint OpenAPI + codegen tanpa diff | D |
-| WP-11 | **Import & normalisasi**: `msp tool import` upsert per `google_place_id`, record mentah → evidence, claim type + sumber per nilai, BR-NORM-01..03 (pola URL & mapping kategori di `data/`), laporan baru/berubah/tidak berubah/ditolak | DATA-01, DATA-02, INTL-01 | 10 | Unit per aturan BR-NORM; import fixture 2× → 0 duplikat & laporan benar; sampel dataset nyata (Q-02) ter-import dengan alasan tolak terlapor | A |
+| WP-11 | **Import & normalisasi**: `msp tool import --observed-at` upsert per `google_place_id`, record mentah → evidence, claim type + sumber per nilai, BR-NORM-01..03 (pola URL & mapping kategori di `data/`), laporan baru/berubah/tidak berubah/ditolak | DATA-01, DATA-02, INTL-01 | 10 | Unit per aturan BR-NORM; import fixture 2× → 0 duplikat & laporan benar; sampel dataset nyata (Q-02) ter-import dengan alasan tolak terlapor | A |
 | WP-12 | **Geo-sync**: `msp tool geo-sync` 4 level area + populasi + batas sederhana + atribusi, patuh 120 req/menit, aman diulang | DATA-03 | 10 | Integration dengan respons GeoAPI rekaman; di staging semua area level 1–4 tersimpan (81.912 desa/kelurahan) | B |
 | WP-13 | **Wilayah**: penetapan prospek → kelurahan (+ induk) dengan point-in-polygon PostGIS, metrik Lampiran C `geo-2.0.0`, API peringkat wilayah | DATA-04, INTL-03, GEO-01 | 11, 12 | ≥ 98% prospek ber-koordinat (sampel nyata) dapat kelurahan; unit per rumus + guard "Data terbatas"; respons API selalu memuat label populasi Kontur 2023 | B |
-| WP-14 | **Opportunity & skor**: katalog Lampiran B + BR-OPP-01 + alasan; ICP fit + `priority-2.0.0` (renormalisasi, coverage, band + cap, `percent_rank`) dengan breakdown & versi; antrean `score`, `msp tool rescore` | INTL-02, INTL-04 | 11, 13 | Unit per kode OPP & per faktor; golden test: input + versi sama → hasil sama; cap BR-SCORE-02; ganti ICP → urutan berubah | C |
+| WP-14 | **Opportunity & skor**: katalog Lampiran B + BR-OPP-01 + alasan; ICP fit + `priority-2.0.0` (renormalisasi, coverage, band + cap, `percent_rank`) dengan breakdown & versi; antrean `score`, `msp tool rescore` (metrik wilayah → skor) | INTL-02, INTL-04 | 11, 13 | Unit per kode OPP & per faktor; golden test: input + versi sama → hasil sama; cap BR-SCORE-02; ganti ICP → urutan berubah | C |
 | WP-15 | **Auth & workspace**: workspace dibuat saat daftar, undang anggota, role Admin/Member, login Google, data terkunci sebelum verifikasi email, MFA TOTP untuk akun ops | AUTH-01, AUTH-02, AUTH-03 | 10 | Matriks role × endpoint → 403 di luar role; belum verifikasi → ditolak; ops tanpa TOTP ditolak; E2E daftar → undang → anggota login | D |
 | WP-16 | **ICP API**: Offering, beberapa ICP per workspace (kriteria wajib/preferensi), ICP aktif per user, feedback Relevan/Tidak relevan | ICP-01, ICP-02, INTL-05 | 10 | Integration CRUD + isolasi workspace; ICP aktif per user; feedback tersimpan per workspace | D |
-| WP-17 | **Search & profil API**: search kata kunci (FTS + pg_trgm) + filter + urut skor, saved search, list/tag/catatan/pemilik; satu read model prospek dipakai profil, export, webhook, AI brief | SRCH-01, SRCH-02, PROF-01, ACT-01 | 14, 16, 21 | Tabel kasus filter → jumlah hasil konsisten; saved search dibuka ulang; tiap nilai profil punya claim type + sumber; NFR-01 diukur dengan dataset nyata | D |
-| WP-18 | **Web shell & onboarding**: layout app, halaman auth (+ Google), wizard Offering → ICP → hasil pertama, pemilih ICP aktif, kelola anggota (Admin) | AUTH-01, AUTH-02, ICP-01, ICP-02 | 15, 16 | E2E onboarding: daftar → hasil pertama ≤ 5 menit di staging; cek a11y otomatis dasar (NFR-06) | E |
+| WP-17 | **Search & profil API**: search kata kunci (FTS + pg_trgm) + filter + urut skor, saved search, list/tag/catatan/pemilik; search, profil, dan AI brief memakai `intel.ProspectView` (WP-21) | SRCH-01, SRCH-02, PROF-01, ACT-01 | 14, 16, 21 | Tabel kasus filter → jumlah hasil konsisten; saved search dibuka ulang; tiap nilai profil punya claim type + sumber; NFR-01 diukur dengan dataset nyata | D |
+| WP-18 | **Web shell & onboarding**: layout app, halaman auth (+ Google), wizard Offering → ICP → hasil pertama, pemilih ICP aktif, kelola anggota (Admin) | AUTH-01, AUTH-02, ICP-01, ICP-02 | 15, 16 | E2E J-1 di stack test CI (Mailpit): daftar → verifikasi → wizard → hasil pertama; cek a11y otomatis dasar (NFR-06). ≤ 5 menit di staging dicek founder di Gerbang F1 | E |
 | WP-19 | **Search UI**: kata kunci, filter, band, urut skor, saved search, list/tag/catatan/pemilik | SRCH-01, SRCH-02, ACT-01 | 17, 18 | E2E: filter → jumlah sama dengan API; simpan & buka ulang pencarian; list + tag + catatan + assign | E |
 | WP-20 | **Profil & wilayah UI**: profil (skor + "Kenapa prospek ini?", opportunity + feedback, kontak ter-mask, evidence, tautan Google Maps); peringkat wilayah + peta tiles GeoAPI/OSM + tabel padanan + drilldown | PROF-01, INTL-01, INTL-03, INTL-05, GEO-01 | 17, 18 | E2E: tiap nilai tampil dengan claim type; "Tidak diketahui" tidak pernah kosong (BR-TRUST-03); peta selalu punya tabel; drilldown → search terfilter | F |
-| WP-21 | **Unlock & credit**: ledger grant/debit/refund idempotent, saldo, unlock 1 credit permanen, satu fungsi proyeksi kontak (mask → unlock → suppression) untuk profil/export/webhook, komponen tombol unlock + saldo | ACT-02, BILL-01, PRIV-02 | 10 | Unlock ganda/konkuren → 1 debit; saldo = Σ ledger; kontak tersupresi tidak pernah keluar dari fungsi proyeksi | G |
-| WP-22 | **Export & webhook**: export CSV/XLSX lewat antrean `export` + preview biaya, "Unlock & export/kirim" (unlock dulu, export/kirim sendiri gratis); webhook HTTPS (tolak IP privat/internal), HMAC, retry, log, kirim prospek terpilih; UI keduanya | ACT-03, ACT-04 | 17, 21 | Export gagal → 0 debit; 10.000 baris ≤ 2 menit (NFR-02); suite SSRF (IP privat, loopback, redirect, DNS rebinding) lulus; HMAC terverifikasi | G |
+| WP-21 | **Unlock & credit**: ledger grant/debit/refund idempotent, saldo, unlock 1 credit permanen, `intel.ProspectView` sebagai satu-satunya fungsi proyeksi (mask → unlock → suppression; milik modul `intel`, bukan modul aksi) untuk search/profil/export/webhook, komponen tombol unlock + saldo | ACT-02, BILL-01, PRIV-02 | 10 | Unlock ganda/konkuren → 1 debit; saldo = Σ ledger; kontak tersupresi tidak pernah keluar dari `intel.ProspectView` | G |
+| WP-22 | **Export & webhook**: export CSV/XLSX lewat antrean `export` + preview biaya, "Unlock & export/kirim": unlock dulu, export/kirim gratis; webhook HTTPS (tolak IP privat/internal), HMAC, retry, log, kirim prospek terpilih; UI keduanya | ACT-03, ACT-04 | 17, 21 | Export gagal → 0 debit; 10.000 baris ≤ 2 menit (NFR-02); suite SSRF (IP privat, loopback, redirect, DNS rebinding) lulus; HMAC terverifikasi | G |
 | WP-23 | **AI brief**: antrean `ai`, Claude → fallback OpenAI-compatible, hanya fakta level bisnis tanpa telepon (BR-AI-01), rujukan fakta per kalimat, cache 7 hari, kill switch, 1 AI credit (cache gratis), prompt `brief-X.Y.Z`, panel di profil | ACT-05 | 17, 21 | Dengan LLM palsu: brief tanpa rujukan → dibuat ulang sekali lalu ditolak; fallback saat Claude gagal; payload tanpa nomor telepon; cache tidak menagih; ≤ 20 s | H |
 | WP-24 | **Halaman ops**: daftar workspace + grant credit, riwayat import, kesehatan data, feature flag (AI, export, webhook), suppression list, tampilan audit log | OPS-01, OPS-02, PRIV-02, BILL-01 | 11, 15, 21 | Akun non-ops → 403; grant → entri ledger + audit; flag off → fitur menolak | H |
-| WP-25 | **Monitoring & backup**: `/metrics` → Prometheus + dashboard Grafana + alert (email/Telegram); pgBackRest WAL kontinu ke S3-compatible off-site; drill restore dicatat di [09](09-runbook-operasional.md) | NFR-03, NFR-04 | 06, Q-09 | Restore ke server/DB kosong berhasil; umur WAL terakhir ≤ 15 menit; alert uji terkirim | H |
+| WP-25 | **Monitoring & backup**: `/metrics` (lewat Caddy, allowlist IP + basic auth) + `node-exporter` + `blackbox-exporter` → Prometheus + dashboard Grafana + alert (email/Telegram); pgBackRest WAL kontinu ke S3-compatible off-site; drill restore dicatat di [09](09-runbook-operasional.md) | NFR-03, NFR-04 | 06, Q-09 | Restore ke server/DB kosong berhasil; umur WAL terakhir ≤ 15 menit; alert uji terkirim | H |
 
 Catatan:
 - Audit log (FR-OPS-02) ditulis oleh WP pemilik aksinya: 15 (login, undang), 21 (unlock), 22 (export, webhook), 24 (grant credit, flag, suppression).
@@ -133,16 +133,10 @@ WP-06 (F0) ─► 25 Monitoring + backup
 
 ## 4. Gerbang F1
 
-| # | Kriteria (PRD §12) | Bukti yang disiapkan orchestrator |
-|---|---|---|
-| 1 | Alur end-to-end di staging dengan dataset nyata | Log import + geo-sync + rescore di staging; suite E2E F1 hijau terhadap staging |
-| 2 | Setiap nilai di profil menampilkan claim type dan sumber | E2E WP-20 + cek acak 20 profil dari dataset nyata |
-| 3 | Test otomatis lulus (isolasi workspace, SSRF webhook, idempotensi credit) | Pipeline `main` terakhir; coverage paket inti ≥ 80% (NFR-09); hasil ukur NFR-01/02 |
-| 4 | Restore backup berhasil sekali | Catatan drill WP-25 (durasi, RPO aktual) |
-| 5 | Onboarding: hasil pertama ≤ 5 menit | Dicoba langsung oleh founder di demo |
+Kriteria = [PRD §12](01-prd.md#12-gerbang-rilis-f1); cek konkret dan bukti = checklist [05 §7](05-test-strategy.md#7-gerbang-rilis-f1). Orchestrator mengisi checklist itu untuk laporan gerbang.
 
 **Demo founder** (di staging, dataset nyata):
-1. Orchestrator menyerahkan laporan gerbang: tabel di atas, link pipeline, daftar WP merged, isu terbuka.
+1. Orchestrator menyerahkan laporan gerbang: checklist 05 §7 terisi, link pipeline, daftar WP merged, isu terbuka.
 2. Founder daftar akun baru → verifikasi email → wizard → hasil pertama (diukur ≤ 5 menit).
 3. Search → profil ("Kenapa prospek ini?", evidence) → unlock → export → kirim ke webhook uji → AI brief.
 4. Halaman ops: grant credit, cek kesehatan data, matikan flag AI → brief ditolak.
@@ -153,15 +147,7 @@ WP-06 (F0) ─► 25 Monitoring + backup
 
 ## 5. Fase F2 — Make it right dan Fase F3 — Make it fast
 
-Kandidat WP dari PRD §6. Dipecah menjadi `WP-nn` oleh orchestrator setelah Gerbang F1, diurutkan berdasarkan feedback customer beta. Tiap fase punya gerbang sendiri yang disetujui founder.
-
-| Fase | Kelompok | Kandidat WP |
-|---|---|---|
-| F2 | Data | Upload daftar customer + pencocokan · Re-import → signal perubahan + watch/alert (Q-03) · Laporan data salah + koreksi ops · Pengelompokan multi-cabang · Band revenue (bila ada data acuan, Q-06) |
-| F2 | Produk | Role Viewer/Manager · Compare prospek & wilayah · Natural-language search · Bahasa Inggris |
-| F2 | Komersial | Satu integrasi CRM · Billing self-serve · Batas plan lengkap (D-09) |
-| F2 | Kualitas | Error tracking · Perluasan E2E |
-| F3 | Skala & ketahanan | Server aplikasi kedua (HA) · Replika DB · Object storage S3 · Cache · Deploy tanpa downtime · Optimasi query untuk dataset > 5 juta · Mesin search terpisah (hanya bila Postgres tidak cukup) |
+Kandidat WP = isi F2/F3 di [PRD §6](01-prd.md#6-fase-rilis). Dipecah menjadi `WP-nn` oleh orchestrator setelah Gerbang F1, diurutkan berdasarkan feedback customer beta. Tiap fase punya gerbang sendiri yang disetujui founder. Contoh kandidat awal F2: re-import → signal perubahan (Q-03), billing self-serve, error tracking.
 
 F3 hanya dikerjakan bila pengukuran menunjukkan kebutuhannya.
 
@@ -174,7 +160,6 @@ Secret (key, password) dimasukkan founder sebagai variabel CI terproteksi GitLab
 | Input | Ref | Dipakai di | Dibutuhkan sebelum |
 |---|---|---|---|
 | 2 dedicated server (`prod`, `ops`) + object storage S3-compatible off-site di Indonesia | Q-09, D-14 | WP-05, WP-25 | WP-05 mulai; paling lambat akhir Fase 0 |
-| Keputusan GitLab sebagai repo utama; GitHub jadi mirror atau ditinggal | Q-08 | WP-05, WP-06 | Akhir Fase 0 |
 | Domain + akses DNS | — | WP-05 (TLS Caddy), WP-08 (email) | WP-05 mulai |
 | SMTP (email verifikasi, undangan, alert) | — | WP-08, WP-15, WP-25 | WP-08 diuji di staging |
 | Google OAuth client (ID, secret, redirect URI) | — | WP-15 | WP-15 mulai |

@@ -8,11 +8,11 @@ Prosedur operasi F1 untuk `production` dan `staging`. Versi 0.2 (lean). Stack da
 ### 1.1 Server
 | Server | Service Compose | Direktori | URL |
 |---|---|---|---|
-| `prod` | `caddy`, `web`, `api`, `worker`, `kratos`, `postgres` (+ pgBackRest, stanza `msp`) | `/opt/msp` | `https://app.<domain>` · health `/healthz`, `/readyz` · halaman ops `/ops` |
-| `ops` | `gitlab` (+ container registry), `gitlab-runner`, `prometheus`, `alertmanager`, `grafana` | `/opt/ops` | `https://gitlab.<domain>`, `https://grafana.<domain>` |
-| `ops` (staging) | `caddy`, `web`, `api`, `worker`, `kratos`, `postgres` | `/opt/msp-staging` | `https://staging.<domain>` |
+| `prod` | `caddy`, `web`, `api`, `worker`, `kratos`, `postgres` (+ pgBackRest, stanza `msp`), `node-exporter` | `/opt/msp` | `https://app.<domain>` · health `/healthz`, `/readyz` · halaman ops `/ops` |
+| `ops` | `gitlab` (+ container registry), `gitlab-runner`, `prometheus`, `alertmanager`, `grafana`, `blackbox-exporter`, `node-exporter` | `/opt/ops` | `https://gitlab.<domain>`, `https://registry.<domain>`, `https://grafana.<domain>` |
+| `ops` (staging) | `caddy`, `web`, `api`, `worker`, `kratos`, `postgres`, `node-exporter` | `/opt/msp-staging` | `https://staging.<domain>` |
 
-Direktori dibuat oleh `deploy/bootstrap.sh` (06). Prometheus mengambil `/metrics` aplikasi dan metrik host (disk, CPU, RAM) kedua server; Alertmanager mengirim alert ke email dan Telegram `<grup-ops>`. Probe eksternal `<layanan-uptime>` (di luar kedua server) memeriksa `https://app.<domain>/readyz` dan `https://gitlab.<domain>` tiap menit, sehingga server `ops` yang mati tetap terdeteksi.
+Direktori dibuat oleh `deploy/bootstrap.sh` (06). Prometheus di `ops` mengambil `/metrics` aplikasi dan metrik host `node-exporter` (disk, CPU, RAM) kedua server, untuk `prod` lewat Caddy dengan allowlist IP + basic auth (06 §5); Alertmanager mengirim alert ke email dan Telegram `<grup-ops>`. `blackbox-exporter` di `ops` memeriksa `https://app.<domain>/readyz` tiap menit. Bila `ops` sendiri mati, monitoring ikut mati. Penjaganya cron sederhana di `prod` (dipasang `bootstrap.sh`): tiap 5 menit `curl -fsS https://grafana.<domain>/api/health`, dan bila gagal 3× berturut-turut kirim email ke founder lewat SMTP aplikasi → SEV-2, RB-11.
 
 ### 1.2 Dependensi eksternal
 | Dependensi | Dipakai untuk | Bila gangguan |
@@ -52,9 +52,9 @@ WHERE state = 'discarded' AND finalized_at > now() - interval '24 hours' GROUP B
 ## 2. Akses
 - SSH hanya dengan kunci, dari IP di allowlist firewall. Tanpa login password dan tanpa login `root`. Tiap orang punya user sendiri.
 - Agent AI tidak punya akses SSH. Mereka bekerja lewat GitLab (MR dan pipeline) dan tidak bisa menjalankan job production.
-- Semua akun web operasional wajib MFA. Prometheus dan Alertmanager tidak dibuka ke internet: `ssh -L 9090:localhost:9090 -L 9093:localhost:9093 <user>@<ops>`.
+- Semua akun web operasional wajib MFA, kecuali login admin bawaan Grafana. Sebagai gantinya, Grafana hanya bisa diakses dari IP allowlist yang sama dengan SSH, dan password-nya panjang serta disimpan di password manager founder. Prometheus dan Alertmanager tidak dibuka ke internet: `ssh -L 9090:localhost:9090 -L 9093:localhost:9093 <user>@<ops>`.
 - Salinan semua secret production disimpan di password manager founder, sebagai cadangan bila GitLab hilang (RB-11).
-- **Orang keluar:** hapus kuncinya dari `~/.ssh/authorized_keys` dan IP-nya dari allowlist, nonaktifkan akun GitLab, ops, dan Grafana-nya, lalu rotasi secret yang pernah ia pegang (RB-12).
+- **Orang keluar:** hapus kuncinya dari `~/.ssh/authorized_keys` dan IP-nya dari allowlist, nonaktifkan akun GitLab dan ops-nya, ganti password admin Grafana, lalu rotasi secret yang pernah ia pegang (RB-12).
 
 | Akses | Siapa | Catatan |
 |---|---|---|
@@ -62,7 +62,7 @@ WHERE state = 'discarded' AND finalized_at > now() - interval '24 hours' GROUP B
 | GitLab: jalankan deploy production | Founder | D-22. MFA |
 | GitLab: Developer | `<engineer>`, akun bot agent AI | MFA untuk akun manusia |
 | Halaman ops `/ops` | Founder, `<staf-ops>` | Akun ops, MFA TOTP (FR-AUTH-03) |
-| Grafana | Founder, `<engineer>` | Login lewat akun GitLab |
+| Grafana | Founder, `<engineer>` | Login admin bawaan Grafana lewat HTTPS |
 | Panel penyedia: hosting, DNS, storage backup, Anthropic, LLM fallback, SMTP, Google Cloud | Founder | MFA |
 
 ## 3. Prosedur
@@ -82,29 +82,31 @@ WHERE state = 'discarded' AND finalized_at > now() - interval '24 hours' GROUP B
 **Verifikasi:** `docker compose ps --format '{{.Service}} {{.Image}}'` menunjukkan sha tag lama (`git rev-list -n1 <tag-lama>`); `/readyz` OK; 5xx dan p95 kembali normal.
 
 ### RB-03 — Import dataset
-**Kapan:** ada file dataset baru (`.jsonl` atau `.jsonl.gz`, satu objek JSON-LD per baris).
+**Kapan:** ada file dataset baru (`.jsonl` atau `.jsonl.gz`, satu objek JSON-LD per baris) beserta tanggal pengambilannya (wajib, `--observed-at`).
 1. Jalankan dulu di staging (langkah sama di server `ops`, `/opt/msp-staging`). Lanjut ke production hanya bila laporannya masuk akal.
 2. Cek ruang disk (`df -h`). Catat waktu mulai sebagai titik restore bila import salah: `date -Iseconds`.
 3. Salin file dan jalankan di `tmux` agar tidak putus saat SSH putus:
 ```bash
 ssh <user>@<prod> mkdir -p import && scp <file>.jsonl.gz <user>@<prod>:import/
 ssh -t <user>@<prod> tmux new -s import
-cd /opt/msp && docker compose run --rm -v "$HOME/import:/import:ro" worker msp tool import /import/<file>.jsonl.gz
+cd /opt/msp && docker compose run --rm -v "$HOME/import:/import:ro" worker msp tool import --observed-at <YYYY-MM-DD> /import/<file>.jsonl.gz
 ```
 4. Baca laporan (output tool dan `/ops/imports`, bisa diunduh CSV): **baru**, **berubah**, **tidak berubah**, **ditolak per alasan**. Import ulang file yang sama harus menghasilkan baru = 0 dan berubah = 0. Ditolak > 5% atau ada alasan yang tidak dikenal → kirim laporan dan contoh baris ke engineering sebelum import berikutnya.
+
+Metrik wilayah dan skor dihitung ulang otomatis setelah import; tidak perlu RB-05.
 
 **Verifikasi:** `/ops/imports` berstatus selesai dan "Skor diperbarui"; `/ops/health`: jumlah prospek sesuai laporan, % terpetakan kelurahan ≥ 98% (FR-DATA-04); antrean `import` dan `score` kosong (Q1).
 
 ### RB-04 — Sync wilayah GeoAPI
 **Kapan:** instalasi baru (sebelum import pertama), GeoAPI merilis data baru, atau % terpetakan wilayah turun.
 1. Di `tmux`: `cd /opt/msp && docker compose run --rm worker msp tool geo-sync`. Tool menahan diri di batas GeoAPI 120 request/menit, jadi bisa lama. Bila terputus, jalankan ulang.
-2. Lanjutkan dengan RB-05, karena wilayah dan `market_score` berubah.
+2. Setelah selesai, metrik wilayah dan skor dihitung ulang otomatis; tidak perlu RB-05. Pantau antrean `import` dan `score` (Q1) sampai kosong.
 
-**Verifikasi:** output tool menampilkan jumlah area per level (provinsi, kab/kota, kecamatan, desa/kelurahan) tanpa error; riwayat `geo-sync` di `/ops/imports`; `/ops/health` % terpetakan ≥ 98%; peta menampilkan atribusi GeoAPI.
+**Verifikasi:** laporan yang dicetak tool menampilkan jumlah area per level (provinsi, kab/kota, kecamatan, desa/kelurahan) tanpa error; `/ops/health` % terpetakan ≥ 98%; peta menampilkan atribusi GeoAPI.
 
 ### RB-05 — Rescore
-**Kapan:** rilis membawa versi model baru (`priority-X.Y.Z`, `geo-X.Y.Z`), setelah RB-04, atau setelah bug skor diperbaiki.
-1. Jalankan di jam sepi karena beban DB naik: `cd /opt/msp && docker compose run --rm worker msp tool rescore`.
+**Kapan:** hanya setelah rilis membawa versi model/bobot baru (`priority-X.Y.Z`, `geo-X.Y.Z`; perbaikan bug skor juga menaikkan versi). Setelah import (RB-03) dan geo-sync (RB-04) hitung ulang sudah otomatis.
+1. Jalankan di jam sepi karena beban DB naik: `cd /opt/msp && docker compose run --rm worker msp tool rescore`. Tool menjalankan rantai yang sama: metrik wilayah → skor.
 2. Pantau antrean `score` (Q1) sampai kosong. Ada job `discarded` → AL-05.
 
 **Verifikasi:** `/ops/health` menampilkan versi model aktif yang baru; 3 profil prospek yang dikenal menampilkan breakdown dengan versi baru dan band yang masuk akal; p95 kembali normal.
@@ -139,7 +141,7 @@ docker compose exec -u postgres postgres pgbackrest --stanza=msp info
 docker compose exec -u postgres postgres pgbackrest --stanza=msp check
 docker compose exec postgres psql -U postgres -c "SELECT last_archived_time, last_failed_time, failed_count FROM pg_stat_archiver;"
 ```
-**Verifikasi:** `info` berstatus `ok` dengan backup terakhir sesuai jadwal 06 (≤ 24 jam); `check` selesai tanpa error; `last_archived_time` ≤ 15 menit lalu (RPO, NFR-04) dan tidak ada `last_failed_time` yang lebih baru.
+**Verifikasi:** `info` berstatus `ok` dengan backup terakhir sesuai jadwal 06 (≤ 26 jam); `check` selesai tanpa error; `last_archived_time` ≤ 15 menit lalu (RPO, NFR-04) dan tidak ada `last_failed_time` yang lebih baru.
 
 ### RB-10 — Restore PITR ke server/DB baru
 **Kapan:** data rusak atau terhapus, server `prod` hilang (dari RB-11), atau uji restore bulanan. **Aturan:** restore ke direktori atau server **baru**, jangan menimpa DB yang masih jalan. Untuk uji, **jangan** start `worker` karena akan mengirim webhook, email, dan panggilan AI sungguhan.
@@ -164,9 +166,9 @@ docker compose up -d --wait postgres api      # tanpa worker; --archive-mode=off
 5. Arahkan DNS `<domain>` ke IP baru; Caddy mengambil sertifikat TLS otomatis. Ganti target `prod` di konfigurasi Prometheus (`deploy/`).
 6. Backup penuh: `docker compose exec -u postgres postgres pgbackrest --stanza=msp --type=full backup`.
 
-Untuk `ops` (`prod` tetap jalan, tetapi deploy dan monitoring mati sampai selesai): server baru + bootstrap → pulihkan GitLab dari backup-nya (`gitlab-backup restore`, 06); tanpa backup: GitLab baru, push repo dari clone terbaru, isi ulang variabel CI dari password manager founder → daftarkan ulang `gitlab-runner` → jalankan pipeline `main` (build image + deploy staging) → start `prometheus`, `alertmanager`, `grafana` dari `deploy/`.
+Untuk `ops` (`prod` tetap jalan, tetapi deploy dan monitoring mati sampai selesai): server baru + bootstrap → pulihkan GitLab dari backup-nya (`gitlab-backup restore`, 06); tanpa backup: GitLab baru, push repo dari clone terbaru, isi ulang variabel CI dari password manager founder → daftarkan ulang `gitlab-runner` → jalankan pipeline `main` (build image + deploy staging) → start service monitoring `/opt/ops` dari `deploy/`.
 
-**Verifikasi:** smoke test RB-01, RB-09 hijau, probe eksternal dan semua target Prometheus hijau.
+**Verifikasi:** smoke test RB-01, RB-09 hijau, probe `blackbox-exporter` dan semua target Prometheus hijau.
 
 ### RB-12 — Rotasi secret
 **Kapan:** pemegang secret keluar, secret bocor atau diduga bocor (segera), atau diminta penyedia.
@@ -195,11 +197,11 @@ Di `ops`, registry GitLab: `cd /opt/ops && docker compose exec gitlab gitlab-ctl
 **Verifikasi:** `df -h` < 70%.
 
 ## 4. Alert
-Aturan alert ada di `deploy/` (Prometheus + probe eksternal); ambang di bawah adalah acuannya. Level SEV di §5; L1, L2, Q1, Q2 di §1.3.
+Aturan alert ada di `deploy/` (Prometheus + `blackbox-exporter`); ambang di bawah adalah acuannya. Level SEV di §5; L1, L2, Q1, Q2 di §1.3.
 
 | ID | Alert & ambang | Dampak | Langkah pertama |
 |---|---|---|---|
-| AL-01 | **Situs down:** probe `https://app.<domain>/readyz` gagal 2× berturut | Semua user. SEV-1 | `docker compose ps`; service mati/unhealthy → L1 → `docker compose up -d <service>`. `/healthz` OK tetapi `/readyz` gagal → DB: log `postgres`, disk (RB-13). Tidak bisa SSH → console/reboot di panel hosting; rusak permanen → RB-11. Baru deploy → RB-02. Probe `gitlab.<domain>` gagal = server `ops` mati: SEV-2 (prod jalan tanpa monitoring dan deploy) |
+| AL-01 | **Situs down:** probe `https://app.<domain>/readyz` gagal 2× berturut | Semua user. SEV-1 | `docker compose ps`; service mati/unhealthy → L1 → `docker compose up -d <service>`. `/healthz` OK tetapi `/readyz` gagal → DB: log `postgres`, disk (RB-13). Tidak bisa SSH → console/reboot di panel hosting; rusak permanen → RB-11. Baru deploy → RB-02 |
 | AL-02 | **5xx tinggi:** > 5% respons API 5xx selama 10 menit | Sebagian aksi gagal. SEV-2, SEV-1 bila > 50% | L2. Mulai setelah deploy → RB-02. Error DB → langkah DB di AL-03. Error login → L1 untuk `kratos` |
 | AL-03 | **p95 di atas NFR-01:** search > 1 s atau profil > 500 ms selama 15 menit | App lambat. SEV-3, SEV-2 bila > 2× target | Ada import/rescore jalan → wajar sementara, pindahkan ke jam sepi bila mengganggu. Query macet: `SELECT pid, now()-query_start AS durasi, left(query,100) FROM pg_stat_activity WHERE state <> 'idle' ORDER BY durasi DESC LIMIT 10;` → yang > 5 menit dan bukan backup: `SELECT pg_cancel_backend(<pid>);`. CPU/RAM/IO host jenuh di Grafana → engineering (query/indeks) dan founder (kapasitas) |
 | AL-04 | **Antrean River tertahan:** job `available` tertua > 15 menit di `export`, `webhook`, `ai`, atau > 2 jam di `import`, `score` | Export, webhook, AI brief, atau skor tertunda. SEV-2 | Q1, `docker compose ps worker`, L1 untuk `worker`. Worker mati/macet → `docker compose restart worker` (job idempotent, STD-DB-06). Hanya `import`/`score` yang panjang karena import besar → tunggu |

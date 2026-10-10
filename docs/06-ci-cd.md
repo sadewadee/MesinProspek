@@ -18,8 +18,8 @@
 ## 2. Server & environment
 
 Ada dua dedicated server di Indonesia (D-19, D-26). Direktori Compose mengikuti README.
-- **`ops`**: `/opt/ops` berisi `gitlab` (GitLab CE + container registry), `gitlab-runner` (satu runner, Docker executor), `prometheus`, `alertmanager`, dan `grafana`. `/opt/msp-staging` berisi stack staging. Stack `/opt/ops` di-update manual lewat SSH, karena pipeline tidak me-restart GitLab yang sedang menjalankannya.
-- **`prod`**: `/opt/msp` berisi `caddy`, `web`, `api`, `worker`, `kratos`, `postgres`.
+- **`ops`**: `/opt/ops` berisi `gitlab` (GitLab CE + container registry), `gitlab-runner` (satu runner, Docker executor), `prometheus`, `alertmanager`, `grafana` (login admin bawaan Grafana lewat HTTPS, tanpa OAuth), `blackbox-exporter` (probe ke production), dan `node-exporter`. `/opt/msp-staging` berisi stack staging. Stack `/opt/ops` di-update manual lewat SSH, karena pipeline tidak me-restart GitLab yang sedang menjalankannya.
+- **`prod`**: `/opt/msp` berisi `caddy`, `web`, `api`, `worker`, `kratos`, `postgres`, `node-exporter`.
 
 | Environment | Server | Deploy | Data |
 |---|---|---|---|
@@ -32,9 +32,9 @@ Ada dua dedicated server di Indonesia (D-19, D-26). Direktori Compose mengikuti 
 
 ## 3. Alur Git
 
-1. Agent membuat branch `wp/<nn>-<slug>` dari `main` (07), lalu membuka MR. Judul MR mengikuti Conventional Commits (`feat(scoring): …`, `fix: …`, `!` untuk breaking). Deskripsi MR menyebut `WP-` dan ID PRD (08 STD-GIT-02/04).
+1. Agent membuat branch `wp/<nn>-<slug>` dari `main` (07), lalu membuka MR. Judul MR mengikuti Conventional Commits dengan WP sebagai scope (`feat(WP-14): …`, `fix(WP-21): …`, `!` untuk breaking). Deskripsi MR menyebut ID PRD (08 STD-GIT-02/04).
 2. `check` hijau → orchestrator me-review → **squash merge** ke `main`. Judul MR menjadi pesan commit dan bahan changelog.
-3. `main` → `build` → deploy `staging` otomatis. Founder membuat tag `vX.Y.Z` → E2E penuh di staging → founder menjalankan deploy production.
+3. `main` → `build` → deploy `staging` otomatis. Founder membuat tag `vX.Y.Z` → E2E J-2..J-6 di staging → founder menjalankan deploy production.
 
 | Aktor | Role GitLab | Boleh |
 |---|---|---|
@@ -51,7 +51,7 @@ Ada dua dedicated server di Indonesia (D-19, D-26). Direktori Compose mengikuti 
 |---|---|---|
 | `check` | MR, `main` | `make generate` + `git diff --exit-code`, `make lint`, `make test` (08 §0), `govulncheck`, cek MR. Job `e2e`: stack Compose + Playwright Chromium (05) |
 | `build` | `main` | Image `api` & `web` → registry GitLab dengan tag SHA. Laporan `trivy image` HIGH/CRITICAL (tidak memblokir) |
-| `deploy-staging` | `main` otomatis; tag `v*` | `deploy/deploy.sh` ke `ops`, lalu smoke J-1/J-2 (`main`) atau E2E penuh semua browser (tag) |
+| `deploy-staging` | `main` otomatis; tag `v*` | `deploy/deploy.sh` ke `ops`, lalu smoke J-2 dengan akun test yang sudah terverifikasi (`main`) atau J-2..J-6 semua browser dengan akun yang sama (tag). J-1 hanya di job `e2e` (Mailpit) |
 | `deploy-production` | tag `vX.Y.Z`, manual, Maintainer | `deploy/deploy.sh` ke `prod`. Smoke manual per 09 RB-01 |
 | `rollback` | manual, Maintainer | Retry job `deploy-production` di pipeline tag sebelumnya (09 RB-02). Langkahnya sama dengan deploy, jadi tidak perlu job terpisah (DRY) |
 | *schedule* | harian 01:00 WIB | Job `backup` (§8) |
@@ -114,8 +114,9 @@ deploy-staging:
   image: mcr.microsoft.com/playwright:v1.56.0-noble   # versi = @playwright/test di lockfile
   rules:
     - if: $CI_COMMIT_BRANCH == "main" && $CI_PIPELINE_SOURCE == "push"
-      variables: { E2E_ARGS: "--project=chromium --grep @smoke" }   # J-1, J-2
-    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/                       # E2E penuh
+      variables: { E2E_ARGS: "--project=chromium --grep @smoke" }   # J-2; J-1 butuh Mailpit (hanya di stack test)
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
+      variables: { E2E_ARGS: "--grep-invert @ci-only" }              # J-2..J-6, semua browser
   environment: staging
   resource_group: staging
   before_script: [apt-get update -qq && apt-get install -yqq openssh-client curl && corepack enable && pnpm install --frozen-lockfile]
@@ -161,7 +162,7 @@ services:
   caddy:
     image: caddy:2.10-alpine
     ports: ["80:80", "443:443"]                       # satu-satunya port yang dipublish
-    environment: { MSP_APP_HOST: "${MSP_APP_HOST}", MSP_OPS_IP: "${MSP_OPS_IP}" }
+    environment: { MSP_APP_HOST: "${MSP_APP_HOST}", MSP_OPS_IP: "${MSP_OPS_IP}", MSP_METRICS_PASSWORD_HASH: "${MSP_METRICS_PASSWORD_HASH}" }
     volumes: ["./Caddyfile:/etc/caddy/Caddyfile:ro", "./sites:/etc/caddy/sites:ro", "caddy_data:/data"]
   web:                                                # tanpa env_file: web tidak memegang secret
     image: ${MSP_IMAGE_REPO}/web:${MSP_IMAGE_TAG}
@@ -169,6 +170,7 @@ services:
   api: { <<: *app, command: ["msp", "api"], healthcheck: { test: ["CMD", "wget", "-qO-", "http://localhost:8080/readyz"], interval: 5s } }
   worker: { <<: *app, command: ["msp", "worker"], stop_grace_period: 60s }   # job River sempat selesai
   kratos: { image: "oryd/kratos:v1.3.1", command: ["serve", "-c", "/etc/kratos/kratos.yml"], env_file: .env, volumes: ["./kratos:/etc/kratos:ro"] }
+  node-exporter: { image: "prom/node-exporter:v1.9.1", command: ["--path.rootfs=/host", "--web.telemetry-path=/node/metrics"], pid: host, volumes: ["/:/host:ro,rslave"] }   # metrik host
   postgres:
     build: ./postgres                                 # FROM postgis/postgis:16-3.5 + apt pgbackrest
     image: msp-postgres:16
@@ -182,21 +184,27 @@ volumes: { caddy_data: {}, pgdata: {} }
 # deploy/Caddyfile. MSP_APP_HOST = app.<domain> (production) atau staging.<domain> (staging)
 {$MSP_APP_HOST} {
 	@api path /api/* /healthz /readyz
-	@metrics {
-		path /metrics
+	reverse_proxy @api api:8080
+	handle_path /.ory/* {
+		reverse_proxy kratos:4433        # public base_url = https://<host>/.ory/; admin 4434 tidak dirutekan
+	}
+	@scrape {                            # hanya Prometheus di ops: allowlist IP + basic auth
+		path /metrics /node/metrics
 		remote_ip {$MSP_OPS_IP}
 	}
-	reverse_proxy @api api:8080
-	reverse_proxy @metrics api:8080      # hanya Prometheus di ops
-	handle_path /kratos/* {
-		reverse_proxy kratos:4433        # public base_url = https://<host>/kratos/; admin 4434 tidak dirutekan
+	handle @scrape {
+		basic_auth {
+			prometheus {$MSP_METRICS_PASSWORD_HASH}   # caddy hash-password
+		}
+		reverse_proxy /node/metrics node-exporter:9100
+		reverse_proxy api:9090           # listener metrik internal (MSP_METRICS_ADDR)
 	}
 	reverse_proxy web:3000
 }
 import sites/*.caddy                    # kosong di prod; di ops: gitlab, registry, grafana
 ```
 
-Docker melewati aturan `ufw` untuk port yang dipublish, jadi hanya `caddy` yang boleh memakai `ports:`. Image `api` berbasis Alpine (ada `wget` untuk healthcheck). Image `web` memakai Next.js `output: "standalone"`.
+Docker melewati aturan `ufw` untuk port yang dipublish, jadi hanya `caddy` yang boleh memakai `ports:`. Karena itu Prometheus di `ops` membaca `/metrics` (`api:9090`) dan `/node/metrics` (`node-exporter`) lewat Caddy. Image `api` berbasis Alpine (ada `wget` untuk healthcheck). Image `web` memakai Next.js `output: "standalone"`.
 
 ## 6. Migrasi DB
 
@@ -228,6 +236,7 @@ Migrasi memakai goose di `apps/api/db/migrations`, di-embed di binary, dan dijal
 - **SSH** kunci saja (`PasswordAuthentication no`, `PermitRootLogin no`). **Firewall `ufw`**: tolak semua koneksi masuk kecuali 80/443, dan 22 dari allowlist (IP admin + IP `ops` untuk runner).
 - **Update**: `unattended-upgrades` untuk security update; reboot manual di jam sepi (09 §6). **Docker**: Engine + plugin compose dari repo apt resmi; rotasi log `json-file` (`max-size: 50m`, `max-file: 3`).
 - Langkah tambahan sekali di `ops`: start stack `/opt/ops`, daftarkan runner, pasang cron backup GitLab.
+- Langkah tambahan di `prod`: cron penjaga `ops` (tiap 5 menit `curl -fsS https://grafana.<domain>/api/health`; gagal 3× berturut-turut → email ke founder), agar matinya server monitoring tetap ketahuan (09 §1.1).
 
 **Bangun ulang server = bootstrap + restore + deploy** (09 RB-11). `prod`: bootstrap → restore pgBackRest → Retry `deploy-production` tag yang berlaku → DNS. `ops`: bootstrap → `gitlab-backup restore` → daftarkan runner → pipeline `main`.
 

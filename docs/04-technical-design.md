@@ -45,7 +45,7 @@
 │   └─ db kratos  identitas                                                 │
 │ volume /var/lib/msp/storage  (file export; dipakai api + worker)          │
 └──────┬─────────────────────────────┬──────────────────────────────────────┘
-       │ pgBackRest (WAL kontinu)    │ scrape /metrics (IP allowlist)
+       │ pgBackRest (WAL kontinu)    │ scrape /metrics (IP allowlist + basic auth)
        ▼                             ▼
  S3-compatible off-site       ┌─ server ops ─────────────────────────────────┐
  (Indonesia)                  │ gitlab · gitlab-runner · prometheus ·        │
@@ -61,7 +61,7 @@ Eksternal: worker → GeoAPI (geo-sync) · worker → Claude, fallback OpenAI-co
 | `api` | `msp api` | HTTP `:8080`, metrik `:9090` (listener internal) |
 | `worker` | `msp worker` | Semua queue River. Concurrency: `import` 1, `score` 2, `export` 2, `webhook` 10, `ai` 4 |
 | migrasi | `msp migrate` | goose + migrasi River, dijalankan pipeline deploy sebelum `api`/`worker` diganti (06) |
-| tool | `msp tool import\|geo-sync\|rescore` | `docker compose run --rm api msp tool …` di server prod |
+| tool | `msp tool import\|geo-sync\|rescore` | `docker compose run --rm worker msp tool …` di server prod |
 
 ## 3. Modul Go
 
@@ -72,7 +72,7 @@ Tata letak: `apps/api/cmd/msp` (subcommand), `internal/<modul>`, `internal/api` 
 | `platform` | `config` (env), `db` (pgxpool, `InWorkspace`, sqlc), `httpx` (router, problem+json, middleware), `auth` (Kratos whoami → `Principal`), `storage`, `flags`, `audit`, `crypto` (AES-GCM, HMAC), `jobs` (River client + semua struct args job) |
 | `ingest` | Baca JSONL(.gz), validasi, normalisasi (BR-NORM), upsert `places`, laporan import |
 | `geo` | Client GeoAPI + `geo-sync`, penetapan wilayah (PostGIS), metrik wilayah (Lampiran C) |
-| `intel` | Tabel claim, deteksi gap (Lampiran B), skor (Lampiran A), search, profil, `ProspectView` (satu bentuk untuk profil/export/webhook) |
+| `intel` | Tabel claim, deteksi gap (Lampiran B), skor (Lampiran A), search, profil, `ProspectView` (satu proyeksi claim + masking untuk search/profil/export/webhook) |
 | `workspace` | Workspace, anggota & undangan, offering, ICP, list, tag, pemilik, catatan, saved search, feedback |
 | `action` | Unlock, export, webhook (+ guard SSRF), AI brief (interface `LLM`) |
 | `billing` | Ledger credit, saldo, grant/refund |
@@ -98,7 +98,7 @@ CREATE TABLE places (
   social_links text[], address jsonb, address_text text, maps_url text,
   geom geometry(Point, 4326), opening_hours jsonb,
   rating numeric(2,1), review_count int, review_pctl smallint,  -- pctl: percent_rank kategori × kab/kota
-  desa_id bigint, kec_id bigint, kab_id bigint, prov_id bigint, area_method text, -- 'contains'|'nearest'
+  desa_id bigint, kec_id bigint, kab_id bigint, prov_id bigint,  -- NULL = di luar semua polygon/tanpa koordinat
   raw jsonb NOT NULL, raw_hash bytea NOT NULL, norm_version text NOT NULL,       -- evidence (di-TOAST)
   import_id uuid NOT NULL, observed_at date NOT NULL,                            -- BR-TRUST-02
   created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
@@ -141,11 +141,11 @@ CREATE TABLE places (
 | `notes` | `id`, `place_id`, `author_id`, `body`, `created_at` | — |
 | `saved_searches` | `id`, `name`, `query` jsonb (`q`, `filters`, `icp_id`), `created_by` | FR-SRCH-02 |
 | `feedback` | PK (`workspace_id`, `place_id`, `opp_code`), `relevant` bool, `user_id`, `at` | FR-INTL-05 |
-| `unlocks` | PK (`workspace_id`, `place_id`), `via` (`unlock`\|`export`\|`webhook`), `ledger_id`, `user_id`, `at` | Permanen (FR-ACT-02) |
+| `unlocks` | PK (`workspace_id`, `place_id`), `via` (`unlock`\|`export`\|`webhook`), `ledger_id`, `user_id`, `at` | Permanen (FR-ACT-02). Biaya kontak hanya tercatat di sini (`ledger_id`) + `credit_ledger` |
 | `credit_ledger` | `id`, `meter` (`credit`\|`ai_credit`), `kind` (`grant`\|`debit`\|`refund`), `delta` int, `idem_key`, `ref`, `actor_id`, `note`, `at`; UQ(`workspace_id`,`idem_key`) | Append-only (§12) |
-| `exports` | `id`, `idem_key` (UQ per workspace), `format` (`csv`\|`xlsx`), `selection` jsonb, `status`, `rows`, `charged`, `file_key`, `error`, `expires_at` | FR-ACT-03 |
+| `exports` | `id`, `idem_key` (UQ per workspace), `format` (`csv`\|`xlsx`), `selection` jsonb, `status`, `rows`, `file_key`, `error`, `expires_at` | FR-ACT-03 |
 | `webhooks` | `id`, `url`, `secret_enc` bytea, `active`, `created_by` | Secret dienkripsi AES-GCM (`MSP_ENCRYPTION_KEY`) |
-| `webhook_deliveries` | `id`, `webhook_id`, `idem_key`, `event`, `place_ids` uuid[], `status` (`pending`\|`ok`\|`failed`), `attempts`, `charged`, `last_code`, `last_error`, `done_at` | Log pengiriman. Payload dibangun ulang tiap percobaan, tidak disimpan |
+| `webhook_deliveries` | `id`, `webhook_id`, `idem_key`, `event`, `place_ids` uuid[], `status` (`pending`\|`ok`\|`failed`), `attempts`, `last_code`, `last_error`, `done_at` | Log pengiriman. Payload dibangun ulang tiap percobaan, tidak disimpan |
 | `ai_briefs` | `id`, `place_id`, `icp_id`, `input_hash`, `prompt_version`, `provider`, `model`, `status`, `output` jsonb, `error`, `expires_at` | Cache 7 hari per workspace |
 
 ### 4.4 Pola RLS
@@ -181,7 +181,7 @@ func (d *DB) InWorkspace(ctx context.Context, ws, user uuid.UUID, fn func(*q.Que
 Claim type tidak disimpan per nilai. Satu tabel di Go memetakan **field → claim type + asal**. Nilai `NULL` selalu menjadi **Tidak diketahui** (BR-TRUST-03).
 
 ```go
-// intel/claims.go — satu tabel untuk profil, export, dan webhook (DRY)
+// intel/claims.go — satu tabel untuk search, profil, export, dan webhook (DRY)
 var Fields = map[string]Field{
 	"name":         {Claim: Observed, Path: "name"},
 	"telephone":    {Claim: Observed, Path: "telephone"},
@@ -193,8 +193,8 @@ var Fields = map[string]Field{
 } // ... opportunity selalu Inferred (BR-TRUST-01)
 ```
 
-- **Bentuk nilai di API:** `{"value": "Restoran Asia", "claim": "derived", "source": {"import_id": "…", "path": "@type,servesCuisine", "rule": "BR-NORM-03", "observed_at": "2026-08-01"}}`. Nilai fallback diberi `"confidence": "low"`, yaitu kategori **Lainnya** (tipe tak dikenal, tetap Turunan) dan desa hasil `nearest`.
-- **Masking (FR-ACT-02, FR-PRIV-02):** yang di-mask hanya **nomor telepon** (`+62 812-****-**90`, `"locked": true`) sampai di-unlock. Website dan akun sosial selalu terlihat. Nilai ter-suppress disembunyikan di semua tampilan dan tidak bisa di-unlock. Semua aturan ini ada di satu fungsi `intel.ProspectView`. Evidence (`raw`) melewati mask yang sama.
+- **Bentuk nilai di API:** `{"value": "Restoran Asia", "claim": "derived", "source": {"import_id": "…", "path": "@type,servesCuisine", "rule": "BR-NORM-03", "observed_at": "2026-08-01"}}`. F1 tidak punya field `confidence` (claim type sudah cukup; confidence baru di F2). Kategori **Lainnya** cukup claim `derived` dengan nilai "Lainnya".
+- **Masking (FR-ACT-02, FR-PRIV-02):** yang di-mask hanya **nomor telepon** (`+62 812-****-**90`, `"locked": true`) sampai di-unlock. Website dan akun sosial selalu terlihat. Nilai ter-suppress disembunyikan di semua tampilan dan tidak bisa di-unlock. Proyeksi claim + masking ada di **satu** fungsi `intel.ProspectView`, dipakai search, profil, export, dan webhook. Evidence (`raw`) melewati mask yang sama.
 - **Freshness (BR-TRUST-02)** dihitung dari `places.observed_at`.
 
 ## 5. Pipeline F1
@@ -206,7 +206,7 @@ msp tool import --observed-at 2026-08-01 [--dry-run] file.jsonl.gz
        └──────────── queue import ──────────────┘   └──── queue score ────┘
 ```
 
-Setiap tahap adalah job River yang meng-enqueue tahap berikutnya di transaksi yang sama (`InsertTx`). Setiap tahap **menghitung ulang penuh** dan idempoten, jadi aman diulang. Versi incremental baru di F3.
+Setiap tahap adalah job River yang meng-enqueue tahap berikutnya di transaksi yang sama (`InsertTx`). Setiap tahap **menghitung ulang penuh** dan idempoten, jadi aman diulang. Versi incremental baru di F3. Semua pemicu rantai ini ada di §6.2.
 
 ### 5.1 `msp tool import`
 
@@ -252,7 +252,7 @@ Sync polygon pertama butuh ±82 ribu request (±15 jam), jadi dijalankan sekali 
 
 | Job (queue) | Isi |
 |---|---|
-| `geo.assign` (`import`) | `ST_Contains` untuk place yang `desa_id IS NULL`; fallback desa terdekat ≤ 500 m (`area_method='nearest'`). Target ≥ 98% (FR-DATA-04), dipantau metrik |
+| `geo.assign` (`import`) | `ST_Contains` untuk place yang `desa_id IS NULL`. Titik di luar semua polygon atau tanpa koordinat tetap tanpa wilayah: tampil "Tidak diketahui" dan tidak ikut metrik wilayah. Target ≥ 98% (FR-DATA-04), dipantau metrik |
 | `geo.metrics` (`import`) | `area_metrics` level 3–4 sesuai Lampiran C (bagian yang tidak bergantung ICP). Area tanpa bisnis ikut sebagai pembanding (n = 0) |
 | `intel.derive` (`import`) | `review_pctl` (`percent_rank()`, BR-SCORE-03), `peer_stats`, lalu `place_gaps`: stream place + peer → `intel.DetectGaps()` (Lampiran B, BR-OPP-01) → isi tabel diganti dalam satu transaksi. Hasil ditulis ke `imports.health` |
 | `score.all` (`score`) | Enqueue `score.icp` untuk setiap ICP (`icps_to_rescore()`) |
@@ -260,7 +260,7 @@ Sync polygon pertama butuh ±82 ribu request (±15 jam), jadi dijalankan sekali 
 ```sql
 -- geo.assign (inti)
 UPDATE places p SET desa_id = d.id, kec_id = k.id, kab_id = k.parent_id,
-       prov_id = (SELECT parent_id FROM areas WHERE id = k.parent_id), area_method = 'contains'
+       prov_id = (SELECT parent_id FROM areas WHERE id = k.parent_id)
 FROM areas d JOIN areas k ON k.id = d.parent_id
 WHERE d.admin_level = 4 AND p.desa_id IS NULL AND p.geom && d.geom AND ST_Contains(d.geom, p.geom);
 -- geo.metrics (kelurahan; kecamatan sama dengan kec_id). counts = LEFT JOIN areas ← places, GROUPING SETS (desa × kategori, desa)
@@ -282,15 +282,16 @@ FROM counts;
   "min_rating":  { "value": 4.0, "mode": "preferred" },  "min_reviews": { "value": 20, "mode": "preferred" } }
 ```
 
-| Kriteria | Cocok (1) | Sebagian (0,5) | Tidak diketahui |
-|---|---|---|---|
-| `categories` | `category_id` ∈ ids | Induk sama | — (`lainnya` = tidak cocok, kecuali dipilih) |
-| `areas` (ID GeoAPI level 1–4) | desa/kec/kab/prov ∈ ids | — | `desa_id` NULL |
-| `digital` | `url_kind` (NULL = `none`) ∈ daftar | — | — |
-| `min_rating` / `min_reviews` | ≥ nilai | rating ≥ nilai − 0,3 / ulasan ≥ nilai ÷ 2 | NULL |
+| Kriteria | Kolom yang dibandingkan | Tidak diketahui bila |
+|---|---|---|
+| `categories` | `category_id` (+ `categories.parent_id`) | — |
+| `areas` (ID GeoAPI level 1–4) | `desa_id`, `kec_id`, `kab_id`, `prov_id` | `desa_id` NULL |
+| `digital` | `url_kind` (NULL = `none`) | — |
+| `min_rating` / `min_reviews` | `rating` / `review_count` | NULL |
 
+- Nilai cocok (1), sebagian (0,5), dan tidak cocok (0) per kriteria, termasuk kategori **Lainnya**, ditetapkan di PRD Lampiran A dan tidak disalin di sini.
 - ICP Fit = rata-rata kriteria yang diketahui × 100. Kriteria *wajib* bernilai 0 → prospek bukan kandidat (tidak tampil). Kriteria *wajib* yang tidak diketahui tetap kandidat, tetapi dibatasi WARM + "Data terbatas" (BR-SCORE-02).
-- Kandidat difilter di SQL dengan predikat statis berparameter (mis. `(rating IS NULL OR rating >= $min - 0.3)`), tanpa SQL dinamis.
+- Kandidat difilter di SQL dengan predikat statis berparameter (mis. `(rating IS NULL OR rating >= @rating_floor)`; batas "sebagian" dihitung di Go dari Lampiran A), tanpa SQL dinamis.
 
 ### 6.2 Perhitungan dan penyimpanan
 
@@ -305,11 +306,13 @@ Job `score.icp {workspace_id, icp_id}`:
 
 **Onboarding ≤ 5 menit (FR-ICP-01).** Batch pertama berisi kandidat terbaik menurut proksi dan langsung di-commit, jadi halaman pertama tampil dalam hitungan detik setelah ICP disimpan. UI menampilkan progres `scored/candidates` dan me-refresh sampai statusnya `ready`.
 
-| Pemicu recompute | Aksi |
+**Satu jalur hitung ulang.** Rantai tunggal: `geo.metrics` (metrik wilayah) → `intel.derive` (gap bergantung pada metrik wilayah) → `score.all` → `score.icp` × N (§5). Tidak ada periodic job rescore.
+
+| Pemicu | Aksi |
 |---|---|
-| ICP dibuat/diubah, Offering diubah | API meng-enqueue `score.icp` untuk ICP terkait (transaksi yang sama) |
-| Pipeline import selesai | `score.all` |
-| Versi model berubah (deploy dengan `priority-X.Y.Z` baru) | Periodic job River per jam: ICP dengan `model_version` ≠ versi aktif atau `scored_at` < import terakhir → enqueue. Manual: `msp tool rescore [--icp=<id>]` |
+| `msp tool import` atau `msp tool geo-sync` selesai | `geo.assign` → rantai di atas |
+| ICP disimpan (dibuat/diubah, termasuk Offering-nya diubah) | API meng-enqueue `score.icp` untuk ICP itu saja (transaksi yang sama) |
+| `msp tool rescore` (manual, ops; setelah versi model/bobot `priority-`/`geo-` berubah) | Enqueue `geo.metrics` → rantai di atas (metrik wilayah ikut dihitung ulang) |
 
 ### 6.3 Konfigurasi bobot
 
@@ -351,7 +354,7 @@ ORDER BY s.priority DESC, s.place_id DESC
 LIMIT @lim;   -- lim = limit + 1 untuk mendeteksi halaman berikutnya
 ```
 
-- **Cakupan:** default `scope=icp` (driver = index `scores`). `scope=all` mencari di semua `places` dengan `LEFT JOIN scores`, urut `priority DESC NULLS LAST` lalu `place_id`. Prospek di luar ICP tampil sebagai "Tidak cocok ICP".
+- **Cakupan:** selalu ICP aktif (driver = index `scores`), jadi hanya kandidat ICP yang tampil. Setiap baris hasil dibentuk lewat `intel.ProspectView`, sama dengan profil.
 - **Pagination:** keyset; `cursor` = base64 dari kunci urut terakhir; `limit` maks. 100.
 - **Jumlah:** `SELECT count(*) FROM (<filter yang sama> LIMIT 10001)` → tampil "10.000+" bila melewati batas. Hasil selalu konsisten dengan filter (FR-SRCH-01).
 - **Profil:** satu query (place + gap + wilayah + metrik + skor + unlock + suppression) → `intel.ProspectView`. Target p95 ≤ 500 ms (NFR-01).
@@ -365,11 +368,11 @@ LIMIT @lim;   -- lim = limit + 1 untuk mendeteksi halaman berikutnya
 | Basis | `/api/v1`, JSON, same-origin lewat Caddy. Workspace dipilih dengan header `MSP-Workspace: <uuid>`, divalidasi terhadap membership. Health di luar prefix: `/healthz`, `/readyz`; `/metrics` hanya di listener internal (§14) |
 | Role | Ditulis sekali per operasi di OpenAPI: `x-msp-role: member\|admin\|ops`. Middleware membacanya lewat operationId; test matriks otorisasi memakai sumber yang sama |
 | Error | `application/problem+json` (RFC 9457) + `code` stabil + `request_id`. Kode: `UNAUTHENTICATED` 401 · `INSUFFICIENT_CREDITS` 402 (extension `required`, `available`) · `FORBIDDEN`, `EMAIL_NOT_VERIFIED`, `MFA_REQUIRED` 403 · `NOT_FOUND` 404 (termasuk milik workspace lain) · `CONFLICT` 409 (mis. `Idempotency-Key` dipakai ulang dengan body berbeda) · `VALIDATION_FAILED` 422 (extension `errors[]`), `WEBHOOK_URL_REJECTED` 422 · `RATE_LIMITED` 429 · `INTERNAL` 500 (tanpa detail internal) · `FEATURE_DISABLED`, `AI_UNAVAILABLE` 503 |
-| Idempotensi | Header `Idempotency-Key` **wajib** di POST berbayar (`/unlocks`, `/exports`, `/webhooks/{id}/send`, `/prospects/{id}/brief`, grant ops). Disimpan sebagai kunci unik di `credit_ledger` / `exports` / `webhook_deliveries`. Request ulang mengembalikan hasil yang sama tanpa tagihan baru (§12) |
+| Idempotensi | Header `Idempotency-Key` **wajib** di POST yang bisa mengubah saldo credit (`/unlocks`, `/exports`, `/webhooks/{id}/send`, `/prospects/{id}/brief`, grant ops). Disimpan sebagai kunci unik di `credit_ledger` / `exports` / `webhook_deliveries`. Request ulang mengembalikan hasil yang sama tanpa tagihan baru (§12) |
 | Async | `202 Accepted` + `Location` ke resource. Resource membawa `{status: queued\|running\|done\|failed, progress: {done, total}, error}` (export, kirim webhook, brief, scoring ICP) |
 | Batas | Body ≤ 1 MB, `limit` ≤ 100, **export maks. 10.000 baris per job** (FR-ACT-03; lebih → 422), kirim webhook ≤ 100 prospek. Rate limit in-process per user untuk brief dan export (`x/time/rate`; cukup karena hanya satu instance api) |
 
-Role: **M** = Member (Admin juga boleh), **A** = Admin, **O** = ops (`is_ops` + AAL2). **$** = memakai credit + `Idempotency-Key`.
+Role: **M** = Member (Admin juga boleh), **A** = Admin, **O** = ops (`is_ops` + AAL2). **$** = bisa mengubah saldo credit (export/kirim hanya lewat `unlock_missing`) + `Idempotency-Key` wajib.
 
 | Method | Path | FR | Role |
 |---|---|---|---|
@@ -379,7 +382,7 @@ Role: **M** = Member (Admin juga boleh), **A** = Admin, **O** = ops (`is_ops` + 
 | GET · POST · PUT | `/offerings`, `/offerings/{id}` | ICP-01 | M baca · A tulis |
 | GET · POST · PUT · DELETE | `/icps`, `/icps/{id}` (status scoring ikut di body) | ICP-01/02 | M baca · A tulis |
 | GET | `/categories`, `/areas?q=&level=&parent_id=` | ICP-01, SRCH-01 | M |
-| GET | `/prospects?q=&filters…&scope=&cursor=` | SRCH-01 | M |
+| GET | `/prospects?q=&filters…&cursor=` | SRCH-01 | M |
 | GET | `/prospects/{id}`, `/prospects/{id}/evidence` | PROF-01, INTL-01 | M |
 | PUT | `/prospects/{id}/feedback` (per kode opportunity) | INTL-05 | M |
 | GET · POST · DELETE | `/saved-searches`, `/saved-searches/{id}` | SRCH-02 | M |
@@ -387,7 +390,7 @@ Role: **M** = Member (Admin juga boleh), **A** = Admin, **O** = ops (`is_ops` + 
 | GET · POST · DELETE | `/lists`, `/lists/{id}`, `/lists/{id}/items` | ACT-01 | M |
 | PUT · POST | `/prospects/{id}/tags`, `/prospects/{id}/owner`, `/prospects/{id}/notes` | ACT-01 | M |
 | POST | `/unlocks` (`place_ids` ≤ 100) | ACT-02 | M $ |
-| POST | `/charges/preview` (export & webhook: jumlah, sudah di-unlock, ter-suppress, biaya, saldo) | ACT-03/04 | M |
+| POST | `/unlocks/preview` (sebelum "Unlock & export/kirim": jumlah, sudah di-unlock, ter-suppress, biaya, saldo) | ACT-02/03/04 | M |
 | POST · GET | `/exports` → 202, `/exports/{id}` (memuat `download_url`) | ACT-03 | M $ |
 | GET | `/exports/{id}/file?exp=&sig=` | ACT-03 | tanda tangan (§13) |
 | GET · POST · PATCH · DELETE | `/webhooks`, `/webhooks/{id}`, `/webhooks/{id}/test`, `/webhooks/{id}/deliveries` | ACT-04 | A |
@@ -409,10 +412,10 @@ Role: **M** = Member (Admin juga boleh), **A** = Admin, **O** = ops (`is_ops` + 
 
 ## 10. Webhook
 
-- **Event F1:** `prospects.sent` (anggota mengirim prospek terpilih) dan `webhook.test` (data contoh, tanpa biaya). Payload memakai `intel.ProspectView` yang sama dengan export (DRY): website dan sosial selalu ada, telepon terisi untuk prospek yang sudah atau ikut ter-unlock oleh pengiriman ini, dan nilai ter-suppress tidak pernah dikirim.
-- **Biaya (BR-CRED-01):** sama dengan export. Prospek yang belum di-unlock ikut di-unlock dan **ditagih hanya bila pengiriman berhasil (2xx)**. Prospek ter-suppress tidak di-unlock dan tidak ditagih (FR-PRIV-02). Detail transaksi di §12.
+- **Event F1:** `prospects.sent` (anggota mengirim prospek terpilih) dan `webhook.test` (data contoh, tanpa biaya). Payload memakai `intel.ProspectView` yang sama dengan export (DRY): website dan sosial selalu ada, telepon terisi hanya untuk prospek yang sudah di-unlock, dan nilai ter-suppress tidak pernah dikirim.
+- **Biaya (BR-CRED-01):** sama dengan export. Prospek yang belum di-unlock di-unlock dulu lewat fungsi unlock (§12, `unlock_missing: true`); pengiriman dan retry tidak menyentuh credit. Prospek ter-suppress tidak di-unlock dan tidak ditagih (FR-PRIV-02).
 - **Signature:** `MSP-Signature: t=<unix>,v1=<hex(HMAC-SHA256(secret, t + "." + body))>`, plus `MSP-Event` dan `MSP-Delivery`. Penerima disarankan menolak `|now − t| > 300 s` dan men-dedupe `MSP-Delivery`. Secret 32 byte hanya ditampilkan sekali, saat dibuat.
-- **Retry:** job River `webhook.deliver` (queue `webhook`), `MaxAttempts` 7, `NextRetry` kustom **1 m, 5 m, 30 m, 2 j, 6 j, 12 j**. Sukses = 2xx. **Redirect tidak diikuti: 3xx = percobaan gagal** (di-retry sesuai jadwal). Percobaan habis → `failed` di log pengiriman, tanpa tagihan, dan bisa dikirim ulang manual. Flag `webhook` off → job di-snooze.
+- **Retry:** job River `webhook.deliver` (queue `webhook`), `MaxAttempts` 7, `NextRetry` kustom **1 m, 5 m, 30 m, 2 j, 6 j, 12 j**. Sukses = 2xx. **Redirect tidak diikuti: 3xx = percobaan gagal** (di-retry sesuai jadwal). Percobaan habis → `failed` di log pengiriman dan bisa dikirim ulang manual. Flag `webhook` off → job di-snooze.
 - **SSRF:** URL yang didaftarkan wajib `https`, tanpa userinfo, dan semua IP hasil resolve-nya harus lolos cek di bawah (bila tidak → `422 WEBHOOK_URL_REJECTED`). Cek yang **sama** diulang saat dial, sehingga DNS rebinding tidak lolos. Body respons dibaca maksimal 64 KB lalu dibuang. Fixture uji SSRF (IP privat, nama yang resolve ke 127.0.0.1, redirect ke metadata, IPv4-mapped IPv6) ada di 05.
 
 ```go
@@ -473,7 +476,7 @@ SELECT $ws, unnest($chargeable::uuid[]), 'unlock', $id, $user ON CONFLICT DO NOT
 INSERT INTO audit_log (...) VALUES (...);
 ```
 
-**Export (FR-ACT-03).** (1) `POST /charges/preview` menghitung jumlah prospek, yang sudah di-unlock, yang akan di-unlock (belum di-unlock dan tidak ter-suppress), biaya, dan saldo. (2) `POST /exports` (seleksi > 10.000 baris → 422) dengan `unlock_missing: true` memanggil **fungsi unlock yang sama** dengan `POST /unlocks` (transaksi pendek di atas, ditagih, `idem_key` dari request), lalu menyimpan `exports` + job `export.run` → 202. Tanpa `unlock_missing`, prospek yang belum di-unlock diekspor dengan telepon ter-mask. (3) Worker menulis file ke storage → `status='done'`. Gagal → `failed`, bisa diulang **tanpa biaya**: export sendiri tidak pernah menyentuh ledger.
+**Export (FR-ACT-03).** (1) `POST /unlocks/preview` menghitung jumlah prospek, yang sudah di-unlock, yang akan di-unlock (belum di-unlock dan tidak ter-suppress), biaya, dan saldo. (2) `POST /exports` (seleksi > 10.000 baris → 422) dengan `unlock_missing: true` memanggil **fungsi unlock yang sama** dengan `POST /unlocks` (transaksi pendek di atas, ditagih, `idem_key` dari request), lalu menyimpan `exports` + job `export.run` → 202. Tanpa `unlock_missing`, prospek yang belum di-unlock diekspor dengan telepon ter-mask. (3) Worker menulis file ke storage → `status='done'`. Gagal → `failed`, bisa diulang **tanpa biaya**: export sendiri tidak pernah menyentuh ledger.
 
 **Kirim ke webhook (FR-ACT-04).** Sama dengan export (DRY): `POST /webhooks/{id}/send` dengan `unlock_missing: true` menjalankan fungsi unlock (ditagih), lalu menyimpan `webhook_deliveries` + job → 202. Pengiriman dan retry **tidak menyentuh credit**, jadi tidak ada transaksi atau lock yang terbuka selama panggilan HTTP.
 
@@ -521,24 +524,23 @@ Selain itu ada metrik runtime Go dan statistik pgxpool. `/healthz` = proses hidu
 
 ## 15. Keamanan F1
 
-1. **Permukaan jaringan:** server prod hanya membuka 80/443 (Caddy) dan SSH (key-only). Postgres, admin API Kratos, dan metrik hanya ada di jaringan Docker.
+1. **Permukaan jaringan:** server prod hanya membuka 80/443 (Caddy) dan SSH (key-only). Postgres dan admin API Kratos hanya ada di jaringan Docker. Metrik (listener internal `:9090`) hanya keluar lewat Caddy dengan IP allowlist + basic auth (§14).
 2. **Isolasi workspace:** RLS `FORCE` + role `msp_app` `NOBYPASSRLS` + `InWorkspace` sebagai satu-satunya jalan. Resource milik workspace lain → 404. Test lintas workspace mencakup setiap endpoint (05).
 3. **Identitas:** Kratos, email wajib terverifikasi, ops wajib AAL2 (TOTP). Role diperiksa per request dari `x-msp-role`.
 4. **Secret:** variabel CI terproteksi → `.env` (izin 600). Tidak ada secret di repo atau log. Secret webhook dienkripsi AES-GCM.
 5. **Outbound:** guard SSRF di dial time untuk webhook, tanpa redirect. Host GeoAPI dan LLM berasal dari konfigurasi, tidak pernah dari input user.
-6. **Data kontak:** telepon di-mask sampai di-unlock, dan suppression diterapkan di satu fungsi `ProspectView` (profil, evidence, export, webhook). Telepon tidak dikirim ke LLM dan di-redact dari log.
+6. **Data kontak:** telepon di-mask sampai di-unlock, dan suppression diterapkan di satu fungsi `intel.ProspectView` (search, profil, evidence, export, webhook). Telepon tidak dikirim ke LLM dan di-redact dari log.
 7. **Audit:** `audit_log` append-only (`REVOKE UPDATE, DELETE`) untuk login, undangan, unlock, export, webhook, grant, flag, dan suppression.
 8. **Dependensi & input:** `govulncheck` + `npm audit` di CI (06). Batas ukuran body/limit/export, validasi OpenAPI di setiap request, dan query hanya lewat sqlc (berparameter).
 
 ## 16. Evolusi F2/F3 (hanya bila dibutuhkan)
 
-| Fase | Perubahan | Pemicu |
+Daftar fitur F2/F3 ada di PRD §6 dan tidak disalin di sini. Tabel ini hanya mencatat kapan komponen atau perubahan teknis ditambahkan. Fitur F2 memakai pola yang sudah ada bila bisa (pencocokan customer = pg_trgm + jarak geo, integrasi CRM = pola webhook §10, NL search = LLM → filter kanonik §7).
+
+| Fase | Komponen / perubahan teknis | Pemicu |
 |---|---|---|
-| F2 | Upload daftar customer + pencocokan (pg_trgm nama + jarak geo) | Fitur PRD F2 |
-| F2 | Riwayat raw per import (`place_versions`) → diff → signals, watch/alert | Re-import berkala (Q-03) |
-| F2 | Role Viewer/Manager, laporan data salah + overlay koreksi ops | Fitur PRD F2 |
-| F2 | Billing self-serve, grant bulanan otomatis per plan, batas plan lengkap | Pricing final (D-09) |
-| F2 | Satu integrasi CRM (pola sama dengan webhook), NL search (LLM → filter kanonik) | Fitur PRD F2 |
+| F2 | Riwayat raw per import (`place_versions`) → diff → signals | Re-import berkala (Q-03) |
+| F2 | Grant bulanan otomatis per plan | Pricing final (D-09) |
 | F2 | Proxy + cache tiles GeoAPI di Caddy | Banyak user di balik satu IP mencapai 120 req/menit |
 | F2 | Error tracking | Volume error mulai sulit dibaca dari log |
 | F3 | Pipeline incremental (hanya place berubah), batch scoring lebih besar | Dataset > 5 juta atau import > 1 jam |

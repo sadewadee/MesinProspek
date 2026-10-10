@@ -57,7 +57,7 @@ Semua dokumen memakai nama-nama ini persis.
 | Hal | Nama |
 |---|---|
 | Binary & subcommand | `msp api`, `msp worker`, `msp migrate`, `msp tool import --observed-at <YYYY-MM-DD> <file.jsonl[.gz]>` (tanggal pengambilan dataset wajib), `msp tool geo-sync`, `msp tool rescore` |
-| Hitung ulang | Rantai tunggal: metrik wilayah → skor. Otomatis setelah import, setelah geo-sync, dan saat ICP disimpan (ICP itu saja). `msp tool rescore` manual hanya setelah versi model/bobot berubah |
+| Hitung ulang | Rantai tunggal: metrik wilayah → opportunity → skor. Otomatis setelah import, setelah geo-sync, dan saat ICP disimpan (ICP itu saja). `msp tool rescore` manual hanya setelah versi model/bobot berubah |
 | Target Makefile (lokal = CI) | `make generate` (oapi-codegen, client TS, sqlc, design tokens), `make lint`, `make test` |
 | Format dataset | JSON Lines: satu objek JSON-LD schema.org per baris |
 | Antrean River | `import`, `score`, `export`, `webhook`, `ai` |

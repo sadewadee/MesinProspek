@@ -77,8 +77,8 @@ Konfigurasi lint:
 |---|---|---|
 | STD-API-01 | OpenAPI-first: ubah `contracts/openapi.yaml` lebih dulu, lalu jalankan `make generate`. Handler mengimplementasikan interface hasil oapi-codegen. Endpoint di luar spec dilarang | review |
 | STD-API-02 | Kode hasil generate (server Go, `packages/api-client`, sqlc) di-commit dan tidak diedit tangan | CI (`make generate` + `git diff --exit-code`) |
-| STD-API-03 | Error memakai `application/problem+json` (RFC 9457) dengan `code` stabil (snake_case) yang tercantum di spec. Client bercabang berdasarkan `code`, tidak berdasarkan teks pesan | test (kontrak), review |
-| STD-API-04 | Setiap POST berbayar (unlock, export, AI brief) wajib membawa header `Idempotency-Key`. Key yang sama → respons sama, tanpa debit ganda (BR-CRED-01) | test (idempotensi credit, gerbang rilis PRD §12) |
+| STD-API-03 | Error memakai `application/problem+json` (RFC 9457) dengan `code` stabil berformat UPPER_SNAKE (mis. `INSUFFICIENT_CREDITS`) yang tercantum di spec; katalog di [04 §8](04-technical-design.md#8-api). Client bercabang berdasarkan `code`, tidak berdasarkan teks pesan | test (kontrak), review |
+| STD-API-04 | Setiap POST yang bisa mengubah saldo credit (daftar di [04 §8](04-technical-design.md#8-api)) wajib membawa header `Idempotency-Key`. Key yang sama → respons sama, tanpa debit ganda (BR-CRED-01) | test (idempotensi credit, gerbang rilis PRD §12) |
 | STD-API-05 | Perubahan breaking hanya lewat versi path baru (`/api/v2/…`). `/api/v1` hanya boleh berubah secara kompatibel (tambah endpoint atau field opsional) | lint (oasdiff breaking vs `main`) |
 
 ## 5. Frontend Next.js (FE)
