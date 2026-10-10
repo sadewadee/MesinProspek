@@ -73,7 +73,7 @@ Semua ADR berstatus **Proposed** kecuali ditandai lain. Kolom "Ref" menautkan ke
 | ADR-15 | **Relevansi opportunity tenant dihitung saat dibaca** (gap fact global × tag Offering), tidak dimaterialisasi per workspace | Materialisasi = 200 ws × 5 juta × ±3 gap | Tabel opportunity per tenant | Murah dan selalu konsisten dengan Offering. Snapshot opportunity ikut tersimpan di faktor skor | Proposed | D-04, FR-INTL-007 |
 | ADR-16 | **Skor disimpan per epoch** (`intel.score`, partisi HASH per workspace, faktor ringkas `smallint[]`). Epoch baru diaktifkan secara atomik | Recompute ≤ 10 menit tanpa mengganggu pembaca (NFR-PERF-05) | UPDATE in-place; JSON penjelasan per baris | ±75 juta baris tetap ±17 GB. Penjelasan dibangun ulang dari faktor + config | Proposed | FR-INTL-008/009/011 |
 | ADR-17 | **Peta: vector tile batas wilayah statis (PMTiles per `area_set_version`) + metrik via JSON**, di-join di client (MapLibre `feature-state`) | Geometri publik dan tidak berubah. Metrik bersifat tenant-specific | `ST_AsMVT` dinamis per tenant | Tile bisa di-cache selamanya. Endpoint `ST_AsMVT` hanya untuk dev/fallback | Proposed | FR-GEO-002 |
-| ADR-18 | **Dedicated server di DC Indonesia**: Docker Compose + Traefik (`app-01`, kelak `app-02`), PostgreSQL 16 + PostGIS self-managed (`db-01` primary, `db-02` streaming replica, pgBackRest PITR), Redis (opsional, cache), **SeaweedFS** (master + volume + filer + S3 gateway; alternatif: Garage), provisioning Ansible | Residensi data dan biaya. Tidak ada layanan cloud terkelola | AWS ap-southeast-3 (ECS/RDS/ElastiCache/S3) | Tim mengoperasikan sendiri backup, failover, patching. Deploy blue/green via Traefik (`06-ci-cd.md`). Abstraksi S3 dipertahankan | Accepted (dedicated) / Proposed (stack) | **D-19**, D-18, D-14, NFR-PRIV-03 |
+| ADR-18 | **Dedicated server di DC Indonesia**: Docker Compose + Traefik (`app-01`, kelak `app-02`), PostgreSQL 16 + PostGIS self-managed (`db-01` primary, `db-02` streaming replica, pgBackRest PITR), Redis (opsional, cache), **SeaweedFS** (master + volume + filer + S3 gateway; alternatif: Garage), provisioning Ansible | Residensi data dan biaya. Tidak ada layanan cloud terkelola | AWS ap-southeast-3 (ECS/RDS/ElastiCache/S3) | Tim mengoperasikan sendiri backup, failover, patching. Deploy blue/green via Traefik (`06-ci-cd.md`). Abstraksi S3 dipertahankan. MVP 0–M-2: `app-01` tunggal (restore cepat via Ansible); `app-02` aktif sebelum M-3 (R-08) | Accepted (dedicated) / Proposed (stack) | **D-19**, D-18, D-14, NFR-PRIV-03 |
 | ADR-19 | **Port identitas provider-agnostic** (OIDC atau Kratos session → *server session milik aplikasi*). Rekomendasi: **Ory Kratos self-hosted** | Auth SaaS akan memindahkan data identitas user ke luar negeri | Auth SaaS; Keycloak | Aplikasi hanya bergantung pada klaim `sub`, `email`, `email_verified`, level MFA | **Open** | **D-20**, FR-AUTH-001/006 |
 | ADR-20 | **Seluruh request keluar ke URL milik customer** lewat worker khusus → validasi aplikasi + `net.Dialer.Control` yang memeriksa ulang IP hasil resolve di setiap koneksi → **egress proxy (Smokescreen)** → aturan **nftables** (blok private/metadata/LAN) | Tidak ada security group cloud di dedicated server (NFR-SEC-05) | Validasi aplikasi saja | Tiga lapis kontrol SSRF. Proxy juga dipakai untuk egress AI/email (allowlist) | Proposed | FR-EXP-003, Crawler §12 |
 | ADR-21 | **Observability self-hosted**: OpenTelemetry Go SDK + `log/slog` JSON → OpenTelemetry Collector → Prometheus + Grafana + Loki + Tempo + Alertmanager; **GlitchTip** untuk error tracking | Residensi data dan biaya; selaras D-19 | SaaS observability | Retensi dan PII di log dikontrol sendiri | Proposed | NFR-OBS-01 |
@@ -132,7 +132,7 @@ Semua ADR berstatus **Proposed** kecuali ditandai lain. Kolom "Ref" menautkan ke
 
 | Host | Peran | Layanan | Catatan |
 |---|---|---|---|
-| `app-01` | Aplikasi | traefik, web, api, kratos, worker pools (River), redis (opsional), unbound, smokescreen, otel-collector | SPOF di MVP (99,5% masih tercapai dengan restore cepat). `app-02` ditambahkan untuk HA (Traefik di dua node + DNS failover/VRRP, Redis replica + Sentinel) |
+| `app-01` | Aplikasi | traefik, web, api, kratos, worker pools (River), redis (opsional), unbound, smokescreen, otel-collector | MVP 0–M-2: `app-01` tunggal, SPOF (restore cepat via Ansible). `app-02` aktif sebelum M-3 (R-08) untuk HA (Traefik di dua node + DNS failover/VRRP, Redis replica + Sentinel) |
 | `db-01` | DB primary | PostgreSQL 16 + PostGIS, PgBouncer (transaction mode, untuk trafik request API), pgBackRest, postgres_exporter | Satu-satunya target write. Juga menyimpan antrean River; client River (worker) terhubung langsung ke `:5432`, bukan lewat PgBouncer (§17.4) |
 | `db-02` | DB replica | Hot standby (streaming, async), `hot_standby_feedback=on` | Melayani read search/profil. Failover manual via runbook (Patroni dipertimbangkan saat ada node ketiga) |
 | `stor-01` | Object storage | SeaweedFS single-node (master, volume, filer, S3 gateway) di atas RAID10 + LUKS. Erasure coding/replikasi SeaweedFS saat ada node kedua | Bucket privat, presigned URL via `files.<domain>`. Replikasi off-site via `weed filer.sync` |
@@ -1980,7 +1980,7 @@ Memenuhi NFR-SCAL-01 (5 juta establishment, ±84 ribu kelurahan/desa, 200 worksp
 
 | Host | CPU | RAM | Disk | Catatan |
 |---|---|---|---|---|
-| `app-01` (kelak `app-02` identik) | 32 core (64 thread) | 64 GB | 2 × 1,92 TB NVMe RAID1 | Worker pipeline memakai semua core saat run. Proses Go hemat memori (±1–4 GB per pool). Redis `maxmemory` 8 GB |
+| `app-01` (`app-02` identik, aktif sebelum M-3, R-08) | 32 core (64 thread) | 64 GB | 2 × 1,92 TB NVMe RAID1 | Worker pipeline memakai semua core saat run. Proses Go hemat memori (±1–4 GB per pool). Redis `maxmemory` 8 GB |
 | `db-01` | 32 core | 256 GB ECC | 4 × 1,92 TB NVMe RAID10 (±3,8 TB) | `shared_buffers` 64 GB, `effective_cache_size` 192 GB |
 | `db-02` | Sama dengan db-01 | 256 GB | Sama | Target failover + read search |
 | `stor-01` | 16 core | 64 GB | 4 × 8 TB SSD/HDD enterprise (RAID10 + LUKS → ±16 TB usable) + NVMe untuk OS dan metadata filer | SeaweedFS single-node. Object lock bila didukung (TQ-17) |
@@ -2020,7 +2020,7 @@ Semua container `msp` memakai image yang sama dengan subcommand berbeda.
 | Penulisan skor | `COPY` ke epoch baru, tanpa UPDATE; hapus epoch lama secara async |
 | Join search | Kandidat ICP dibatasi, index `score_rank` parsial, replica db-02, `CREATE STATISTICS` |
 | DNS lookup | Resolver Unbound lokal, cache, konkurensi terkendali |
-| SPOF app-01 | MVP: restore via Ansible + image registry (RTO ≤ 4 jam). V1: app-02 aktif-aktif |
+| SPOF app-01 | MVP 0–M-2: `app-01` tunggal (restore cepat via Ansible + image registry, RTO ≤ 4 jam); `app-02` aktif-aktif sebelum M-3 (R-08) |
 | Fan-out re-skor saat publish | Job `scoring` prioritas 4 di-stagger (maksimal 4 berjalan bersamaan); prioritas 1 (ICP interaktif) selalu didahulukan |
 
 ### 17.6 Backup & DR (NFR-AVAIL-02: RPO ≤ 15 menit, RTO ≤ 4 jam)
@@ -2037,7 +2037,7 @@ Memenuhi FR-OPS-007, NFR-SEC-04, dan D-19.
 
 Semua konfigurasi berasal dari environment variable (di-parse ke struct config Go dan divalidasi saat start; nilai wajib yang hilang → gagal start). Konfigurasi domain berversi (model skor, katalog, taksonomi, daftar referensi) adalah file di repo, bukan env.
 
-**Konvensi (sama dengan `06-ci-cd.md` §12.3):** semua variabel aplikasi berprefiks `MSP_`. Secret **tidak pernah** dikirim sebagai nilai env: binary hanya membaca `MSP_<NAMA>_FILE`, yaitu path ke file di tmpfs (`/run/secrets/<nama>`) hasil dekripsi SOPS saat deploy. Nilai langsung `MSP_<NAMA>` untuk secret hanya diterima saat `MSP_ENV=local` (nilai dummy); di staging/production binary menolak start. Pengecualian prefix: variabel standar OpenTelemetry (`OTEL_*`) yang dibaca langsung oleh SDK. Variabel utama (secret ditandai `_FILE`):
+**Konvensi (sama dengan `06-ci-cd.md` §12.3):** semua variabel aplikasi berprefiks `MSP_`. Secret **tidak pernah** dikirim sebagai nilai env: binary hanya membaca `MSP_<NAMA>_FILE`, yaitu path ke file di tmpfs (`/run/secrets/<nama>`) hasil dekripsi SOPS saat deploy. Nilai langsung `MSP_<NAMA>` untuk secret hanya diterima saat `MSP_ENV` = `local` atau `ci` (nilai dummy, kredensial ephemeral); di staging/production binary menolak start. Pengecualian prefix: variabel standar OpenTelemetry (`OTEL_*`) yang dibaca langsung oleh SDK. Variabel utama (secret ditandai `_FILE`):
 
 | Kelompok | Variabel |
 |---|---|
@@ -2164,6 +2164,7 @@ Opportunity yang otomatis aktif bila crawler mengisi fieldnya: OPP-BOOKING-NONE 
 | TQ-15 | Pengganti MinIO (community edition berhenti merilis binary/image Okt 2025, maintenance mode Des 2025, repo diarsip Feb 2026, menurut sumber sekunder) | **Resolved:** SeaweedFS (Apache-2.0; sub-keputusan D-19, Proposed; alternatif Garage). Verifikasi fitur object lock & enkripsi saat PoC (TQ-17) |
 | TQ-17 | PoC SeaweedFS: (a) S3 Object Lock/WORM untuk bucket snapshot/audit; (b) semantik enkripsi data volume / SSE dan rotasi kunci; (c) presigned PUT/GET + multipart dengan SDK S3 Go dan repo S3 pgBackRest; (d) `weed filer.sync` ke off-site | Bila (a)/(b) tidak didukung: kredensial tanpa hak overwrite/delete + salinan append-only ke repo off-site; enkripsi mengandalkan LUKS |
 | TQ-16 | ~~Re-skor karena drift freshness~~ | **Ditutup** oleh BR-SCORE-13 (cek harian kelas freshness, §7.9) |
+| TQ-18 | Toolchain **OpenAPI 3.1** (ADR-08): dukungan 3.1 di oapi-codegen masih awal (sejak v2.8.0, butuh Go ≥ 1.25); apakah seluruh rantai (oapi-codegen strict-server, openapi-typescript, Spectral, oasdiff, Schemathesis) menangani konstruksi 3.1 yang kita pakai (`type: [x, "null"]`, `examples`, `$ref` bersaudara, `oneOf`/discriminator untuk `selection` dan problem)? | **Spike Sprint 0**: spec contoh (problem + `errors[]`, cursor page, `selection` oneOf, nullable) dijalankan lewat kelima tool; konstruksi yang lolos dijadikan subset wajib (rule Spectral kustom, `08` STD-CONTRACT-02). Fallback bila gagal: spec ditulis OpenAPI **3.0.3**, atau 3.1 sebagai sumber yang di-*down-convert* ke 3.0.3 lewat overlay untuk generator |
 
 ### 20.3 Catatan untuk PRD/analisis
 

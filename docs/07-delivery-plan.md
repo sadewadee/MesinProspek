@@ -22,9 +22,9 @@
 |---|---|
 | Milestone | M-0 Bootstrap (akhir SPR-00) → M-1 MVP 0 internal alpha (SPR-06) → M-2 MVP 1 closed beta wave 1 (SPR-12) → M-3 MVP 1 early paid (SPR-17) → M-4 V1 (± SPR-24) |
 | Durasi ke early paid | 18 sprint = **36 minggu** (contoh: 2 Nov 2026 → 9 Jul 2027) |
-| Backlog MVP 0 + MVP 1 | **190 story** (181 inti + 9 stretch P1), **758 SP inti** + 27 SP stretch, 30 epic MVP + 8 epic V1 dan sesudahnya |
-| Cakupan PRD | **91/91 FR P0** MVP 0 (25) + MVP 1 (66) tertutup story; 11/11 FR P1 MVP 1 tertutup (1 ditarik ke inti, 10 stretch) |
-| Jalur kritis | Lane **Go** (422 SP) + jawaban dataset (Q-01..Q-05) + pengadaan server (Q-09) + perekrutan beta (Q-07) + `app-02` (R-08) |
+| Backlog MVP 0 + MVP 1 | **190 story** (181 inti + 9 stretch P1), **756 SP inti** + 27 SP stretch, 30 epic MVP + 8 epic V1 dan sesudahnya |
+| Cakupan PRD | **92/92 FR P0** tertutup story (25 khusus MVP 0, 66 khusus MVP 1, FR-AUTH-006: ops di MVP 0, tenant di MVP 1). 10/10 FR P1 MVP 1 tertutup sebagai stretch |
+| Jalur kritis | Lane **Go** (420 SP) + jawaban dataset (Q-01..Q-05) + pengadaan server (Q-09) + perekrutan beta (Q-07) + `app-02` (R-08) |
 | Tim baseline | 4 Go (termasuk Tech lead 50%), 2 Next.js, 1 QA, 0,5 DevOps (1,0 di SPR-00..01 dan SPR-14..17), 0,5 product designer, 1 PM/founder |
 
 ---
@@ -50,7 +50,7 @@
 | Release PRD | Milestone | Gate yang wajib lulus | Siapa yang memakai |
 |---|---|---|---|
 | — | **M-0** Bootstrap | Pipeline MR & main hijau, staging bisa di-deploy (06 §18) | Tim internal |
-| MVP 0 (internal alpha) | **M-1** | Kolom MVP 0 di 05 §5.2: TC P0 FR MVP0, RG-2 (evidence coverage), RG-5 parsial, RG-6 penuh, RG-7 (RLS), determinisme | Ops & founder lewat ops console + score inspector |
+| MVP 0 (internal alpha) | **M-1** | Kolom MVP 0 di 05 §5.2: TC P0 FR MVP0 (termasuk MFA ops, FR-AUTH-006), RG-2 (evidence coverage), RG-5 parsial, RG-6 penuh, RG-7 (RLS), determinisme | Ops & founder lewat ops console + score inspector, memakai workspace internal + fixture ICP/Offering buatan ops (PRD §6) |
 | MVP 1 (closed beta) | **M-2** Wave 1 | Subset (§3.1): RG-4, RG-6, RG-7 inti (QG-09, 0 Critical/High), backup + drill restore pertama, suppression aktif | 5 workspace beta |
 | MVP 1 (early paid, sellable) | **M-3** | **RG-1..RG-7 lengkap** (QG-32) + kolom MVP 1 di 05 §5.2 + `app-02` aktif (R-08) | 5–10 workspace beta → berbayar |
 | V1 | **M-4** | Acceptance FR V1 (PRD §6), RG tetap terjaga | Customer berbayar |
@@ -82,7 +82,7 @@ PRD §6 tidak mengatur apakah closed beta wajib memuat seluruh P0 MVP 1. Rencana
 | PM (dapat dirangkap founder) | 1 | — | — | Backlog, beta, keputusan produk |
 | Founder | — | — | — | Data & lisensi, server, beta customer, pricing |
 
-Baseline ini menambah satu Go engineer dibanding contoh di brief (2 Go backend + 1 Go data). Alasannya, lane Go adalah jalur kritis (422 SP, 56% backlog inti). Tanpa tambahan itu, early paid mundur ±5 sprint (§2.4 skenario B).
+Baseline ini menambah satu Go engineer dibanding contoh di brief (2 Go backend + 1 Go data). Alasannya, lane Go adalah jalur kritis (420 SP, 56% backlog inti). Tanpa tambahan itu, early paid mundur ±5 sprint (§2.4 skenario B).
 
 ### 2.2 Model kapasitas
 
@@ -98,17 +98,17 @@ Baseline ini menambah satu Go engineer dibanding contoh di brief (2 Go backend +
 |---|---|--:|---|---|---|
 | SPR-00 | 02 Nov – 13 Nov 2026 | 1.00 | 30 / 17 / 5 / 8 = 60 | 16 / 6 / 0 / 16 | 38 (0) |
 | SPR-01 | 16 Nov – 27 Nov 2026 | 1.00 | 30 / 17 / 5 / 8 = 60 | 30 / 14 / 5 / 8 | 57 (0) |
-| SPR-02 | 30 Nov – 11 Des 2026 | 1.00 | 30 / 17 / 5 / 4 = 56 | 28 / 13 / 6 / 0 | 47 (0) |
-| SPR-03 | 14 Des – 25 Des 2026 | 0.80 | 24 / 14 / 4 / 3 = 45 | 24 / 10 / 5 / 2 | 41 (0) |
+| SPR-02 | 30 Nov – 11 Des 2026 | 1.00 | 30 / 17 / 5 / 4 = 56 | 31 / 13 / 6 / 2 | 52 (0) |
+| SPR-03 | 14 Des – 25 Des 2026 | 0.80 | 24 / 14 / 4 / 3 = 45 | 24 / 10 / 5 / 0 | 39 (0) |
 | SPR-04 | 28 Des – 08 Jan 2027 | 0.80 | 24 / 14 / 4 / 3 = 45 | 23 / 13 / 5 / 5 | 46 (0) |
 | SPR-05 | 11 Jan – 22 Jan 2027 | 1.00 | 30 / 17 / 5 / 4 = 56 | 29 / 15 / 5 / 5 | 54 (0) |
 | SPR-06 | 25 Jan – 05 Feb 2027 | 1.00 | 30 / 17 / 5 / 4 = 56 | 29 / 18 / 3 / 3 | 53 (0) |
 | SPR-07 | 08 Feb – 19 Feb 2027 | 1.00 | 30 / 17 / 5 / 4 = 56 | 28 / 16 / 0 / 3 | 47 (0) |
-| SPR-08 | 22 Feb – 05 Mar 2027 | 1.00 | 30 / 17 / 5 / 4 = 56 | 27 / 16 / 0 / 3 | 46 (0) |
+| SPR-08 | 22 Feb – 05 Mar 2027 | 1.00 | 30 / 17 / 5 / 4 = 56 | 30 / 16 / 0 / 3 | 49 (0) |
 | SPR-09 | 08 Mar – 19 Mar 2027 | 0.60 | 18 / 10 / 3 / 2 = 33 | 18 / 10 / 0 / 0 | 28 (0) |
 | SPR-10 | 22 Mar – 02 Apr 2027 | 1.00 | 30 / 17 / 5 / 4 = 56 | 29 / 17 / 0 / 5 | 51 (0) |
-| SPR-11 | 05 Apr – 16 Apr 2027 | 1.00 | 30 / 17 / 5 / 4 = 56 | 30 / 16 / 3 / 3 | 52 (0) |
-| SPR-12 | 19 Apr – 30 Apr 2027 | 1.00 | 30 / 17 / 5 / 4 = 56 | 29 / 12 / 2 / 0 | 43 (0) |
+| SPR-11 | 05 Apr – 16 Apr 2027 | 1.00 | 30 / 17 / 5 / 4 = 56 | 27 / 16 / 3 / 3 | 49 (0) |
+| SPR-12 | 19 Apr – 30 Apr 2027 | 1.00 | 30 / 17 / 5 / 4 = 56 | 24 / 12 / 2 / 0 | 38 (0) |
 | SPR-13 | 03 Mei – 14 Mei 2027 | 1.00 | 30 / 17 / 5 / 4 = 56 | 29 / 17 / 5 / 0 | 51 (0) |
 | SPR-14 | 17 Mei – 28 Mei 2027 | 0.85 | 26 / 14 / 4 / 7 = 51 | 24 / 10 / 3 / 0 | 37 (0) |
 | SPR-15 | 31 Mei – 11 Jun 2027 | 1.00 | 30 / 17 / 5 / 8 = 60 | 27 / 16 / 0 / 8 | 51 (14) |
@@ -119,13 +119,13 @@ Kolom "Total terencana" memuat story stretch dalam kurung. Stretch hanya diambil
 
 ### 2.4 Sensitivitas timeline terhadap ukuran tim
 
-Dihitung dari beban lane Go (163 SP sampai M-1, 324 SP sampai M-2, 398 SP sampai feature complete) dibagi commit per sprint, ditambah ±1 sprint efek libur dan 2 sprint hardening. Lane FE tidak menjadi pembatas di skenario mana pun.
+Dihitung dari beban lane Go (166 SP sampai M-1, 322 SP sampai M-2, 396 SP sampai feature complete) dibagi commit per sprint, ditambah ±1 sprint efek libur dan 2 sprint hardening. Lane FE tidak menjadi pembatas di skenario mana pun.
 
 | Skenario | Komposisi | Commit GO / FE | M-1 | M-2 | M-3 (minggu sejak SPR-00) | Catatan |
 |---|---|---|---|---|---|---|
 | **A. Baseline** | §2.1 | 30 / 17 | SPR-06 | SPR-12 | **SPR-17 (36 mgg, 9 Jul 2027)** | Rencana di dokumen ini |
 | B. Contoh brief | Tech lead merangkap salah satu dari 2 Go backend (3 orang Go), lain sama | 21 / 17 | SPR-09 | SPR-17 | SPR-22 (46 mgg, 17 Sep 2027) | FE punya slack ±25%, dipakai untuk E2E dan a11y |
-| C. Tim minimal | 3 engineer: 1 Go (TL + DevOps), 1 Go data, 1 FE full-stack. Founder merangkap PM + QA | 12 / 8,5 | SPR-14 | SPR-28 | ± SPR-37 (76 mgg, Apr 2028) | Tidak direkomendasikan tanpa negosiasi scope P0 (Q-D-19) |
+| C. Tim minimal | 3 engineer: 1 Go (TL + DevOps), 1 Go data, 1 FE full-stack. Founder merangkap PM + QA | 12 / 8,5 | SPR-15 | SPR-28 | ± SPR-36 (74 mgg, Mar 2028) | Tidak direkomendasikan tanpa negosiasi scope P0 (Q-D-19) |
 | D. Dipercepat | A + 1 Go backend (mulai SPR-02) + 1 FE (SPR-07..15) | 38 / 25 | SPR-05 | SPR-10 | SPR-14 (30 mgg, 28 Mei 2027) | Dibatasi dependensi eksternal (dataset, server, beta). Kompresi lebih jauh tidak realistis |
 | E. Velocity −20% | Tim A, velocity aktual 8 SP/engineer | 24 / 14 | SPR-08 | SPR-15 | SPR-20 (42 mgg, 20 Agu 2027) | Pemicu replan otomatis setelah SPR-02 (Q-D-02) |
 
@@ -138,7 +138,7 @@ Dihitung dari beban lane Go (163 SP sampai M-1, 324 SP sampai M-2, 398 SP sampai
 | ID | Milestone | Target | Entry criteria | Exit criteria (bukti) |
 |---|---|---|---|---|
 | **M-0** | Bootstrap | Akhir SPR-00 (13 Nov 2026) | Server `ops-01`, `ci-01`, `stg-01` tersedia (Q-09). Keputusan migrasi repo (Q-08), domain (Q-CI-08), dan D-18 dikonfirmasi. Tim lengkap untuk SPR-00 | GitLab CE + runner aktif (2FA). Skeleton Go + Next.js ter-build. Pipeline MR hijau dengan QG-01..05 dan QG-18, merge diblokir `mr:gate`. Baseline goose + linter RLS. `make dev` jalan. Telemetri masuk Grafana. Paket design tokens terbit. Deploy staging boleh selesai di SPR-01 (`US-PLAT-011`) |
-| **M-1** | MVP 0 internal alpha | Akhir SPR-06 (5 Feb 2027) | Snapshot dataset nyata (atau subset berlisensi), referensi wilayah, populasi, dan batas wilayah tersedia (Q-01..Q-05, Q-10). Golden set `gs-er`, `gs-cls`, `gs-geo` berlabel | Kolom **MVP 0** 05 §5.2: semua TC P0 FR MVP0 lulus. RG-2: evidence coverage ≥ 95%. RG-5: drill alert pipeline failure & backlog. **RG-6 penuh** (ER P ≥ 98% & R ≥ 90%, klasifikasi ≥ 90%, kelurahan ≥ 95%, ≥ 10 EC). RG-7: linter + suite RLS. TC-INTL-015/016 & TC-GEO-008 lulus, `priority-1.2.0` & `geo-1.0.0` dibekukan. TC-DATA-034 terukur (waiver TL bila meleset). 0 S1/S2. NFR-MAINT-01 untuk normalisasi/ER/scoring |
+| **M-1** | MVP 0 internal alpha | Akhir SPR-06 (5 Feb 2027) | Snapshot dataset nyata (atau subset berlisensi), referensi wilayah, populasi, dan batas wilayah tersedia (Q-01..Q-05, Q-10). Golden set `gs-er`, `gs-cls`, `gs-geo` berlabel. D-20 diputuskan (SPR-01) | Kolom **MVP 0** 05 §5.2: semua TC P0 FR MVP0 lulus, termasuk FR-AUTH-006 untuk akun ops (login ops tanpa MFA ditolak). RG-2: evidence coverage ≥ 95%. RG-5: drill alert pipeline failure & backlog. **RG-6 penuh** (ER P ≥ 98% & R ≥ 90%, klasifikasi ≥ 90%, kelurahan ≥ 95%, ≥ 10 EC). RG-7: linter + suite RLS. TC-INTL-015/016 & TC-GEO-008 lulus, `priority-1.2.0` & `geo-1.0.0` dibekukan. TC-DATA-034 terukur (waiver TL bila meleset). 0 S1/S2. NFR-MAINT-01 untuk normalisasi/ER/scoring |
 | **M-2** | MVP 1 closed beta (wave 1) | Akhir SPR-12 (30 Apr 2027) | M-1. Story wave 1 *done*. ≥ 5 workspace beta menandatangani perjanjian beta + pemberitahuan privasi (Q-07, Q-D-08). Credit awal beta disepakati (Q-D-13) | RG-7 inti: QG-09 hijau sejak SPR-07, 0 Critical/High (QG-19/27). RG-4: suite idempotensi + rekonsiliasi nightly 100%. RG-6 terjaga di snapshot aktif. Produksi: backup pgBackRest berjalan + drill restore pertama di `dr-01` (QG-35). Runbook + latihan on-call (`US-PLAT-031`). Suppression aktif. DSR ditangani manual (email + register) sampai `US-AUD-003`. Temuan S1/S2 usability formatif (SPR-11) ditutup. Flag wave 2 nonaktif |
 | **M-3** | MVP 1 early paid (sellable) | Akhir SPR-17 (9 Jul 2027) | M-2. Feature freeze akhir SPR-15. Build RC di staging | **QG-32**: issue Release Readiness memuat bukti RG-1..RG-7. Kolom **MVP 1** 05 §5.2 lengkap: usability T2/T3 ≥ 4/5 + median TTFR ≤ 5 menit, E2E export & webhook + soak 24 jam ≥ 99%, rekonsiliasi 100%, drill 4 alert, sampel merge produksi n ≥ 200 ≥ 98%, ZAP full tanpa High, PERF-01..07, drill restore & rollback, axe 0 serious/critical, 0 S1/S2, S3 ≤ 10, sign-off UAT ≥ 3 workspace. **`app-02` aktif + drill failover** (R-08). Pricing & proses invoice manual siap (D-09). Tag `v1.0.0` |
 | **M-4** | V1 | ± Akhir SPR-24 (15 Okt 2027), rentang SPR-23..26 | M-3. Target CRM dipilih dari survei beta (D-10). Payment gateway dipilih. Kadens update dataset diketahui (Q-03) untuk signal | Acceptance FR V1 (PRD §6, EP-31..EP-36). Regresi + RG tetap hijau. Availability 99,5% bulanan selama ≥ 2 bulan (NFR-AVAIL-01) |
@@ -153,7 +153,7 @@ Milestone                   M0                M1                M2             M
 Fase                        B0 [----- MVP 0 ----][-- MVP 1 build: W1 > W2 -][hard]| V1
 EP-01/02 Bootstrap, CI/CD   ## ## .. .. .. ## .. ## .. .. .. .. .. .. .. .. .. .. |
 EP-03/04 Observ., DR        ## .. .. .. ## .. ## .. ## .. .. ## .. .. .. ## .. .. |
-EP-05 Security              .. .. .. ## .. .. .. .. .. .. ## .. .. .. .. .. ## ## |
+EP-05 Security              .. .. .. .. .. .. .. .. .. .. ## .. .. .. .. .. ## ## |
 EP-06 Design system & FE    ## ## ## ## .. .. .. .. .. .. .. .. .. .. .. .. .. .. |
 EP-07 Test & golden set     .. ## ## ## ## ## ## .. .. .. .. .. .. ## .. .. .. .. |
 EP-08 HA app-02             .. .. .. .. .. .. .. .. .. .. .. .. .. .. .. .. ## .. |
@@ -164,17 +164,17 @@ EP-12 Geo ref & metrik      .. ## .. ## ## ## .. .. .. .. .. .. .. .. .. .. .. .
 EP-13 Faktor & opportunity  .. .. ## ## ## ## ## .. .. .. .. .. .. .. .. .. .. .. |
 EP-14 Scoring & ICP fit     .. .. .. .. .. ## ## .. .. .. .. .. .. .. .. .. .. .. |
 EP-15 Ops console dasar     .. ## .. ## ## ## ## .. .. .. .. .. .. .. .. .. .. .. |
-EP-16 Auth/RBAC/RLS         .. .. .. .. .. ## .. ## .. .. ## .. ## .. .. .. .. .. |
+EP-16 Auth/RBAC/RLS         .. .. ## .. .. ## .. ## .. .. ## .. ## .. .. .. .. .. |
 EP-17 Offering/ICP/onb.     .. .. .. .. .. .. ## ## ## ## .. .. .. .. .. .. .. .. |
 EP-18 Search                .. .. .. .. ## .. .. ## ## ## ## ## .. .. .. .. .. .. |
 EP-19 Profil & trust UI     .. .. .. .. .. ## ## .. ## ## .. .. .. .. ## s. .. .. |
-EP-20 Location intel.       .. .. .. .. .. .. .. .. .. .. .. .. ## ## .. .. s. .. |
+EP-20 Location intel.       .. .. .. .. .. .. .. .. .. .. .. ## ## ## .. .. s. .. |
 EP-21 List/segment/assign   .. .. .. .. .. .. .. .. .. .. ## ## .. .. .. s. .. .. |
-EP-22 Credit & unlock       .. .. .. .. .. .. .. .. .. ## ## ## ## ## .. .. s. .. |
+EP-22 Credit & unlock       .. .. .. .. .. .. .. .. ## ## ## ## ## ## .. .. s. .. |
 EP-23/24 Export, webhook    .. .. .. .. .. .. .. .. .. .. .. ## .. ## ## .. .. .. |
 EP-25 AI brief              .. .. .. .. .. .. .. .. .. .. .. .. .. ## ## s. s. .. |
 EP-26/27 Feedback, upload   .. .. .. .. .. .. .. .. .. ## ## .. ## ## ## .. .. .. |
-EP-28/29 Privasi, ops MVP1  .. .. .. .. .. .. .. ## .. .. .. ## ## ## .. ## s. .. |
+EP-28/29 Privasi, ops MVP1  .. .. .. .. .. .. .. ## .. .. ## ## ## ## .. ## s. .. |
 EP-30 Beta & RG evidence    .. .. .. .. .. .. .. .. .. .. .. ## ## .. .. .. ## ## |
 EP-31..36 V1 (ringkas)      .. .. .. .. .. .. .. .. .. .. .. .. .. .. .. .. .. .. | ######
 Closed beta                                                        == == == == == | ==> paid
@@ -200,9 +200,9 @@ Closed beta                                                        == == == == =
 
 ```
 Q-09 server ─► SPR-00 GitLab/CI/skeleton ─► SPR-01 Input Contract + import (Q-01/Q-05 sampel)
-  ─► SPR-02 normalisasi/evidence/verifikasi ─► SPR-03..05 ER + golden set (Q-D-03) ─► geo metrik (Q-04/Q-10)
+  ─► SPR-02 normalisasi/evidence/verifikasi + MFA ops (D-20) ─► SPR-03..05 ER + golden set (Q-D-03) ─► geo metrik (Q-04/Q-10)
   ─► SPR-05..06 opportunity + ICP fit + priority score ─► [M-1]
-  ─► SPR-07 auth/RLS (D-20) ─► SPR-08..09 projection + search + profil ─► SPR-10 ledger/unlock (D-08)
+  ─► SPR-07 auth/RLS ─► SPR-08..09 projection + search + profil ─► SPR-08..10 ledger/unlock (D-08)
   ─► SPR-11 export ─► SPR-12 suppression + refresh ─► [M-2] beta wave 1 (Q-07)
   ─► SPR-13..14 webhook (egress) + AI (D-15) + upload ─► SPR-15 privasi (legal) + drill
   ─► SPR-16 app-02 (R-08) + usability + soak + security ─► SPR-17 [M-3]
@@ -222,10 +222,10 @@ Lane FE punya *float* ±2 sprint di MVP 0 (dipakai untuk UI-first). Lane Go tida
 | 6 | **Q-10** poligon batas wilayah + lisensi | `US-DATA-014` (PIP), `US-GEO-003/004` (choropleth) | Pencocokan alamat + titik/cluster + tabel (OQ-UX-18) | SPR-02 (PIP). SPR-10 (tile peta) | Founder |
 | 7 | **Q-03** kadens update dataset | Refresh (`US-MON-001`), signal V1 (EP-31) | Kuartalan, publish manual | SPR-10 (MVP 1). SPR-18 (V1) | Founder |
 | 8 | **Q-06** ground truth revenue + TQ-08 tier kota | `US-INTL-003` | Prior manual per kategori × tier kota (`city_tier.yaml`) | SPR-03 | Product |
-| 9 | **D-20** identity provider (TQ-01) | `US-AUTH-002` (UI, SPR-05), `US-AUTH-001` (SPR-07) | Ory Kratos self-hosted | **SPR-04** | TL, Founder |
+| 9 | **D-20** identity provider (TQ-01) | MFA ops MVP 0 (`US-PLAT-041`, `US-AUTH-001`, SPR-02), `US-AUTH-002` (UI, SPR-05) | Ory Kratos self-hosted | **SPR-01** | TL, Founder |
 | 10 | **D-15** penyedia AI + DPA/region (TQ-02) + budget sandbox (OQ-T-02) | EP-25 (`US-AI-001`, SPR-13) | Abstraksi provider + fake provider. Wave 2 tanpa AI bila belum ada | **SPR-11** | Founder, TL, legal |
 | 11 | **D-17** brand final | Swap token `color.accent.*` (tanpa ubah komponen) | Placeholder indigo (02 §README) | SPR-10 (sebelum beta). Paling lambat SPR-15 | Founder, Design |
-| 12 | **D-08 / D-09** model credit & plan/harga | EP-22 (SPR-10), entitlement, pricing M-3 | Lampiran E PRD sebagai angka beta | D-08: SPR-08. Harga: SPR-15 | Founder, PM |
+| 12 | **D-08 / D-09** model credit & plan/harga | EP-22 (SPR-08..10), entitlement, pricing M-3 | Lampiran E PRD sebagai angka beta | D-08: SPR-07. Harga: SPR-15 | Founder, PM |
 | 13 | Kapasitas **labeling golden set** (OQ-T-01, Q-D-03) | `US-PLAT-021/022`, RG-6 di M-1 | Mulai 1.000 pasangan ER. QA + 1 orang Product/ops | Nama pelabel: SPR-01 | PM |
 | 14 | **Q-07** 5–10 customer beta + Offering mereka (D-16) | Uji formatif SPR-11, M-2, UAT, RG-1 | Rekrut dari jaringan founder. Wave 1 minimal 5 | Shortlist: SPR-08. Perjanjian: SPR-11 | Founder, PM |
 | 15 | **TQ-17 / Q-CI-13** PoC SeaweedFS (object lock, enkripsi, pgBackRest S3, `filer.sync`) | `US-PLAT-040`, EP-04 | Garage. Fitur yang tidak didukung diganti salinan append-only off-site + LUKS | SPR-01 | DevOps |
@@ -247,7 +247,7 @@ Ukuran: **S** ≤ 15 SP, **M** 16–30, **L** 31–45, **XL** > 45. Epic V1 ke a
 | EP-02 | CI/CD & quality gate | QG-01..37, NFR-SEC-06 | M-0..M-1 | P0 | M (23) | EP-01 |
 | EP-03 | Observability & alerting | NFR-OBS-01, RG-5 | M-0..M-3 | P0 | S (11) | EP-01 |
 | EP-04 | Backup, DR & runbook | NFR-AVAIL-02, BR-PRIV-03 | M-1..M-3 | P0 | M (16) | Q-09, Q-CI-04, EP-01 |
-| EP-05 | Security hardening & kontrol egress | NFR-SEC-01/05/06, RG-7 | M-1..M-3 | P0 | S (15) | EP-02 |
+| EP-05 | Security hardening & kontrol egress | NFR-SEC-01/05/06, RG-7 | M-2..M-3 | P0 | S (13) | EP-02 |
 | EP-06 | Design system & fondasi frontend | NFR-A11Y-01, NFR-L10N-01, BR-TRUST | M-0..M-1 | P0 | L (32) | `02-design-system`, D-17 |
 | EP-07 | Test harness, data sintetis & golden set | RG-6, PRD §12.2 | M-1 | P0 | L (34) | Q-D-03, Q-05 |
 | EP-08 | HA aplikasi `app-02` | R-08, NFR-AVAIL-01/02 | M-3 | P0 | S (8) | Q-D-09, Q-CI-05 |
@@ -258,7 +258,7 @@ Ukuran: **S** ≤ 15 SP, **M** 16–30, **L** 31–45, **XL** > 45. Epic V1 ke a
 | EP-13 | Faktor intelligence & opportunity | FR-INTL-001..007 | MVP0 | P0 | L (31) | EP-10, EP-12, Q-06 |
 | EP-14 | Scoring engine & ICP fit | FR-ICP-003, FR-INTL-008, 009, 011 | MVP0 | P0 | M (23) | EP-13 |
 | EP-15 | Ops console dasar | FR-OPS-001, 002, 005 | MVP0 | P0 | L (35) | EP-09, EP-11 |
-| EP-16 | Auth, workspace, RBAC & isolasi tenant | FR-AUTH-001..006, FR-AUD-006 | MVP1 | P0 | L (37) | D-20, TQ-12 |
+| EP-16 | Auth, workspace, RBAC & isolasi tenant | FR-AUTH-001..006, FR-AUD-006 | MVP0 (MFA ops) + MVP1 | P0 | L (37) | D-20, TQ-12 |
 | EP-17 | Offering, ICP & onboarding | FR-ICP-001, 002, 004, 005, 006 | MVP1 | P0 | M (30) | EP-14, EP-16 |
 | EP-18 | Search & discovery | FR-SRCH-001..008 | MVP1 | P0 | XL (47) | EP-14, EP-17 |
 | EP-19 | Profil prospek & UI trust | FR-PROF-001..009 (010 stretch) | MVP1 | P0 | L (34) | EP-18, EP-06 |
@@ -340,7 +340,7 @@ Ukuran: **S** ≤ 15 SP, **M** 16–30, **L** 31–45, **XL** > 45. Epic V1 ke a
 | US-PLAT-038 | Teknis: security review RG-7 — ZAP full (QG-30), checklist ASVS L2, review threat model 04 §15.11, uji isolasi & SSRF pada build RC | RG-7, NFR-SEC-01, NFR-SEC-06 | — | 5 | GO | SPR-16 | EP-05 | build RC |
 | US-PLAT-039 | Teknis: UAT beta (skenario per persona) + sign-off ≥ 3 workspace; sampel merge produksi n ≥ 200 (RG-6); kompilasi bukti RG-1..RG-7 di issue Release Readiness (QG-32), go/no-go | RG-1..RG-7 | — | 3 | QA | SPR-17 | EP-30 | US-PLAT-033..038 |
 | US-PLAT-040 | Teknis: PoC SeaweedFS (TQ-17/Q-CI-13) — object lock/WORM, enkripsi volume, presigned PUT/GET + multipart via SDK S3 Go, repo S3 pgBackRest, `weed filer.sync` off-site; hasil → keputusan | NFR-SEC-02, NFR-PRIV-03, NFR-AVAIL-02 | — | 3 | OPS | SPR-01 | EP-01 | US-PLAT-001, stg-01 |
-| US-PLAT-041 | Teknis: akses interim ops console alpha — hanya via WireGuard + forward-auth Traefik dengan akun bernama, sampai US-AUTH-001 | FR-AUTH-006 (interim) | SCR-30..34 | 2 | OPS | SPR-03 | EP-05 | US-PLAT-011 |
+| US-PLAT-041 | Teknis: deploy identity provider (D-20, default Ory Kratos) di `stg-01` via Ansible (produksi ikut `US-PLAT-024`), courier email ke Mailpit/SMTP | FR-AUTH-006, FR-AUTH-001 (fondasi) | — | 2 | OPS | SPR-02 | EP-16 | US-PLAT-001, D-20 |
 | US-PLAT-042 | Teknis/Design: prototype interaktif (Storybook + mock kontrak) FLOW-01/FLOW-02 untuk uji formatif awal panel "Kenapa prospek ini?" dan evidence | RG-1, RG-2 (mitigasi dini) | SCR-02, SCR-04, SCR-05, SCR-06 | 5 | FE | SPR-03 | EP-06 | US-PLAT-019 |
 | US-PLAT-043 | Teknis: drill restore pertama (manual) dari repo off-site ke `dr-01`, lalu schedule `monthly` (QG-35) | NFR-AVAIL-02 | — | 3 | OPS | SPR-08 | EP-04 | US-PLAT-023, Q-CI-04 |
 | US-PLAT-044 | Teknis: eksekusi PERF-01..07 pada build RC (QG-31) + k6 sekali di hardware produksi (data sintetis) sebelum early paid | NFR-PERF-01..07 | — | 3 | QA | SPR-16 | EP-30 | US-PLAT-034 |
@@ -363,7 +363,7 @@ Ukuran: **S** ≤ 15 SP, **M** 16–30, **L** 31–45, **XL** > 45. Epic V1 ke a
 | US-DATA-008 | Teknis: ER tahap 2 — skor fuzzy gabungan, auto-merge ≥ 0,92, kandidat review bernilai tinggi, identifier bertentangan tidak pernah merge (BR-ER-04, 05, 10) | FR-DATA-003, FR-DATA-004 | — | 5 | GO | SPR-04 | EP-11 | US-DATA-007, US-PLAT-021 |
 | US-DATA-009 | Teknis: ID stabil (UUIDv7 berprefiks), `entity_source_link`, `entity_redirect`; re-run 2× → jumlah & ID identik | FR-DATA-007 | — | 5 | GO | SPR-04 | EP-11 | US-DATA-007 |
 | US-DATA-010 | Teknis: keputusan merge/split/keep persisten lintas re-run (BR-ER-06) | FR-DATA-004 | — | 3 | GO | SPR-05 | EP-11 | US-DATA-008, US-DATA-009 |
-| US-DATA-011 | Teknis: verifikasi contact point — email syntax + MX (Unbound lokal + cache), telepon format + tipe, domain DNS; gagal sementara → UNKNOWN (BR-VER) | FR-DATA-005 | — | 5 | GO | SPR-02 | EP-10 | US-DATA-004 |
+| US-DATA-011 | Teknis: verifikasi contact point — email syntax + keberadaan MX (Unbound lokal + cache DNS bersama), telepon format + tipe, domain DNS; gagal sementara → UNKNOWN (BR-VER) | FR-DATA-005 | — | 5 | GO | SPR-02 | EP-10 | US-DATA-004 |
 | US-DATA-012 | Teknis: digital presence lite — klasifikasi tipe website & tipe email dari daftar pola `data/reference` | FR-DATA-010 | — | 3 | GO | SPR-03 | EP-10 | US-DATA-004 |
 | US-DATA-013 | Sebagai ops admin, saya meng-import referensi wilayah (kode Kemendagri, populasi + periode + sumber, crosswalk BPS, batas wilayah bila ada) | FR-DATA-008 | FLOW-20 | 5 | GO | SPR-01 | EP-12 | Q-04, Q-10, D-13 |
 | US-DATA-014 | Teknis: penetapan area — point-in-polygon (`ST_Subdivide` + GiST) atau pencocokan alamat, dengan `geo_confidence` | FR-DATA-009 | — | 5 | GO | SPR-03 | EP-12 | US-DATA-013, US-DATA-005 |
@@ -372,9 +372,9 @@ Ukuran: **S** ≤ 15 SP, **M** 16–30, **L** 31–45, **XL** > 45. Epic V1 ke a
 | US-DATA-017 | Sebagai SDR, saya mengunggah CSV/XLSX (≤ 50.000 baris), memetakan kolom, dan melihat preview validasi | FR-DATA-012 | SCR-16, FLOW-05 | 5 | GO | SPR-14 | EP-27 | US-AUTH-005 |
 | US-DATA-018 | Teknis: proses upload async — link ke entity global (BR-ER-07), private prospect untuk NEW, laporan matched/new/rejected, uji isolasi | FR-DATA-012, FR-AUD-006 | SCR-15 | 5 | GO | SPR-14 | EP-27 | US-DATA-017 |
 | US-DATA-019 | Sebagai SDR, saya memakai wizard upload dan melihat hasil pencocokan di job center | FR-DATA-012 | SCR-16, SCR-15, FLOW-05 | 5 | FE | SPR-13 | EP-27 | US-DATA-017 ↗14 |
-| US-DATA-020 | Teknis: API "Laporkan data" (claim yang dirujuk, jenis masalah) → antrean ops (daftar read-only minimal sampai US-OPS-015) | FR-DATA-014 (P1, ditarik ke inti — Q-D-07) | — | 2 | GO | SPR-12 | EP-26 | US-PROF-001 |
-| US-DATA-021 | Sebagai SDR, saya melaporkan data yang salah dari profil | FR-DATA-014 (P1, ditarik ke inti) | SCR-23, FLOW-09 | 2 | FE | SPR-09 | EP-26 | US-DATA-020 ↗12 |
-| US-DATA-022 | *(Stretch, P1)* Teknis: lookup DNS MX/SPF → petunjuk penyedia email & tool marketing (cache TTL, evidence); aktifkan OPP-DNS-NO-MX | FR-DATA-011 | — | 3 | GO | SPR-15 | EP-10 | US-DATA-011 |
+| US-DATA-020 | Teknis: API "Laporkan data" (claim yang dirujuk, jenis masalah) → antrean ops (daftar read-only minimal sampai US-OPS-015) | FR-DATA-014 | — | 2 | GO | SPR-12 | EP-26 | US-PROF-001 |
+| US-DATA-021 | Sebagai SDR, saya melaporkan data yang salah dari profil | FR-DATA-014 | SCR-23, FLOW-09 | 2 | FE | SPR-09 | EP-26 | US-DATA-020 ↗12 |
+| US-DATA-022 | *(Stretch, P1)* Teknis: identifikasi penyedia dari host MX (mis. Google Workspace, Microsoft 365) & include SPF (tool email marketing) memakai cache DNS yang sama dengan US-DATA-011; evidence; aktifkan OPP-DNS-NO-MX | FR-DATA-011 | — | 3 | GO | SPR-15 | EP-10 | US-DATA-011 |
 
 #### INTL — intelligence engine (11 story, 53 SP inti)
 
@@ -389,7 +389,7 @@ Ukuran: **S** ≤ 15 SP, **M** 16–30, **L** 31–45, **XL** > 45. Epic V1 ke a
 | US-INTL-007 | Teknis: engine priority score — renormalisasi Unknown, coverage, band + cap, UNSCORED, rollup company, `as_of` deterministik | FR-INTL-008 | — | 8 | GO | SPR-06 | EP-14 | US-ICP-001, US-INTL-002..006 |
 | US-INTL-008 | Teknis: versioning model skor (`priority-1.2.0`, `versions.lock`, QG-23) + job recompute per versi; versi lama tetap tersimpan | FR-INTL-009 | — | 5 | GO | SPR-06 | EP-14 | US-INTL-007 |
 | US-INTL-009 | Teknis: penanda stale (input lebih baru, kelas freshness berpindah) + antrean recompute | FR-INTL-011 | — | 3 | GO | SPR-06 | EP-14 | US-INTL-008 |
-| US-INTL-010 | Teknis: API feedback opportunity (Relevan/Tidak + alasan) & skor (terlalu tinggi/rendah) + metrik acceptance minimal di ops | FR-INTL-010 | — | 3 | GO | SPR-12 | EP-26 | US-PROF-001 |
+| US-INTL-010 | Teknis: API feedback opportunity (Relevan/Tidak + alasan) & skor (terlalu tinggi/rendah) + laporan ops sederhana (agregat acceptance rate per tipe & versi model) | FR-INTL-010 | — | 3 | GO | SPR-12 | EP-26 | US-PROF-001 |
 | US-INTL-011 | Sebagai agency owner, saya menandai opportunity relevan/tidak relevan dan memberi feedback skor | FR-INTL-010 | SCR-05 (P-11, P-07) | 3 | FE | SPR-10 | EP-26 | US-INTL-010 ↗12 |
 
 #### ICP — Offering & ICP (10 story, 37 SP inti)
@@ -397,10 +397,10 @@ Ukuran: **S** ≤ 15 SP, **M** 16–30, **L** 31–45, **XL** > 45. Epic V1 ke a
 | ID | Story | FR / NFR | SCR / FLOW | SP | Lane | SPR | EP | Depends on |
 |---|---|---|---|--:|---|---|---|---|
 | US-ICP-001 | Teknis: engine ICP fit 0–100 (match/partial/no/unknown, wajib vs preferensi, BR-SCORE-12) + breakdown per kriteria | FR-ICP-003 | — | 5 | GO | SPR-05 | EP-14 | US-INTL-001, US-DATA-014 |
-| US-ICP-002 | Teknis: seed workspace + Offering + ICP internal untuk alpha (CLI `msp seed`) | FR-ICP-003, FR-INTL-008 | — | 2 | GO | SPR-05 | EP-14 | US-ICP-001 |
+| US-ICP-002 | Teknis: workspace internal + Offering & ICP fixture yang dibuat ops (`msp tool`) untuk menguji engine di MVP 0 (PRD §6) | FR-ICP-003, FR-INTL-008 | — | 2 | GO | SPR-05 | EP-14 | US-ICP-001 |
 | US-ICP-003 | Teknis: API Offering + katalog offering tag | FR-ICP-001 | — | 3 | GO | SPR-07 | EP-17 | US-AUTH-003 |
-| US-ICP-004 | Teknis: API ICP berversi, terikat tepat satu Offering, kriteria wajib/preferensi, pemicu re-score | FR-ICP-002 | — | 5 | GO | SPR-08 | EP-17 | US-ICP-003 |
-| US-ICP-005 | Sebagai workspace admin, saya mengelola Offering dan ICP | FR-ICP-001, FR-ICP-002 | SCR-17 | 5 | FE | SPR-06 | EP-17 | US-ICP-004 ↗08 |
+| US-ICP-004 | Teknis: API ICP berversi, terikat tepat satu Offering, kriteria wajib/preferensi, pemicu re-score | FR-ICP-002 | — | 5 | GO | SPR-07 | EP-17 | US-ICP-003 |
+| US-ICP-005 | Sebagai workspace admin, saya mengelola Offering dan ICP | FR-ICP-001, FR-ICP-002 | SCR-17 | 5 | FE | SPR-06 | EP-17 | US-ICP-004 ↗07 |
 | US-ICP-006 | Teknis: skor progresif saat ICP berubah — pre-ranking ≤ 50 kandidat ≤ 30 detik, seluruh kandidat ≤ 10 menit, status progres | FR-ICP-002, FR-INTL-008, NFR-PERF-05 | — | 5 | GO | SPR-09 | EP-17 | US-ICP-004, US-INTL-007 |
 | US-ICP-007 | Teknis: preset bobot per tipe Offering, tercatat di `model_version` | FR-ICP-004 | — | 2 | GO | SPR-08 | EP-17 | US-INTL-008 |
 | US-ICP-008 | Sebagai agency owner baru, saya menyelesaikan wizard Offering → ICP → hasil pertama ≤ 5 menit (event TTFR) | FR-ICP-005 | SCR-02, FLOW-01 | 5 | FE | SPR-07 | EP-17 | US-ICP-005, US-SRCH-002 ↗08 |
@@ -413,7 +413,7 @@ Ukuran: **S** ≤ 15 SP, **M** 16–30, **L** 31–45, **XL** > 45. Epic V1 ke a
 |---|---|---|---|--:|---|---|---|---|
 | US-GEO-001 | Teknis: metrik area global L1–L4 × kategori (Lampiran C: densitas, competition_index, coverage, white_space) reproducible per `geo-1.0.0` | FR-GEO-001 | — | 8 | GO | SPR-04 | EP-12 | US-DATA-014, US-INTL-001 |
 | US-GEO-002 | Teknis: metrik tenant per ICP (target_business_count, target_density, market_opportunity_score) di job scoring | FR-GEO-001, FR-INTL-006 | — | 5 | GO | SPR-05 | EP-12 | US-GEO-001, US-ICP-001 |
-| US-GEO-003 | Teknis: vector tile batas wilayah (PMTiles per `area_set_version`) + endpoint metrik area JSON per ICP | FR-GEO-002 | — | 5 | GO | SPR-12 | EP-20 | US-GEO-002, Q-10 |
+| US-GEO-003 | Teknis: vector tile batas wilayah (PMTiles per `area_set_version`) + endpoint metrik area JSON per ICP | FR-GEO-002 | — | 5 | GO | SPR-11 | EP-20 | US-GEO-002, Q-10 |
 | US-GEO-004 | Sebagai sales manager, saya melihat peta choropleth kelurahan/kecamatan dengan metrik terpilih, legend, periode, guardrail, dan alternatif tabel | FR-GEO-002, FR-GEO-009 | SCR-08, FLOW-03 | 8 | FE | SPR-12 | EP-20 | US-GEO-003, Q-D-06 (basemap) |
 | US-GEO-005 | Teknis: API territory ranking (territory_score + breakdown) untuk ICP + Offering aktif | FR-GEO-003 | — | 3 | GO | SPR-13 | EP-20 | US-GEO-002 |
 | US-GEO-006 | Sebagai sales manager, saya melihat peringkat wilayah, membuka detail area, dan drilldown ke prospek area tersebut | FR-GEO-003, FR-GEO-004 | SCR-09, SCR-10, FLOW-03 | 5 | FE | SPR-13 | EP-20 | US-GEO-005, US-SRCH-006 |
@@ -425,7 +425,7 @@ Ukuran: **S** ≤ 15 SP, **M** 16–30, **L** 31–45, **XL** > 45. Epic V1 ke a
 | ID | Story | FR / NFR | SCR / FLOW | SP | Lane | SPR | EP | Depends on |
 |---|---|---|---|--:|---|---|---|---|
 | US-OPS-001 | Teknis: shell ops console `/ops` (layout compact, banner environment, navigasi SCR-30..39) | FR-OPS-001 (fondasi) | 03 §2.2 | 3 | FE | SPR-01 | EP-15 | US-PLAT-015 |
-| US-OPS-002 | Sebagai ops admin, saya meninjau laporan validasi snapshot lalu menerbitkan atau menolaknya | FR-DATA-001, FR-DATA-008 | SCR-34, FLOW-20 | 5 | FE | SPR-03 | EP-15 | US-DATA-003, US-PLAT-041 |
+| US-OPS-002 | Sebagai ops admin, saya meninjau laporan validasi snapshot lalu menerbitkan atau menolaknya | FR-DATA-001, FR-DATA-008 | SCR-34, FLOW-20 | 5 | FE | SPR-03 | EP-15 | US-DATA-003, US-AUTH-001 |
 | US-OPS-003 | Teknis: API metrik Data Health per snapshot (verifikasi, stale, kandidat duplikat, evidence coverage, mapped rate, klasifikasi) | FR-OPS-001 | — | 3 | GO | SPR-03 | EP-15 | US-DATA-006 |
 | US-OPS-004 | Sebagai ops admin, saya melihat dashboard Data Health per snapshot dengan delta dan drilldown | FR-OPS-001 | SCR-30 | 5 | FE | SPR-04 | EP-15 | US-OPS-003 |
 | US-OPS-005 | Teknis: API merge review (antrean, keputusan merge/same-company/split/skip, undo) | FR-OPS-005, FR-DATA-004 | — | 3 | GO | SPR-05 | EP-15 | US-DATA-008 |
@@ -433,7 +433,7 @@ Ukuran: **S** ≤ 15 SP, **M** 16–30, **L** 31–45, **XL** > 45. Epic V1 ke a
 | US-OPS-007 | Teknis: API Pipeline Health (selesai/gagal/retry/latensi/backlog per stage) + redrive/buang DLQ | FR-OPS-002 | — | 3 | GO | SPR-05 | EP-15 | US-DATA-015 |
 | US-OPS-008 | Sebagai ops admin, saya memantau Pipeline Health dan me-redrive DLQ | FR-OPS-002 | SCR-31, FLOW-23 | 5 | FE | SPR-06 | EP-15 | US-OPS-007 |
 | US-OPS-009 | Teknis: score inspector ops (alpha) — breakdown skor & opportunity per establishment untuk ICP seed | FR-ICP-003, FR-INTL-008, FR-INTL-007 | SCR-31 (tab) | 3 | FE | SPR-06 | EP-15 | US-INTL-007 |
-| US-OPS-010 | Teknis: admin tenant — daftar workspace, plan, grant credit/plan manual (invoice manual) + audit | FR-OPS-006, FR-BILL-006 | — | 5 | GO | SPR-11 | EP-29 | US-BILL-001, US-AUD-001 |
+| US-OPS-010 | Teknis: admin tenant — daftar workspace, plan, grant credit/plan manual (invoice manual) + audit | FR-OPS-006, FR-BILL-006 | — | 5 | GO | SPR-10 | EP-29 | US-BILL-001, US-AUD-001 |
 | US-OPS-011 | Sebagai ops admin, saya mengelola workspace beta, plan, dan memberi kredit | FR-OPS-006, FR-BILL-006 | SCR-37, FLOW-24 | 5 | FE | SPR-11 | EP-29 | US-OPS-010 |
 | US-OPS-012 | Teknis: akses support read-only (alasan wajib, banner, tercatat audit, tanpa impersonation) | FR-OPS-006 | SCR-37 | 3 | GO | SPR-15 | EP-29 | US-OPS-010 |
 | US-OPS-013 | Sebagai ops admin, saya mengubah feature flag dan kill switch (AI, export, webhook, upload) dengan alasan | FR-OPS-007 | SCR-38 | 3 | FE | SPR-11 | EP-29 | US-OPS-014 |
@@ -444,12 +444,12 @@ Ukuran: **S** ≤ 15 SP, **M** 16–30, **L** 31–45, **XL** > 45. Epic V1 ke a
 | US-OPS-018 | Sebagai ops admin, saya menelusuri log audit internal lintas tenant (tanpa edit/hapus) | FR-AUD-001 | SCR-39 | 2 | FE | SPR-13 | EP-29 | US-AUD-001 |
 | US-OPS-019 | *(Stretch, P1)* Teknis + UI: Intelligence Health & Cost (distribusi skor per versi, acceptance, kegagalan AI, biaya per brief/record) | FR-OPS-003, FR-OPS-004 | SCR-32 | 5 | GO | SPR-16 | EP-29 | US-INTL-010, US-AI-006 |
 
-#### AUTH — workspace, autentikasi, role (9 story, 37 SP inti)
+#### AUTH — workspace, autentikasi, role (9 story, 35 SP inti)
 
 | ID | Story | FR / NFR | SCR / FLOW | SP | Lane | SPR | EP | Depends on |
 |---|---|---|---|--:|---|---|---|---|
-| US-AUTH-001 | Teknis: identity provider (D-20, default Ory Kratos) di staging/produksi + identitas ops dengan TOTP MFA wajib + sesi aplikasi | FR-AUTH-006, FR-AUTH-001 | — | 5 | GO | SPR-07 | EP-16 | D-20, US-PLAT-007 |
-| US-AUTH-002 | Sebagai calon user, saya membuat akun (email + password / Google), memverifikasi email, masuk, dan mengatur ulang password | FR-AUTH-001 | SCR-01, FLOW-01 | 5 | FE | SPR-05 | EP-16 | US-PLAT-010 (Kratos lokal), D-20, Q-D-05 |
+| US-AUTH-001 | Teknis: identitas ops di identity provider (D-20) + TOTP MFA wajib (aal2) + sesi aplikasi untuk ops console; login ops tanpa MFA ditolak | FR-AUTH-006 (ops, MVP 0), FR-AUTH-001 (fondasi) | Login ops (SCR-30..39) | 3 | GO | SPR-02 | EP-16 | US-PLAT-041, D-20 |
+| US-AUTH-002 | Sebagai calon user, saya membuat akun (email + password / Google), memverifikasi email, masuk, dan mengatur ulang password | FR-AUTH-001 | SCR-01, FLOW-01 | 5 | FE | SPR-05 | EP-16 | US-PLAT-041, D-20, Q-D-05 |
 | US-AUTH-003 | Teknis: sign-up → workspace, membership multi-workspace, header `MSP-Workspace` (ADR-25), gate email terverifikasi | FR-AUTH-001, FR-AUTH-002 | — | 5 | GO | SPR-07 | EP-16 | US-AUTH-001 |
 | US-AUTH-004 | Teknis: RBAC dari matriks §8.1.1 (ter-generate), ditegakkan di server, 403 + audit | FR-AUTH-004 | — | 5 | GO | SPR-07 | EP-16 | US-AUTH-003, US-AUD-001 |
 | US-AUTH-005 | Teknis: RLS di semua tabel tenant via `tenancy.WithTx` + suite lintas-tenant di CI (QG-09, tidak bisa di-waive) | FR-AUD-006 | — | 5 | GO | SPR-07 | EP-16 | US-AUTH-003 |
@@ -494,8 +494,8 @@ Ukuran: **S** ≤ 15 SP, **M** 16–30, **L** 31–45, **XL** > 45. Epic V1 ke a
 |---|---|---|---|--:|---|---|---|---|
 | US-SEG-001 | Teknis: API list statis (owner, berbagi) dan segment dinamis (jumlah, distribusi skor, pembaruan otomatis) | FR-SEG-001, FR-SEG-002 | — | 5 | GO | SPR-11 | EP-21 | US-SRCH-010 |
 | US-SEG-002 | Sebagai SDR, saya membuat list, menambah/menghapus prospek, dan menyimpan segment dinamis | FR-SEG-001, FR-SEG-002 | SCR-11, SCR-12 | 5 | FE | SPR-10 | EP-21 | US-SEG-001 ↗11 |
-| US-SEG-003 | Teknis: API tag workspace (termasuk bulk) dan catatan prospek | FR-SEG-003, FR-SEG-004 | — | 3 | GO | SPR-11 | EP-21 | US-AUTH-005 |
-| US-SEG-004 | Sebagai SDR, saya memberi tag (massal) dan catatan pada prospek | FR-SEG-003, FR-SEG-004 | SCR-04, SCR-05 | 3 | FE | SPR-10 | EP-21 | US-SEG-003 ↗11 |
+| US-SEG-003 | Teknis: API tag workspace (termasuk bulk) dan catatan prospek | FR-SEG-003, FR-SEG-004 | — | 3 | GO | SPR-10 | EP-21 | US-AUTH-005 |
+| US-SEG-004 | Sebagai SDR, saya memberi tag (massal) dan catatan pada prospek | FR-SEG-003, FR-SEG-004 | SCR-04, SCR-05 | 3 | FE | SPR-10 | EP-21 | US-SEG-003 |
 | US-SEG-005 | Teknis: assignment prospek/list ke anggota + pencatatan `activity` | FR-SEG-005 | — | 3 | GO | SPR-11 | EP-21 | US-SEG-001 |
 | US-SEG-006 | Sebagai sales manager, saya menugaskan prospek/list; rep melihatnya di Tugas saya | FR-SEG-005 | SCR-13 | 3 | FE | SPR-10 | EP-21 | US-SEG-005 ↗11 |
 | US-SEG-007 | *(Stretch, P1)* Sebagai SDR, saya memberi status kerja ringan (Baru … Didiskualifikasi) | FR-SEG-006 | SCR-05, SCR-13 | 2 | FE | SPR-15 | EP-21 | US-SEG-005 |
@@ -504,7 +504,7 @@ Ukuran: **S** ≤ 15 SP, **M** 16–30, **L** 31–45, **XL** > 45. Epic V1 ke a
 
 | ID | Story | FR / NFR | SCR / FLOW | SP | Lane | SPR | EP | Depends on |
 |---|---|---|---|--:|---|---|---|---|
-| US-BILL-001 | Teknis: credit ledger double-entry append-only (grant/debit/refund/expire; available/held/consumed), saldo = Σ ledger, urutan kedaluwarsa | FR-BILL-002 | — | 8 | GO | SPR-10 | EP-22 | US-AUTH-003, D-08 |
+| US-BILL-001 | Teknis: credit ledger double-entry append-only (grant/debit/refund/expire; available/held/consumed), saldo = Σ ledger, urutan kedaluwarsa | FR-BILL-002 | — | 8 | GO | SPR-08 | EP-22 | US-AUTH-003, D-08 |
 | US-BILL-002 | Teknis: usage event ber-idempotency key + hold → capture/release + anti-overspend konkuren | FR-BILL-001 | — | 5 | GO | SPR-10 | EP-22 | US-BILL-001 |
 | US-BILL-003 | Teknis: unlock company (1 credit, permanen per workspace, unlock konkuren aman) | FR-BILL-001, FR-PROF-003 | — | 3 | GO | SPR-10 | EP-22 | US-BILL-002 |
 | US-BILL-004 | Teknis: entitlement & fair-use server-side (seat, ICP, profil, export, AI credit, webhook) dengan error ber-kode | FR-BILL-003 | — | 5 | GO | SPR-10 | EP-22 | US-BILL-001, D-09 |
@@ -563,29 +563,28 @@ Ukuran: **S** ≤ 15 SP, **M** 16–30, **L** 31–45, **XL** > 45. Epic V1 ke a
 
 ### 6.3 Cek cakupan FR
 
-**Hasil:** semua **91 FR P0** ber-release MVP 0 (25, tanda ⁰) dan MVP 1 (66) muncul di ≥ 1 story inti. Semua 11 FR P1 MVP 1 juga tertutup. Format: nomor FR → story (sprint). Prefix `FR-<AREA>-` dan `US-` dihilangkan.
+**Hasil:** semua **92 FR P0** MVP 0/MVP 1 muncul di ≥ 1 story inti: 25 khusus MVP 0 (tanda ⁰), 66 khusus MVP 1, dan FR-AUTH-006 (ops di MVP 0, tenant di MVP 1). Semua 10 FR P1 MVP 1 tertutup sebagai stretch. Format: nomor FR → story (sprint). Prefix `FR-<AREA>-` dan `US-` dihilangkan.
 
 | Area | FR P0 → story (sprint) |
 |---|---|
-| AUTH | 001 → AUTH-002 (05), AUTH-001 (07), AUTH-003 (07) · 002 → PLAT-029 (02), AUTH-003 (07), AUTH-009 (07) · 003 → AUTH-007 (07), AUTH-006 (10) · 004 → AUTH-004 (07) · 005 → AUTH-009 (07), AUTH-008 (12), PLAT-046 (16) · 006 → PLAT-041 (03), AUTH-001 (07) |
-| DATA | 001⁰ → DATA-001 (01), DATA-002 (01), DATA-015 (01), DATA-003 (02), OPS-002 (03) · 002⁰ → DATA-004 (02), DATA-005 (02), PLAT-018 (02) · 003⁰ → DATA-007 (03), PLAT-021 (03), DATA-008 (04) · 004⁰ → DATA-008 (04), DATA-010 (05), OPS-005 (05) · 005⁰ → DATA-011 (02) · 006⁰ → DATA-006 (02) · 007⁰ → DATA-015 (01), DATA-009 (04), DATA-016 (06) · 008⁰ → DATA-013 (01), OPS-002 (03) · 009⁰ → DATA-014 (03), PLAT-022 (04) · 010⁰ → DATA-012 (03) · 012 → DATA-019 (13), DATA-017 (14), DATA-018 (14) |
-| ICP | 001 → ICP-005 (06), ICP-003 (07) · 002 → ICP-005 (06), ICP-004 (08), ICP-006 (09) · 003⁰ → ICP-001 (05), ICP-002 (05), OPS-009 (06) · 004 → ICP-007 (08) · 005 → ICP-008 (07) · 006 → PLAT-029 (02), ICP-009 (08), ICP-010 (08) |
+| AUTH | 001 → AUTH-001 (02), PLAT-041 (02), AUTH-002 (05), AUTH-003 (07) · 002 → PLAT-029 (02), AUTH-003 (07), AUTH-009 (07) · 003 → AUTH-007 (07), AUTH-006 (10) · 004 → AUTH-004 (07) · 005 → AUTH-009 (07), AUTH-008 (12), PLAT-046 (16) · 006⁰ (ops) / tenant MVP 1 → AUTH-001 (02), PLAT-041 (02) |
+| DATA | 001⁰ → DATA-001 (01), DATA-002 (01), DATA-015 (01), DATA-003 (02), OPS-002 (03) · 002⁰ → DATA-004 (02), DATA-005 (02), PLAT-018 (02) · 003⁰ → DATA-007 (03), PLAT-021 (03), DATA-008 (04) · 004⁰ → DATA-008 (04), DATA-010 (05), OPS-005 (05) · 005⁰ → DATA-011 (02) · 006⁰ → DATA-006 (02) · 007⁰ → DATA-015 (01), DATA-009 (04), DATA-016 (06) · 008⁰ → DATA-013 (01), OPS-002 (03) · 009⁰ → DATA-014 (03), PLAT-022 (04) · 010⁰ → DATA-012 (03) · 012 → DATA-019 (13), DATA-017 (14), DATA-018 (14) · 014 → DATA-021 (09), DATA-020 (12) |
+| ICP | 001 → ICP-005 (06), ICP-003 (07) · 002 → ICP-005 (06), ICP-004 (07), ICP-006 (09) · 003⁰ → ICP-001 (05), ICP-002 (05), OPS-009 (06) · 004 → ICP-007 (08) · 005 → ICP-008 (07) · 006 → PLAT-029 (02), ICP-009 (08), ICP-010 (08) |
 | SRCH | 001 → SRCH-001 (08), SRCH-002 (08) · 002 → SRCH-006 (07), SRCH-003 (09) · 003 → SRCH-006 (07), SRCH-003 (09) · 004 → SRCH-005 (04), SRCH-001 (08) · 005 → SRCH-008 (10), SRCH-009 (11) · 006 → SRCH-004 (09) · 007 → SRCH-011 (08), SRCH-010 (10) · 008 → SRCH-006 (07), SRCH-007 (09) |
 | PROF | 001 → PROF-002 (05), PROF-001 (08), PROF-008 (14) · 002 → PROF-002 (05), PROF-006 (08) · 003 → PROF-001 (08), PROF-004 (08), BILL-003 (10) · 004 → PROF-003 (06), PROF-006 (08) · 005 → PROF-005 (08) · 006 → PROF-005 (08) · 007 → PROF-005 (08) · 008 → PROF-005 (08) · 009 → PROF-007 (09) |
 | INTL | 001⁰ → INTL-001 (02), PLAT-022 (04) · 002⁰ → INTL-002 (03) · 003⁰ → INTL-002 (03) · 004⁰ → INTL-003 (04) · 005⁰ → INTL-004 (05), INTL-006 (06) · 006⁰ → GEO-002 (05), INTL-006 (06) · 007⁰ → INTL-004 (05), INTL-005 (06), OPS-009 (06) · 008⁰ → ICP-002 (05), INTL-007 (06), OPS-009 (06), ICP-006 (09) · 009⁰ → INTL-008 (06) · 010 → INTL-011 (10), INTL-010 (12), PLAT-047 (12) · 011⁰ → INTL-009 (06) |
-| GEO | 001⁰ → GEO-001 (04), GEO-002 (05) · 002 → GEO-003 (12), GEO-004 (12) · 003 → GEO-005 (13), GEO-006 (13) · 004 → GEO-006 (13) · 009 → GEO-004 (12), GEO-007 (12) |
-| SEG | 001 → SEG-002 (10), SEG-001 (11) · 002 → SEG-002 (10), SEG-001 (11) · 003 → SEG-004 (10), SEG-003 (11) · 004 → SEG-004 (10), SEG-003 (11) · 005 → SEG-006 (10), SEG-005 (11), PROF-008 (14) |
+| GEO | 001⁰ → GEO-001 (04), GEO-002 (05) · 002 → GEO-003 (11), GEO-004 (12) · 003 → GEO-005 (13), GEO-006 (13) · 004 → GEO-006 (13) · 009 → GEO-004 (12), GEO-007 (12) |
+| SEG | 001 → SEG-002 (10), SEG-001 (11) · 002 → SEG-002 (10), SEG-001 (11) · 003 → SEG-003 (10), SEG-004 (10) · 004 → SEG-003 (10), SEG-004 (10) · 005 → SEG-006 (10), SEG-005 (11), PROF-008 (14) |
 | EXP | 001 → EXP-001 (11), EXP-004 (11) · 002 → BILL-005 (09), EXP-002 (11) · 003 → PLAT-012 (01), PLAT-030 (10), EXP-005 (13), EXP-006 (13), EXP-007 (13) · 004 → EXP-008 (14), EXP-009 (14) · 005 → EXP-003 (11), EXP-008 (14) · 006 → EXP-003 (11) |
 | AI | 001 → AI-001 (13), AI-002 (13), AI-005 (14), AI-007 (14) · 003 → AI-004 (14) · 004 → AI-003 (14), AI-007 (14) · 005 → AI-002 (13), AI-007 (14) · 006 → AI-006 (14) |
 | MON | 001 → MON-001 (12), MON-002 (12) |
-| BILL | 001 → BILL-002 (10), BILL-003 (10), BILL-009 (12) · 002 → BILL-001 (10), BILL-008 (10), BILL-009 (12) · 003 → BILL-004 (10) · 004 → BILL-005 (09), BILL-006 (11) · 005 → BILL-007 (13) · 006 → OPS-010 (11), OPS-011 (11) |
+| BILL | 001 → BILL-002 (10), BILL-003 (10), BILL-009 (12) · 002 → BILL-001 (08), BILL-008 (10), BILL-009 (12) · 003 → BILL-004 (10) · 004 → BILL-005 (09), BILL-006 (11) · 005 → BILL-007 (13) · 006 → OPS-010 (10), OPS-011 (11) |
 | AUD | 001 → AUD-001 (07), OPS-018 (13) · 003 → AUD-002 (12), OPS-016 (15) · 004 → AUD-003 (15), AUD-005 (15), OPS-016 (15) · 005 → AUD-004 (15), AUD-005 (15) · 006 → PLAT-007 (00), AUTH-005 (07), DATA-018 (14) |
-| OPS | 001⁰ → OPS-001 (01), OPS-003 (03), OPS-004 (04) · 002⁰ → DATA-015 (01), PLAT-012 (01), OPS-007 (05), OPS-008 (06) · 005⁰ → OPS-005 (05), OPS-006 (05) · 006 → OPS-010 (11), OPS-011 (11), PLAT-047 (12), OPS-012 (15) · 007 → PLAT-014 (01), OPS-013 (11), OPS-014 (11) · 008 → OPS-015 (15), OPS-016 (15) · 009 → OPS-017 (15) |
+| OPS | 001⁰ → OPS-001 (01), OPS-003 (03), OPS-004 (04) · 002⁰ → DATA-015 (01), PLAT-012 (01), OPS-007 (05), OPS-008 (06) · 005⁰ → OPS-005 (05), OPS-006 (05) · 006 → OPS-010 (10), OPS-011 (11), PLAT-047 (12), OPS-012 (15) · 007 → PLAT-014 (01), OPS-013 (11), OPS-014 (11) · 008 → OPS-015 (15), OPS-016 (15) · 009 → OPS-017 (15) |
 
 | FR P1 MVP 1 | Story (sprint) | Status |
 |---|---|---|
 | FR-DATA-011 | US-DATA-022 (15) | Stretch |
-| FR-DATA-014 | US-DATA-021 (09), US-DATA-020 (12) | Ditarik ke inti (Q-D-07) |
 | FR-PROF-010 | US-PROF-009 (15) | Stretch |
 | FR-GEO-005 | US-GEO-008 (16) | Stretch |
 | FR-SEG-006 | US-SEG-007 (15) | Stretch |
@@ -608,8 +607,8 @@ Kolom *Story kunci* menulis ID tanpa prefix `US-`. Daftar lengkap per sprint ada
 |---|---|---|---|---|
 | **SPR-00** Bootstrap | Infrastruktur & repo siap dipakai seluruh tim | PLAT-001..010 | MR percobaan: pipeline hijau lalu diblokir `mr:gate` sampai di-approve. `make dev` menjalankan stack lokal. Grafana menampilkan metrik host. Paket design tokens ter-build | Server belum tersedia (Q-09). Migrasi repo (Q-08). DevOps 0,5 FTE tidak cukup (Q-D-18) |
 | **SPR-01** Input Contract | Snapshot pertama masuk lewat kontrak resmi, staging bisa di-deploy | DATA-001/002/013/015, PLAT-011..017, PLAT-040, OPS-001 | Sampel dataset (Q-01) di-import sebagai `ds-2026.11.1` immutable di staging lewat pipeline `main`. Referensi wilayah ter-import. Komponen UI di Storybook | Sampel dataset & lisensi terlambat. PoC SeaweedFS gagal → Garage |
-| **SPR-02** Normalisasi & evidence | Nilai mentah → kanonik dengan evidence dan status verifikasi | DATA-003/004/005/006/011, INTL-001, PLAT-018/019/020/029 | Laporan validasi + fill-rate per field. Nilai mentah vs ternormalisasi beserta evidence. Status verifikasi email/telepon | Kualitas alamat rendah sehingga mapping wilayah lemah |
-| **SPR-03** ER tahap 1 | Deduplikasi dasar dan penetapan kelurahan | DATA-007/012/014, INTL-002, OPS-002/003, PLAT-021/041/042 | Ops menerbitkan snapshot dari SCR-34. Jumlah duplikat terdeteksi. % establishment terpetakan ke kelurahan. Prototype klik diuji internal | Kapasitas Natal. Labeling `gs-er` (Q-D-03) |
+| **SPR-02** Normalisasi & evidence | Nilai mentah → kanonik dengan evidence dan status verifikasi | DATA-003/004/005/006/011, INTL-001, AUTH-001, PLAT-018/019/020/029/041 | Laporan validasi + fill-rate per field. Nilai mentah vs ternormalisasi beserta evidence. Status verifikasi email/telepon. Login ops console dengan TOTP; tanpa MFA ditolak (FR-AUTH-006) | Kualitas alamat rendah sehingga mapping wilayah lemah. D-20 belum diputuskan |
+| **SPR-03** ER tahap 1 | Deduplikasi dasar dan penetapan kelurahan | DATA-007/012/014, INTL-002, OPS-002/003, PLAT-021/042 | Ops menerbitkan snapshot dari SCR-34. Jumlah duplikat terdeteksi. % establishment terpetakan ke kelurahan. Prototype klik diuji internal | Kapasitas Natal. Labeling `gs-er` (Q-D-03) |
 | **SPR-04** ER tahap 2 & metrik area | ID stabil, auto-merge, metrik geo global | DATA-008/009, GEO-001, INTL-003, OPS-004, PLAT-022/023, SRCH-005 (UI-first) | Re-run 2× → jumlah & ID identik. Dashboard Data Health. Metrik area per kecamatan dengan label coverage | Kapasitas Tahun Baru. Server produksi (Q-09). Prior revenue (Q-06) |
 | **SPR-05** Opportunity & ICP fit | Gap fact + ICP fit untuk ICP seed, merge review di UI | INTL-004, ICP-001/002, GEO-002, DATA-010, OPS-005/006/007, PLAT-024/025, AUTH-002 (UI), PROF-002 (UI-first) | Opportunity beserta rationale & evidence. ICP fit untuk ICP seed. Keputusan merge bertahan setelah re-run. Rilis uji `v0.1.0` ke produksi | Guard fill-rate membuat banyak tipe opportunity inactive (Q-01) |
 | **SPR-06** Priority score → **M-1** | Priority score berversi + exit MVP 0 | INTL-005..009, DATA-016, OPS-008/009, PLAT-026/027, PROF-003, ICP-005 (UI-first) | Score inspector: breakdown + coverage + band. Recompute 2× → hash identik. Laporan RG-6. Waktu re-run 5 juta. Drill alert pipeline. **Go/no-go M-1** | TC-DATA-034 meleset (waiver TL + rencana). RG-6 di bawah ambang → M-1 mundur 1 sprint |
@@ -618,12 +617,12 @@ Kolom *Story kunci* menulis ID tanpa prefix `US-`. Daftar lengkap per sprint ada
 
 | Sprint | Goal | Story kunci | Demo di akhir sprint | Risiko |
 |---|---|---|---|---|
-| **SPR-07** Tenant foundation | User, workspace, RBAC, RLS, audit | AUTH-001/003/004/005, AUD-001, ICP-003, PLAT-028; FE: AUTH-007/009, ICP-008, SRCH-006 | Sign-up → verifikasi email → workspace → pindah workspace. Viewer mendapat 403 yang tercatat di audit. Suite lintas-tenant hijau di CI | D-20, provider email (Q-D-05) |
-| **SPR-08** ICP & search dasar | Offering/ICP nyata, projection, keyword search, API profil | ICP-004/007/009, SRCH-001/002, PROF-001/006, PLAT-043; FE: ICP-010, PROF-004/005, SRCH-011 | Wizard Offering → ICP → hasil pertama (keyword) dengan skor nyata. Profil dengan panel "Kenapa?" + evidence drawer. Drill restore pertama di `dr-01` | Waktu rebuild projection |
+| **SPR-07** Tenant foundation | User, workspace, RBAC, RLS, audit | AUTH-003/004/005, AUD-001, ICP-003/004, PLAT-028; FE: AUTH-007/009, ICP-008, SRCH-006 | Sign-up → verifikasi email → workspace → pindah workspace. Viewer mendapat 403 yang tercatat di audit. Suite lintas-tenant hijau di CI. API Offering & ICP | Provider email (Q-D-05) |
+| **SPR-08** ICP & search dasar | Offering/ICP nyata, projection, keyword search, API profil | ICP-007/009, SRCH-001/002, PROF-001/006, BILL-001, PLAT-043; FE: ICP-010, PROF-004/005, SRCH-011 | Wizard Offering → ICP → hasil pertama (keyword) dengan skor nyata. Profil dengan panel "Kenapa?" + evidence drawer. Ledger credit dasar (grant, saldo). Drill restore pertama di `dr-01` | Waktu rebuild projection |
 | **SPR-09** Filter & skor progresif | Filter lengkap, sort, pagination, re-skor progresif | ICP-006, SRCH-003/004/007; FE: BILL-005, PROF-007, DATA-021 | Ganti ICP → halaman pertama ber-skor ≤ 30 detik. Hitungan filter konsisten. Saran zero-result | Kapasitas 60% (Idul Fitri). NFR-PERF-05 |
-| **SPR-10** Credit & unlock | Ledger, usage, unlock, entitlement, organize UI | BILL-001..004, AUTH-006, SRCH-008/010, PLAT-030; FE: SEG-002/004/006, BILL-008, INTL-011 | Buka kontak (1 credit), saldo = Σ ledger, unlock konkuren aman, error entitlement ber-kode. Undangan anggota. Egress proxy aktif | Rantai ledger → usage → unlock dalam satu sprint |
-| **SPR-11** Export & organize | Export dengan pratinjau biaya, list/segment/assign, admin tenant | EXP-001..004, SEG-001/003/005, BILL-006, OPS-010/011/013/014, PLAT-031/032, SRCH-009 | Select → pratinjau biaya → export XLSX → unduh (separuh RG-3). Ops memberi credit ke workspace beta. Kill switch export. Uji formatif dengan 3 calon beta | NFR-PERF-04. Rekrutmen beta (Q-07) |
-| **SPR-12** Beta-ready → **M-2** | Suppression, refresh, feedback, peta | AUD-002, AUTH-008, MON-001/002, INTL-010, DATA-020, BILL-009, GEO-003/004/007, PLAT-047 | Suppression terpropagasi ke search/profil/export. Refresh 1 credit. Feedback opportunity. Peta choropleth. Workspace beta disiapkan. **Go/no-go M-2** | Kompleksitas suppression. Perjanjian beta & privasi (Q-D-08) |
+| **SPR-10** Credit & unlock | Ledger, usage, unlock, entitlement, organize UI | BILL-002..004, OPS-010, SEG-003, AUTH-006, SRCH-008/010, PLAT-030; FE: SEG-002/004/006, BILL-008, INTL-011 | Buka kontak (1 credit), saldo = Σ ledger, unlock konkuren aman, error entitlement ber-kode. Undangan anggota. Egress proxy aktif | Konkurensi unlock & overspend (TC-BILL-003/004) |
+| **SPR-11** Export & organize | Export dengan pratinjau biaya, list/segment/assign, admin tenant | EXP-001..004, SEG-001/005, BILL-006, OPS-011/013/014, GEO-003, PLAT-031/032, SRCH-009 | Select → pratinjau biaya → export XLSX → unduh (separuh RG-3). Ops memberi credit ke workspace beta. Kill switch export. Uji formatif dengan 3 calon beta | NFR-PERF-04. Rekrutmen beta (Q-07) |
+| **SPR-12** Beta-ready → **M-2** | Suppression, refresh, feedback, peta | AUD-002, AUTH-008, MON-001/002, INTL-010, DATA-020, BILL-009, GEO-004/007, PLAT-047 | Suppression terpropagasi ke search/profil/export. Refresh 1 credit. Feedback opportunity + laporan acceptance di ops. Peta choropleth. Workspace beta disiapkan. **Go/no-go M-2** | Kompleksitas suppression. Perjanjian beta & privasi (Q-D-08) |
 | **SPR-13** Webhook & AI dasar | Webhook end-to-end, fondasi AI, territory | EXP-005/006/007, AI-001/002, GEO-005/006, BILL-007, DATA-019 (UI), OPS-018, PLAT-034 | Registrasi webhook menolak `169.254.169.254`. Delivery bertanda tangan HMAC → retry → DLQ → kirim ulang. Territory ranking + drilldown. Dry-run prompt dengan fake provider | Konfigurasi egress. D-15 belum final |
 | **SPR-14** AI brief & upload | Brief ber-sitasi, upload customer, webhook massal | AI-003..007, DATA-017/018, EXP-008/009, PROF-008 | Brief id/en dengan sitasi, cache hit, kill switch. Upload CSV → matched/new/rejected. Kirim seleksi ke webhook. Wave 2 aktif per workspace | Grounding < 98%. Biaya AI (R-05). Kapasitas libur |
 | **SPR-15** Privasi & feature freeze | Seluruh P0 selesai, hardening 1 | AUD-003/004/005, OPS-012/015/016/017, PLAT-033, PLAT-035, stretch | DSR masuk → SLA → diteruskan ke tenant. Koreksi ops memicu recompute. Drill 4 alert. Drill restore `dr-01` + rollback. **Feature freeze** | Input konsultan hukum terlambat |
@@ -819,7 +818,7 @@ R = Responsible, A = Accountable, C = Consulted, I = Informed.
 | RD-04 | ER di bawah ambang RG-6 saat M-1 | S | T | Golden set sejak SPR-03, holdout 30%, review queue, buffer tuning di SPR-06 | Data eng, QA | RG-6 |
 | RD-05 | Kapasitas labeling golden set tidak ada | S | S | Pelabel ditetapkan SPR-01. Mulai 1.000 pasangan | PM | OQ-T-01 |
 | RD-06 | RG-1/RG-2 (usability) gagal di akhir | S | T | Prototype formatif SPR-03, uji formatif SPR-11, sumatif SPR-16 dengan 1 sprint perbaikan | Design | RG-1, RG-2 |
-| RD-07 | D-20 terlambat sehingga UI auth dikerjakan ulang | S | S | Default Kratos. Port provider-agnostic (ADR-19). Batas SPR-04 | TL | D-20 |
+| RD-07 | D-20 terlambat sehingga MFA ops (MVP 0) dan UI auth tertunda | S | S | Default Kratos. Port provider-agnostic (ADR-19). Batas SPR-01 | TL | D-20 |
 | RD-08 | D-15 / DPA provider AI terlambat sehingga AI brief (P0) tertunda dan M-3 terblokir | S | T | Abstraksi + fake provider. AI di wave 2. Batas SPR-11 | Founder | D-15, R-05 |
 | RD-09 | Kebocoran antar tenant atau temuan security terlambat | R | T | QG-09 sejak SPR-07 (tanpa waiver), ZAP nightly, review SPR-16 + retest SPR-17 | TL | R-06, RG-7 |
 | RD-10 | Beta customer kurang atau tidak aktif | S | T | Rekrut sejak SPR-06, LOI, wave 1 minimal 5 | Founder | Q-07 |
@@ -848,17 +847,17 @@ L = likelihood, I = impact. T = tinggi, S = sedang, R = rendah.
 | Q-D-04 | Server perf setara produksi untuk TC-DATA-034 dan PERF-01..07 | Pinjam hardware produksi sebelum go-live + faktor skala | SPR-04 | DevOps |
 | Q-D-05 | Provider email transaksional (TQ-12) | SMTP relay di Indonesia | SPR-04 | TL |
 | Q-D-06 | Basemap peta (TQ-11) | Tanpa basemap / OSM self-hosted | SPR-10 | Design, TL |
-| Q-D-07 | **FR-DATA-014 berprioritas P1, padahal P0 bergantung padanya** (FR-PROF-009 "laporkan data", FR-OPS-008, FR-OPS-009, BR-CRED-05). Naikkan ke P0? | Diperlakukan inti (`US-DATA-020/021`) | SPR-08 | PM |
+| Q-D-07 | ~~FR-DATA-014 P1 padahal P0 bergantung padanya~~ | **Resolved:** PRD menaikkan FR-DATA-014 ke P0 MVP 1 (`US-DATA-020/021`) | — | PM |
 | Q-D-08 | Konsultan hukum: perjanjian beta, pemberitahuan privasi, SLA DSR, retensi & pseudonimisasi, ToS/DPA, DPA provider LLM | Default 04/05 | Beta: SPR-11. DSR/retensi: SPR-14 | Founder |
 | Q-D-09 | Anggaran & jadwal pengadaan `app-02` + VIP/LB (R-08) | Spesifikasi identik `app-01`. Keepalived/VRRP | Pesan SPR-12 | Founder, DevOps |
 | Q-D-10 | Bolehkah closed beta dimulai dengan subset P0 (wave 1, §1.3)? | Ya. M-3 tetap menuntut seluruh P0 | SPR-08 | PM, Founder |
-| Q-D-11 | FR-INTL-010 (P0) mensyaratkan "metrik di ops console", padahal dashboard Intelligence Health (FR-OPS-003) P1. Cukupkah metrik acceptance minimal? | Ya, metrik minimal di `US-INTL-010`, dashboard penuh = stretch | SPR-10 | PM |
-| Q-D-12 | Ops console MVP 0 butuh akses aman, padahal MFA ops (FR-AUTH-006) baru MVP 1. Interim WireGuard + forward-auth diterima? | Ya (`US-PLAT-041`) sampai `US-AUTH-001` | SPR-02 | TL, Security |
+| Q-D-11 | ~~FR-INTL-010 butuh metrik di ops console, padahal FR-OPS-003 P1~~ | **Resolved:** acceptance PRD kini cukup laporan ops sederhana (`US-INTL-010`). Dashboard penuh tetap stretch (`US-OPS-019`) | — | PM |
+| Q-D-12 | ~~Akses aman ops console MVP 0 sebelum MFA ops~~ | **Resolved:** PRD menetapkan FR-AUTH-006 untuk akun ops di MVP 0. MFA ops dibangun di SPR-02 (`US-PLAT-041`, `US-AUTH-001`), tanpa akses interim | — | TL |
 | Q-D-13 | Credit awal beta (OQ-UX-25) dan harga final (D-09) | Lampiran E sebagai grant beta | Beta: SPR-11. Harga: SPR-15 | Founder |
 | Q-D-14 | Target konversi early paid: berapa workspace berbayar / LOI di M-3? | ≥ 3 komitmen | SPR-12 | Founder |
 | Q-D-15 | 04 §17.5 masih menulis "`app-02` di V1", berbeda dengan PRD R-08 (sebelum M-3) | Ikuti PRD. 04 diperbarui | SPR-12 | TL |
-| Q-D-16 | 05 §8.4 menyebut 90 FR P0, padahal PRD punya 91. **FR-OPS-009** belum punya TC (05) dan layar (03 Lampiran A) | Tambah TC + spesifikasi layar koreksi di SCR-36 | SPR-13 (sebelum `US-OPS-017`) | QA, Design |
-| Q-D-17 | FR-ICP-003 & FR-INTL-008 (MVP 0) butuh konteks workspace/ICP dan "breakdown tampil di profil", padahal ICP UI & profil baru ada di MVP 1. Validasi alpha lewat ICP seed + score inspector diterima? | Ya (`US-ICP-002`, `US-OPS-009`) | SPR-04 | PM |
+| Q-D-16 | 05 §8.4 masih menyebut 90 FR P0, padahal PRD kini punya 92. **FR-OPS-009** belum punya TC, FR-DATA-014 (kini P0) belum di §8.4, dan FR-AUTH-006 (ops) belum di kolom MVP 0 §5.2 | Tambah TC & perbarui 05 | SPR-02 (FR-AUTH-006), SPR-12 (lainnya) | QA |
+| Q-D-17 | ~~FR MVP 0 butuh konteks workspace/ICP sebelum UI MVP 1~~ | **Resolved:** PRD §6 menetapkan MVP 0 memakai workspace internal + fixture ICP/Offering buatan ops (`US-ICP-002`, `US-OPS-009`) | — | PM |
 | Q-D-18 | DevOps 1,0 FTE di SPR-00..01 dan SPR-14..17? | Ya, atau kontrak DevOps sementara | Sebelum SPR-00 | Founder |
 | Q-D-19 | Bila tim hanya 3 engineer (§2.4 C), P0 mana yang dinegosiasikan ulang lewat PRD? | Belum ada. Kandidat: upload (FR-DATA-012), territory ranking (FR-GEO-003) | Sebelum SPR-00 | Founder, PM |
-| Q-D-20 | FR-DATA-005 (P0 MVP 0) sudah butuh lookup MX/DNS, sedangkan FR-DATA-011 (lookup MX/SPF, P1 MVP 1) dan OPP-DNS-NO-MX tumpang tindih | MX/DNS dasar di `US-DATA-011` (MVP 0). FR-DATA-011 = SPF/provider hint + evidence (stretch) | SPR-02 | PM, TL |
+| Q-D-20 | ~~FR-DATA-005 vs FR-DATA-011 tumpang tindih (DNS/MX)~~ | **Resolved:** FR-DATA-005 = keberadaan MX untuk verifikasi (`US-DATA-011`). FR-DATA-011 = identifikasi penyedia dari MX/SPF dengan cache DNS yang sama (`US-DATA-022`, stretch) | — | PM, TL |

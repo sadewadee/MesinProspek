@@ -93,7 +93,7 @@ apps/api/
 │  ├─ api/                    hasil oapi-codegen (DO NOT EDIT)
 │  ├─ db/<modul>db/           hasil sqlc per schema (DO NOT EDIT; hanya diimpor store modul pemilik)
 │  ├─ platform/               auth, tenancy, rbac, audit, flags, events, jobs, idempotency, netguard, ids,
-│  │                          problem, pagination, i18n, telemetry (+ clock, apperr, db: ditetapkan dokumen ini)
+│  │                          problem, pagination, i18n, telemetry (+ clock, apperr, db, buildinfo: ditetapkan dokumen ini)
 │  └─ <modul>/                identity · ingest · intelligence · geo · query · action · ai · usage · ops
 │     ├─ service.go           FACADE: interface Service, DTO publik, New(Deps) — satu-satunya API modul
 │     ├─ http.go              handler strict-server untuk operasi OpenAPI milik modul
@@ -101,7 +101,8 @@ apps/api/
 │     ├─ doc.go               tanggung jawab, tabel milik, event yang di-emit/dikonsumsi
 │     └─ internal/
 │        ├─ domain/           tipe & aturan murni; sub-domain murni boleh jadi paket sendiri
-│        │                    (mis. intelligence/internal/scoring, identity/internal/normalize, …/er)
+│        │                    (mis. intelligence/internal/scoring, identity/internal/normalize, identity/internal/er,
+│        │                     geo/internal/geocalc)
 │        ├─ service/          implementasi Service: authz, transaksi, orkestrasi, event, audit
 │        ├─ jobargs/          args job River (dipakai service untuk InsertTx dan jobs.go; mencegah siklus impor)
 │        └─ store/            repository di atas internal/db/<modul>db: row↔domain, pemetaan error pgx
@@ -152,7 +153,7 @@ apps/api/
 | STD-GO-16 | Error di-wrap dengan `fmt.Errorf("<operasi>: %w", err)`: huruf kecil, tanpa titik, tanpa "failed to". Pemeriksaan memakai `errors.Is`/`errors.As` (atau `errors.AsType` di Go 1.26), tidak pernah membandingkan string. | Rantai error utuh | lint `errorlint`, `staticcheck` ST1005 |
 | STD-GO-17 | Error domain = `*apperr.Error{Code, Detail, Meta, Err}`. `Code` diambil dari katalog 04 §11.2; kode baru ditambahkan ke katalog di MR yang sama. `Detail` aman dibaca user, `Err` adalah penyebab internal yang tidak pernah diserialisasi. | Client menangani berdasarkan `code` (ADR-11) | review, test contract |
 | STD-GO-18 | `store` memetakan `pgx.ErrNoRows` → `store.ErrNotFound` dan `*pgconn.PgError` (23505 unique, 23503 FK, 40001 serialization, 55P03 lock timeout, 57014 statement timeout) → error ber-kode. Tipe pgx tidak keluar dari `store`. | Domain tidak bergantung driver | lint `depguard`, review |
-| STD-GO-19 | Pemetaan error → HTTP hanya di `platform/problem` (RFC 9457): `Code` → status, `type`, `title` terlokalisasi, extension `Meta`. Error tanpa kode → 500 generik dengan `correlation_id`. `err.Error()` internal tidak pernah dikirim ke client. Kode untuk 500 generik (`INTERNAL_ERROR`) ditambahkan ke katalog 04 §11.2. | Tidak membocorkan internal (NFR-SEC-01) | test contract (Schemathesis), review |
+| STD-GO-19 | Pemetaan error → HTTP hanya di `platform/problem` (RFC 9457): `Code` → status, `type`, `title` terlokalisasi, extension `Meta`. Error tanpa kode → 500 `INTERNAL_ERROR` generik (04 §11.2) dengan `correlation_id`. `err.Error()` internal, stack trace, dan SQL tidak pernah dikirim ke client. | Tidak membocorkan internal (NFR-SEC-01) | test contract (Schemathesis), review |
 | STD-GO-20 | Error di-log **satu kali** di boundary (middleware HTTP, worker River, `main`). "Log lalu return" dilarang. Panic hanya untuk bug programmer; middleware HTTP dan worker memasang recover yang mengubah panic menjadi 500/job error dan melaporkannya ke GlitchTip. | Log tidak ganda, crash tidak menjatuhkan proses | review |
 
 ```go
@@ -180,7 +181,7 @@ if err != nil {
 | STD-GO-22 | Cancellation dihormati: loop batch memeriksa `ctx.Err()` per iterasi/chunk; setiap dependency punya timeout eksplisit (DB `statement_timeout`, HTTP keluar 10 s, LLM 30 s; 04 §10.8, §12.5, §13.6). | Tidak ada kerja yatim setelah client pergi | review, test |
 | STD-GO-23 | Value di context hanya untuk data lintas-cutting request-scoped (principal, workspace, correlation_id, trace), dengan key unexported dan accessor bertipe (`auth.PrincipalFrom(ctx)`). Parameter bisnis tidak diselundupkan lewat context. | Signature jujur | review |
 | STD-GO-24 | Tidak ada state global yang dapat berubah: logger global (`slog.Default`, `slog.Info`), `http.DefaultClient`, singleton, atau var paket yang diubah setelah start. Yang diizinkan: konstanta, sentinel error, tabel lookup literal read-only, `regexp.MustCompile`, `//go:embed`. | Test paralel aman, dependency eksplisit | lint `gochecknoglobals`, `sloglint` (`no-global`), `forbidigo` |
-| STD-GO-25 | Konfigurasi 12-factor: semua variabel didefinisikan di 04 §18.1 dan di-parse **sekali** di `internal/app/config.go` ke struct bertipe (`time.Duration`, `*url.URL`, enum), lalu divalidasi saat start. Nilai wajib hilang atau invalid → exit non-zero dengan pesan yang menyebut nama variabel, tanpa mencetak nilai secret. Secret dibaca dari `<NAMA>_FILE` (file Compose secrets di tmpfs, 06 §12.3); variabel non-`_FILE` untuk secret hanya diterima saat `MSP_ENV=local`. Parser memakai stdlib (`os.LookupEnv`, `strconv`, `time.ParseDuration`). | Gagal cepat; secret tidak tampil di `docker inspect` | lint `forbidigo` (`os.Getenv`/`os.LookupEnv` hanya di `internal/app`), test config |
+| STD-GO-25 | Konfigurasi 12-factor: semua variabel didefinisikan di 04 §18.1 dan di-parse **sekali** di `internal/app/config.go` ke struct bertipe (`time.Duration`, `*url.URL`, enum), lalu divalidasi saat start. Nilai wajib hilang atau invalid → exit non-zero dengan pesan yang menyebut nama variabel, tanpa mencetak nilai secret. Semua variabel berprefiks `MSP_` (kecuali standar `OTEL_*`). Secret hanya dibaca dari `MSP_<NAMA>_FILE` (file Compose secrets di tmpfs hasil dekripsi SOPS, 06 §12.3); nilai secret tidak pernah dikirim sebagai env biasa. Variabel non-`_FILE` untuk secret hanya diterima saat `MSP_ENV` = `local`/`ci` (nilai dummy); di staging/production → exit non-zero. Parser memakai stdlib (`os.LookupEnv`, `strconv`, `time.ParseDuration`). | Gagal cepat; secret tidak tampil di `docker inspect` | lint `forbidigo` (`os.Getenv`/`os.LookupEnv` hanya di `internal/app`), test config |
 | STD-GO-26 | Konfigurasi domain berversi (model skor, katalog opportunity, taksonomi, daftar referensi, prompt) adalah file di repo yang di-`//go:embed` atau dibaca dari `data/`, bukan variabel env (04 §18.1). `.env.example` memuat semua variabel dengan nilai dummy aman. | Reproducibility (NFR-DATA-01) | review, QG-23 |
 
 ### 3.4 Konkurensi
@@ -263,7 +264,7 @@ LIMIT @page_size;
 | STD-DB-07 | Koneksi runtime memakai role `msp_app`, `msp_pipeline`, `msp_ops`, atau `msp_readonly_replica` sesuai 04 §5.8. `msp_owner`/superuser hanya untuk `msp migrate`. Satu `pgxpool.Pool` per role/target, dibuat di `internal/app`. | Least privilege, RLS tidak di-bypass | Ansible + test isolasi (06 M-7) |
 | STD-DB-08 | Transaksi pendek: tidak ada panggilan HTTP, LLM, DNS, atau object storage di dalam transaksi. Search/profil memakai transaksi `ReadOnly` di replica. Isolasi default READ COMMITTED; SERIALIZABLE hanya bersama retry eksplisit pada SQLSTATE 40001. | Lock singkat, tidak ada koneksi tertahan | review |
 | STD-DB-09 | Saldo credit: lock baris `usage.credit_balance … FOR UPDATE` dengan urutan tetap `(workspace_id, meter)`; ledger append-only (INSERT saja; 04 §14.5). Advisory lock hanya `pg_advisory_xact_lock` dengan key dari registry `platform/db/locks.go`. Advisory lock tingkat sesi hanya di koneksi langsung (migrasi). | Tidak overspend, tidak deadlock | test TC-BILL-003/004 |
-| STD-DB-10 | Mode statement pgx diselaraskan dengan PgBouncer transaction mode (PgBouncer ≥ 1.21 dengan `max_prepared_statements`, atau `QueryExecModeDescribeExec`). Pilihan final ditetapkan saat bootstrap dan diuji di CI. `rows.Close()` dan `rows.Err()` selalu diperiksa. | Error "prepared statement already exists" di produksi | lint `rowserrcheck`, `sqlclosecheck`, test integrasi |
+| STD-DB-10 | Mode statement pgx untuk pool lewat PgBouncer diselaraskan dengan transaction mode (PgBouncer ≥ 1.21 dengan `max_prepared_statements`, atau `QueryExecModeDescribeExec`). Pilihan final ditetapkan saat bootstrap dan diuji di CI. Pool langsung (River, migrate; STD-JOB-11) memakai mode default pgx. `rows.Close()` dan `rows.Err()` selalu diperiksa. | Error "prepared statement already exists" di produksi | lint `rowserrcheck`, `sqlclosecheck`, test integrasi |
 
 ```go
 // platform/tenancy — satu-satunya pintu transaksi tenant
@@ -336,7 +337,7 @@ DROP TABLE action.list;
 | STD-JOB-08 | `MaxAttempts` eksplisit per kind. Backoff mengikuti 04 (pipeline 5× eksponensial 2 s → 5 m + jitter; webhook 7× jadwal 1 m … 12 j via `NextRetry`). Error permanen (validasi, data rusak, `410`) → `river.JobCancel(err)`. Job yang kehabisan percobaan (`discarded`) = DLQ dan dapat di-redrive dari ops console (FR-OPS-002). Job yang memanggil jaringan mengisi `Timeout(job)`. | Retry hanya untuk kegagalan sementara | test resilience (05 §3.18) |
 | STD-JOB-09 | Job > 1 menit atau > 10.000 baris diproses per batch dengan checkpoint di DB (`platform.stage_run`, `score_job.done/total`; 04 §6.2, §7.9) dan melanjutkan dari checkpoint setelah restart. Progres dilaporkan untuk UI (NFR-PERF-05). | Restart tidak mengulang dari nol | review, test TC-OPS-008 |
 | STD-JOB-10 | Observability per job: span `job <kind>` (middleware OTel River), log dengan `job_id`, `job_kind`, `queue`, `attempt`, `workspace_id`, `duration_ms`; metrik antrean 04 §16.3. `correlation_id` dan `traceparent` dari request asal dibawa di metadata job. | RG-5 (backlog, failure rate) | review, alert drill |
-| STD-JOB-11 | Client River memakai koneksi langsung ke primary (`DATABASE_URL_DIRECT`, 04 §18.1) untuk LISTEN/NOTIFY dan leader election, karena keduanya tidak berfungsi lewat PgBouncer transaction mode. Bila hanya PgBouncer yang tersedia (mis. aturan nftables), worker dijalankan dalam mode poll-only. Jadwal berkala memakai periodic job River, bukan cron host. | Worker tidak "tidur" diam-diam | test integrasi, review infra |
+| STD-JOB-11 | Trafik request `api` boleh lewat PgBouncer transaction mode (RLS memakai `SET LOCAL`; `InsertTx` River ikut transaksi aplikasi). Setiap proses yang menjalankan client River (`msp worker`: fetch, `LISTEN/NOTIFY`, leader election, periodic job) memakai **pool kecil khusus yang terhubung langsung** ke primary `db-01:5432` (`MSP_DATABASE_URL_DIRECT_FILE`, 04 §17.4, §18.1), karena `LISTEN` butuh koneksi tingkat sesi yang rusak di transaction pooling. Fallback terdokumentasi bila koneksi langsung tidak tersedia: River `PollOnly` (`MSP_RIVER_POLL_ONLY=true`). Jadwal berkala memakai periodic job River, bukan cron host. | Worker tidak "tidur" diam-diam | test integrasi, review infra |
 
 ```go
 // action/internal/jobargs/export.go — args kecil, kind stabil, unik per export
@@ -382,7 +383,7 @@ return s.tenancy.WithTx(ctx, ws, func(tx pgx.Tx) error {
 | ID | Aturan | Alasan | Penegakan |
 |---|---|---|---|
 | STD-CONTRACT-01 | Spec adalah sumber kebenaran. Server stub Go dan client TS di-generate; type request/response tidak ditulis tangan. Regenerasi yang menghasilkan diff = gagal. | Kontrak dan kode tidak bisa menyimpang | CI QG-14 |
-| STD-CONTRACT-02 | Spec memakai subset OpenAPI 3.1 yang didukung seluruh toolchain (oapi-codegen, openapi-typescript, oasdiff, Spectral, Schemathesis). Subset diverifikasi lewat spike saat bootstrap; konstruksi di luar subset ditolak rule Spectral kustom. | Dukungan 3.1 di generator Go belum tentu penuh | lint Spectral (QG-12) |
+| STD-CONTRACT-02 | Spec ditulis dalam OpenAPI 3.1, tetapi hanya memakai subset yang didukung seluruh toolchain (oapi-codegen, openapi-typescript, oasdiff, Spectral, Schemathesis). oapi-codegen baru mendukung 3.1 secara awal (sejak v2.8.0, butuh Go ≥ 1.25), sehingga subset ditetapkan oleh spike toolchain Sprint 0 (04 TQ-18, 06 §18); konstruksi di luar subset ditolak rule Spectral kustom. Fallback bila spike gagal: spec 3.0.3, atau 3.1 di-*down-convert* lewat overlay untuk generator. | Dukungan 3.1 di generator Go belum penuh | lint Spectral (QG-12) |
 | STD-CONTRACT-03 | Breaking change (hapus/rename field atau operasi, field opsional menjadi wajib, enum request menyempit, ubah tipe/format/semantik) diblok kecuali berlabel `api-breaking` + rencana versi. Di dalam `/v1` hanya perubahan aditif. | Integrasi customer stabil | CI QG-13 (oasdiff) |
 | STD-CONTRACT-04 | Deprecation: `deprecated: true` di spec + header `Deprecation` (RFC 9745) dan `Sunset` (RFC 8594) di respons, minimal satu rilis minor dan 90 hari sebelum penghapusan *(usulan, berlaku sejak API key V1)*. | Waktu migrasi untuk integrator | review |
 | STD-CONTRACT-05 | Event & webhook: JSON Schema 2020-12 di `contracts/events/`, yaitu envelope `envelope-<major>.<minor>.json` (04 §12.1) + satu file per tipe & versi `<type>/<major>.<minor>.json`. Versi yang sudah terbit immutable; perubahan aditif = minor, breaking = major baru yang dikirim paralel selama masa transisi *(usulan)*. | Konsumen men-dedupe & mem-parse dengan aman | CI QG-14 (ajv, immutability) |
@@ -397,7 +398,7 @@ return s.tenancy.WithTx(ctx, ws, func(tx pgx.Tx) error {
 | STD-API-03 | POST berbayar mendeklarasikan header `Idempotency-Key` sebagai *required*; middleware `platform/idempotency` menegakkan semantik 04 §11.3 (replay, 409 in-progress, 422 key reuse). | BR-CRED-04 | lint Spectral, test TC-BILL-002 |
 | STD-API-04 | Operasi dengan p95 > 1 s atau berbayar massal bersifat async: `202 Accepted` + `Location` + body job `{id,type,status,progress{done,total},result,error}`; client polling `GET /v1/jobs/{id}`. | Request tidak timeout di Traefik | review |
 | STD-API-05 | List memakai cursor pagination `?cursor=&limit=` (maks 100) → `{items, next_cursor, count?}`; `count` membawa flag eksak/estimasi (FR-SRCH-006). | ADR-12 | lint Spectral |
-| STD-API-06 | Error RFC 9457 dengan `code` dari katalog 04 §11.2 + `correlation_id`; `type` = `https://docs.mesinprospek.id/errors/<code-kebab>`; `title` dilokalkan dari `Accept-Language`. Error validasi 422 membawa extension `errors[]` berisi `{pointer, code}` per field *(usulan, ditambahkan ke 04 §11.2)*. Resource milik workspace lain → 404, bukan 403. | Client bercabang pada `code`; keberadaan resource tidak bocor | test contract, TC-AUD-007 |
+| STD-API-06 | Error RFC 9457 dengan `code` dari katalog 04 §11.2 + `correlation_id`; `type` = `https://docs.mesinprospek.id/errors/<code-kebab>`; `title` dilokalkan dari `Accept-Language`. Error validasi 422 `VALIDATION_FAILED` membawa extension member `errors[]` (RFC 9457) berisi `{pointer | field, code, detail}` per pelanggaran (04 §11.2); error tak terduga = 500 `INTERNAL_ERROR` tanpa detail internal. Resource milik workspace lain → 404, bukan 403. | Client bercabang pada `code`; keberadaan resource tidak bocor | test contract, TC-AUD-007 |
 | STD-API-07 | Body request `additionalProperties: false` dengan batas panjang string/array di schema. Client wajib toleran terhadap field baru dan nilai enum baru di respons (tolerant reader). | Typo tertangkap; evolusi aditif aman | lint Spectral, review FE |
 | STD-API-08 | Header baku: `MSP-Workspace` (endpoint tenant), `MSP-CSRF` (non-GET via cookie), `MSP-Correlation-Id` (diterima/dibangkitkan, selalu dikembalikan), `RateLimit-*`/`Retry-After`, `ETag`/`If-Match` untuk PUT ICP/Offering (04 §11.1). | ADR-25, lost update | test contract |
 | STD-API-09 | Handler tipis: validasi struktural dilakukan tipe hasil generate + middleware validator OpenAPI; validasi semantik dan aturan resource di service. Handler tidak mengakses DB. | Logika bisnis teruji tanpa HTTP | lint `depguard`, review |
@@ -511,7 +512,7 @@ type Commercial struct{ EmployeeCount int }
 | STD-TEST-06 | Waktu dan randomness dikontrol: `clock.Fake`, seed tetap. `time.Sleep` untuk sinkronisasi dilarang; gunakan `testing/synctest` atau sinkronisasi eksplisit. | Test cepat dan tidak flaky | review |
 | STD-TEST-07 | Fixture hanya sintetis (`msp-synth` dengan seed tetap) atau golden set yang disetujui; tidak ada PII produksi (05 §4.5). Test redaksi memakai nilai canary PII. | BR-PRIV, UU PDP | CI QG-18, review |
 | STD-TEST-08 | Coverage: paket normalisasi, ER, scoring (termasuk opportunity & kalkulasi geo) ≥ 85% statement; backend ≥ 75% tanpa kode generate (NFR-MAINT-01); diff coverage ≥ 80% *(usulan, 05 §9.1)*. Coverage adalah syarat minimum, bukan target desain test. | NFR-MAINT-01 | CI QG-06, QG-07 |
-| STD-TEST-09 | Perbaikan bug S1/S2 disertai test regresi bertanda TC sebelum issue ditutup (05 §5.4). Unit, property, dan integration test tidak pernah di-retry otomatis; quarantine mengikuti 05 §5.4. Suite isolasi tenant, RBAC, SSRF, billing, suppression, redaksi, dan scoring regression tidak pernah di-quarantine. | Flaky tidak boleh menyembunyikan bug kritis | CI quarantine-check |
+| STD-TEST-09 | Perbaikan bug S1/S2 disertai test regresi bertanda TC sebelum issue ditutup (05 §5.4). Unit, property, dan integration test tidak pernah di-retry otomatis; quarantine hanya dengan issue + owner, maks 7 hari, total ≤ 1% suite, lewat penanda `testutil.Quarantine`/tag `@quarantine` (05 §5.4, 06 §16.3). Suite isolasi tenant, RBAC, SSRF, billing, suppression, redaksi, dan scoring regression tidak pernah di-quarantine. | Flaky tidak boleh menyembunyikan bug kritis | CI quarantine-check |
 | STD-TEST-10 | Frontend: Vitest + Testing Library; query berdasarkan role/label/teks (bukan class; `data-testid` hanya bila terpaksa). Setiap komponen inti punya story untuk semua state (05 §3.6) yang dipakai ulang di test (`composeStories`) + `vitest-axe`. Tidak ada snapshot DOM besar. | Test mengikuti cara user (dan screen reader) | CI QG-05, QG-16 |
 | STD-TEST-11 | Mock API frontend di level jaringan memakai MSW dengan tipe `paths` dari `@msp/api-client`. Fixture respons divalidasi terhadap OpenAPI. | Mock tidak menyimpang dari kontrak | test |
 | STD-TEST-12 | Playwright: selector role/label, data disiapkan lewat API/seed, satu workspace baru per test, tanpa sleep tetap, anotasi `tc`, tag `@smoke` untuk critical path (05 §3.14). | E2E stabil | CI QG-17 |
@@ -588,7 +589,7 @@ export const searchQuery = (api: ApiClient, ws: string, p: SearchParams) =>
 |---|---|---|---|
 | STD-FE-10 | Sesi dimiliki API Go (`__Host-msp_sess`, HttpOnly). Web tidak membaca atau menyimpan token di JS, `localStorage`, maupun `sessionStorage`. Layout `(app)` memvalidasi sesi lewat `GET /v1/me` di server dan redirect ke `/auth/login` bila 401. Flow login/sign-up/verify berada di balik adapter `lib/auth` yang agnostik terhadap IdP (Kratos atau OIDC, ADR-19); halaman tidak memanggil SDK IdP langsung. | D-20 masih Open; token tidak terekspos XSS | ESLint `no-restricted-globals` (`localStorage` di `lib/auth`), review |
 | STD-FE-11 | Gating UI per role/plan memakai `/v1/me` + `/v1/entitlements`. Item yang tidak diizinkan tidak dirender (03 §2.5), tetapi server tetap menegakkan. | FR-PROF-009, FR-AUTH-004 | test RBAC E2E (J-10) |
-| STD-FE-12 | Form memakai **react-hook-form + zod** (`@hookform/resolvers`). Alasan: input uncontrolled meminimalkan re-render pada form panjang (wizard ICP, mapping upload, webhook); skema zod sekaligus menjadi tipe TS; pesan validasi berupa kunci i18n. Server tetap validator final; error 422 `errors[].pointer` dipetakan ke `setError`. | INP ≤ 200 ms (NFR-PERF-03), satu sumber validasi client | review |
+| STD-FE-12 | Form memakai **react-hook-form + zod** (`@hookform/resolvers`). Alasan: input uncontrolled meminimalkan re-render pada form panjang (wizard ICP, mapping upload, webhook); skema zod sekaligus menjadi tipe TS; pesan validasi berupa kunci i18n. Server tetap validator final; error 422 `errors[].pointer`/`field` dipetakan ke `setError` (04 §11.2). | INP ≤ 200 ms (NFR-PERF-03), satu sumber validasi client | review |
 | STD-FE-13 | Aksi berbayar selalu melewati dialog konfirmasi biaya (SCR-14, P-13). Tombol submit nonaktif selama mutasi berjalan; retry memakai `Idempotency-Key` yang sama. | BR-CRED-04, FR-BILL-004 | test E2E J-04/J-06 |
 | STD-FE-14 | State yang menentukan hasil (`q`, `f`, `icp`, `sort`, `view`, `evidence`, …) ada di URL (03 §2.4) lewat helper `lib/url-state` yang mem-parse `searchParams` dengan zod, dan tidak diduplikasi ke state lokal. State UI sementara memakai `useState`/`useReducer`. Global store (Redux, Zustand, Context besar) tidak dipakai tanpa ADR. | Back/forward & berbagi tautan bekerja (FR-SRCH-005) | review |
 
@@ -651,15 +652,17 @@ export const searchQuery = (api: ApiClient, ws: string, p: SearchParams) =>
 
 ### 13.1 CODEOWNERS (format GitLab)
 
-Mengikuti 06 §2.3, dengan path paket kritis per modul. Sintaks GitLab: **satu pola per baris**, diikuti owner (`@user`, `@grup`, atau email); di dalam satu section, pola terakhir yang cocok menang.
+Mengikuti 06 §2.3, dengan path paket kritis per modul. Sintaks GitLab: **satu pola per baris**, diikuti owner (`@user`, `@grup`, atau email); di dalam satu section (atau seluruh file bila tanpa header `[Section]`), pola terakhir yang cocok menang, sehingga pola umum ditulis sebelum pola spesifik.
 
 ```
 # .gitlab/CODEOWNERS
 *                                                           @msp/backend @msp/web
+/docs/                                                      @msp/product
+/docs/02-design-system/                                     @msp/design
+/docs/08-engineering-standards.md                           @msp/backend @msp/web
 /apps/web/                                                  @msp/web
 /packages/ui/                                               @msp/web @msp/design
 /packages/design-tokens/                                    @msp/design @msp/web
-/docs/02-design-system/                                     @msp/design
 /apps/api/                                                  @msp/backend
 /apps/api/internal/identity/                                @msp/data-intel
 /apps/api/internal/intelligence/                            @msp/data-intel
@@ -672,9 +675,9 @@ Mengikuti 06 §2.3, dengan path paket kritis per modul. Sintaks GitLab: **satu p
 /data/                                                      @msp/data-intel
 /infra/                                                     @msp/platform
 /.gitlab-ci.yml                                             @msp/platform
+/ci/                                                        @msp/platform
 /scripts/ci/                                                @msp/platform
-/docs/                                                      @msp/product
-/docs/08-engineering-standards.md                           @msp/backend @msp/web
+/scripts/release/                                           @msp/platform
 ```
 
 ### 13.2 Checklist review
@@ -800,7 +803,8 @@ linters:
             - { pkg: "net/http/pprof", desc: "daftarkan handler pprof eksplisit di mux admin (STD-GO-38)" }
         pure:   # domain & sub-domain murni (STD-GO-05)
           files: ["**/internal/*/internal/domain/**", "**/internal/*/internal/scoring/**",
-                  "**/internal/*/internal/normalize/**", "**/internal/*/internal/er/**"]
+                  "**/internal/*/internal/normalize/**", "**/internal/*/internal/er/**",
+                  "**/internal/*/internal/opportunity/**", "**/internal/*/internal/geocalc/**"]
           deny:
             - { pkg: "github.com/jackc/pgx", desc: "domain murni tanpa I/O" }
             - { pkg: "net/http", desc: "domain murni tanpa I/O" }

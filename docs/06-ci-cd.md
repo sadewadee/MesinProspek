@@ -9,11 +9,11 @@
 | Tanggal | 2026-10-10 |
 | Basis | `README.md` (struktur monorepo), `00-analisis-dokumen-awal.md` (D-11, D-12, D-14), `01-prd.md` (§10 NFR, §12 release gate & DoD), `04-technical-design.md` (ADR-18, ADR-21, ADR-22, §18), `05-test-strategy.md` (§3), MVP Pack v1.2 §11, §14, §15 |
 | Keputusan | **D-18** platform CI/CD = GitLab CE self-hosted (Proposed) · **D-19** hosting & runtime = dedicated server di DC Indonesia (dedicated: Accepted; stack: Proposed) · **D-21** backend = **Go** (Accepted) |
-| Menggantikan | Baris README *Repo*, *Backend*, *Worker*, *Python tooling*, *CI/CD*, *Hosting* (GitHub, GitHub Actions, AWS, Python/FastAPI). README perlu diperbarui. |
+| Menggantikan | Baris README *Repo*, *Backend*, *Worker*, *Python tooling*, *CI/CD*, *Hosting* (GitHub, GitHub Actions, AWS, Python/FastAPI). README sudah diperbarui. |
 | Audience | Engineering, DevOps/Platform, QA, Tech lead |
 | Menutup | G-17 (strategi CI/CD, environment, migrasi DB) |
 
-> Konvensi: `QG-nn` = quality gate (§8). Contoh YAML, Ansible, dan konfigurasi bersifat **ilustratif**, bukan file final. Jam ditulis dalam WIB (UTC+7); schedule GitLab diset ke zona `Asia/Jakarta`. Nama package Go di bawah `apps/api/internal/` (mis. `internal/identity/normalize`) adalah asumsi kerja; nama final mengikuti 04.
+> Konvensi: `QG-nn` = quality gate (§8). Contoh YAML, Ansible, dan konfigurasi bersifat **ilustratif**, bukan file final. Jam ditulis dalam WIB (UTC+7); schedule GitLab diset ke zona `Asia/Jakarta`. Path package Go mengikuti layout 04 §3.1: logika domain berada di `apps/api/internal/<modul>/internal/<paket>` (mis. `internal/identity/internal/normalize`, `internal/identity/internal/er`, `internal/intelligence/internal/scoring`); bila berbeda, yang berlaku 04.
 
 ---
 
@@ -76,7 +76,7 @@
 | **D-19** | **Hosting & runtime = dedicated server di DC Indonesia** (dedicated: Accepted; stack: Proposed; = ADR-18) | Residensi (D-14), biaya |
 | D-19.1 | Topologi: `app-01` (kelak `app-02`), `db-01` (primary), `db-02` (hot standby + read replica), `stor-01` (SeaweedFS), `ops-01` (GitLab, registry, monitoring, Tang), `ci-01` (runner), `stg-01` (staging), `dr-01` (target drill/DR, boleh sewa per jam) | Selaras 04 §2.2 |
 | D-19.2 | **Docker Engine + Docker Compose** + **Traefik v3** (Let's Encrypt). Deploy **blue/green** dengan *weighted service* Traefik (canary 10% → 100%). | Sederhana untuk 1–2 app server |
-| D-19.3 | **PostgreSQL 16 + PostGIS** bare metal (PGDG) + PgBouncer, streaming replication ke `db-02`, failover manual via playbook | Patroni saat ada node ketiga |
+| D-19.3 | **PostgreSQL 16 + PostGIS** bare metal (PGDG) + PgBouncer (transaction mode, hanya untuk trafik request `api`; client River di worker dan `msp migrate` terhubung langsung ke `db-01:5432` dengan pool kecil khusus, fallback River `PollOnly`; 04 §17.4), streaming replication ke `db-02`, failover manual via playbook | Patroni saat ada node ketiga |
 | D-19.4 | **Redis** di `app-01` (opsional: cache, rate limit, counter; bukan sumber kebenaran). Object storage **SeaweedFS** (master + volume + filer + S3 gateway, Apache-2.0) di `stor-01`. Alternatif: **Garage**. | Antrean job ada di Postgres (River, ADR-06). MinIO community edition sudah diarsipkan (tanpa binary/image sejak Okt 2025). |
 | D-19.5 | **Ansible**: hardening OS, user, nftables, **WireGuard** (akses admin/SSH), fail2ban, unattended security upgrades, Docker, layanan. Disk **LUKS** dengan unlock Clevis + Tang (fallback dropbear-initramfs). | Satu alat untuk provisioning, konfigurasi, dan deploy |
 | D-19.6 | Secret: **SOPS + age** di repo, didekripsi Ansible saat deploy ke **tmpfs** (ADR-22). Kredensial deploy di **GitLab CI/CD variables masked + protected**, di-scope per environment. | Tanpa cloud secret manager |
@@ -85,7 +85,7 @@
 | D-19.9 | Zona jaringan `edge/prod`, `data/prod`, `ops`, `ci`, `stg` (VLAN + nftables). Port publik hanya 80/443 (`app-01`) dan UDP WireGuard (`ops-01`). | Blast radius kecil |
 | D-19.10 | Docker Swarm/k3s **bukan** bagian MVP. Ditinjau bila > 2 app server atau dibutuhkan autoscaling. | Hindari kompleksitas dini |
 | **D-21** | **Backend = Go** (Accepted). Frontend tetap Next.js + TypeScript (Node 24, pnpm, Turborepo). | Keputusan founder |
-| D-21.1 | `apps/api/` = satu Go module. Binary statis **`cmd/msp`** dengan subcommand `api`, `worker`, `migrate`, dan `tool …` (04 §3.1). Usulan aksi `tool` tambahan: `healthcheck` (healthcheck container distroless), `snapshot-publish`, `score-model-activate` (dipanggil pipeline, §10). | Satu image, beda command per container |
+| D-21.1 | `apps/api/` = satu Go module. Binary statis **`cmd/msp`** dengan subcommand `api`, `worker`, `migrate`, dan `tool …` (04 §3.1). Aksi `tool` yang dipanggil pipeline (`healthcheck` untuk healthcheck container distroless, `snapshot-publish`, `score-model-activate`, `score-reproduce`; §10) sudah tercantum di 04 §3.1. | Satu image, beda command per container |
 | D-21.2 | Akses DB: **sqlc** (query di `apps/api/db/queries/`, kode hasil generate di `apps/api/internal/db/<modul>db/`), driver pgx v5 (ADR-26) | Query SQL eksplisit, type-safe |
 | D-21.3 | Migrasi: **goose** (SQL di `apps/api/db/migrations/`, di-embed ke binary, dijalankan `msp migrate up`; ADR-26) | Migrasi ikut image yang sama (build once) |
 | D-21.4 | Job queue + outbox: **River** (Postgres-backed, ADR-06/07). Tabel River dimigrasi oleh `msp migrate up` (rivermigrate) sebelum migrasi aplikasi. | Transaksional dengan data, tanpa broker terpisah |
@@ -170,11 +170,14 @@ Changelog di GitLab Release menautkan setiap baris ke MR, dan deskripsi MR memua
 `.gitlab/CODEOWNERS` memakai format GitLab (langsung berlaku bila kelak pindah ke tier berbayar). Di CE, file ini dibaca `mr:gate` dan dipakai untuk menyarankan reviewer.
 
 ```
-# .gitlab/CODEOWNERS (ilustratif). Pola terakhir yang cocok menang.
+# .gitlab/CODEOWNERS (ilustratif). Sintaks GitLab: SATU pola path per baris, diikuti owner (@user, @grup, email).
+# Tanpa header [Section], pola terakhir yang cocok menang → pola umum ditulis lebih dulu, pola spesifik sesudahnya.
 *                                     @msp/backend @msp/web
-/apps/web/  /packages/ui/             @msp/web
-/packages/design-tokens/              @msp/design @msp/web
+/docs/                                @msp/product
 /docs/02-design-system/               @msp/design
+/apps/web/                            @msp/web
+/packages/ui/                         @msp/web @msp/design
+/packages/design-tokens/              @msp/design @msp/web
 /apps/api/                            @msp/backend
 /apps/api/internal/identity/          @msp/data-intel
 /apps/api/internal/intelligence/      @msp/data-intel
@@ -183,9 +186,14 @@ Changelog di GitLab Release menautkan setiap baris ke MR, dan deskripsi MR memua
 /apps/api/db/migrations/              @msp/backend @msp/platform
 /contracts/                           @msp/api-owners
 /data/                                @msp/data-intel
-/infra/  /.gitlab-ci.yml  /ci/  /scripts/ci/   @msp/platform
-/docs/                                @msp/product
+/infra/                               @msp/platform
+/.gitlab-ci.yml                       @msp/platform
+/ci/                                  @msp/platform
+/scripts/ci/                          @msp/platform
+/scripts/release/                     @msp/platform
 ```
+
+Bila kelak dibutuhkan owner berlapis per area (mis. security wajib ikut untuk `platform`), file dapat dipecah dengan header section GitLab (`[Security]`, `[Data]`); setiap section dievaluasi terpisah dan `mr:gate` mewajibkan approval dari setiap section yang cocok. Versi lengkap (path paket kritis per modul) ada di `08-engineering-standards.md` §13.1.
 
 Job **`mr:gate`** (manual, `allow_failure: false`) membuat pipeline berstatus *blocked*. Dengan *Pipelines must succeed*, MR **tidak bisa di-merge** sebelum job ini dijalankan dan lulus. Script memeriksa:
 1. ≥ 1 approval dari owner setiap area yang tersentuh. **2 approval** untuk path berisiko (tabel di bawah) saat tim ≥ 4 engineer.
@@ -335,14 +343,14 @@ Service: `postgres` (`postgis/postgis:16-3.5`, pin digest), `redis`, `seaweedfs`
 | Zona | Host | Inbound yang diizinkan (nftables) |
 |---|---|---|
 | edge/prod | `app-01` (`app-02`) | 80/443 publik → Traefik. SSH hanya dari subnet WireGuard dan IP privat `ops-01` |
-| data/prod | `db-01`, `db-02`, `stor-01` | 5432/6432 dari app host; 8333 (S3 gateway SeaweedFS) dari app host; scrape exporter dari `ops-01`; SSH dari WireGuard/`ops-01` |
+| data/prod | `db-01`, `db-02`, `stor-01` | 6432 (PgBouncer, `api`) dan 5432 (koneksi langsung: client River di worker, `migrate`; replica `db-02`) dari app host; 8333 (S3 gateway SeaweedFS) dari app host; scrape exporter dari `ops-01`; SSH dari WireGuard/`ops-01` |
 | ops | `ops-01` | UDP 51820 publik (WireGuard). GitLab, registry, Grafana hanya dari WireGuard dan zona privat |
 | ci | `ci-01` | Tanpa inbound publik. Outbound: internet (proxy modul/paket) + `ops-01`. **Tidak** punya rute ke zona prod/stg |
 | stg | `stg-01` | 443 dari WireGuard. SSH dari WireGuard/`ops-01` |
 
 **Sizing awal (indikatif, direvisi setelah Q-02):** `app-01` 16 core/64 GB/2× NVMe 1 TB RAID1 · `db-01`, `db-02` 16–24 core/128 GB/4× NVMe 2 TB RAID10 · `stor-01` 8 core/32 GB/≥ 4 disk data · `ops-01` 16 core/64 GB/2× NVMe 2 TB · `ci-01` 16 core/64 GB/2× NVMe 1 TB · `stg-01` 16 core/64–128 GB/2× NVMe 2 TB (menampung dataset sintetis 5 juta).
 
-**Risiko yang diterima di MVP:** `app-01` adalah SPOF (04 §2.2). Failover DB manual (±30 menit). `ops-01` menampung GitLab sekaligus monitoring. Bila `ops-01` mati, deploy berhenti, tetapi rollback tetap bisa: image lama ada di cache host, dan playbook dapat dijalankan Maintainer dari laptop via WireGuard (break-glass). `app-02` dijadwalkan sebelum paid GA (Q-CI-05).
+**Risiko yang diterima di MVP:** `app-01` adalah SPOF (04 §2.2). Failover DB manual (±30 menit). `ops-01` menampung GitLab sekaligus monitoring. Bila `ops-01` mati, deploy berhenti, tetapi rollback tetap bisa: image lama ada di cache host, dan playbook dapat dijalankan Maintainer dari laptop via WireGuard (break-glass). MVP 0–M-2: `app-01` tunggal (restore cepat via Ansible); `app-02` aktif sebelum M-3 (R-08, Q-CI-05).
 
 ---
 
@@ -360,7 +368,7 @@ Pipeline berjalan pada event `merge_request_event`. Pipeline branch ganda dicega
 | contracts | `contracts/**`, `apps/api/internal/api/**`, `packages/api-client/**` | `contracts` |
 | tokens | `docs/02-design-system/tokens/**`, `packages/design-tokens/**` | `tokens` |
 | e2e | `apps/**`, `packages/**`, `contracts/**`, `infra/docker/**` | `build:mr-images`, `e2e:smoke` |
-| scoring | konfigurasi versi skor & geo (`apps/api/internal/intelligence/scoring/models/**`, konfigurasi geo) | `model:regression` |
+| scoring | konfigurasi versi skor & geo (`apps/api/internal/intelligence/internal/scoring/models/**`, konfigurasi geo) | `model:regression` |
 | prompts | prompt & eval set modul `ai` | `ai:eval` |
 | er | `apps/api/internal/identity/**` | `er:golden-synthetic` |
 | infra | `infra/ansible/**`, `infra/docker/**` | `infra:lint`, `infra:molecule` |
@@ -437,7 +445,7 @@ RUN --mount=type=cache,target=/go/pkg/mod go mod download
 COPY apps/api/ ./
 ARG GIT_SHA
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X msp/internal/buildinfo.Commit=${GIT_SHA}" -o /out/msp ./cmd/msp
+    CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X <module-path>/internal/platform/buildinfo.Commit=${GIT_SHA}" -o /out/msp ./cmd/msp
 FROM gcr.io/distroless/static-debian12:nonroot@sha256:<digest>
 COPY --from=build /out/msp /msp
 ENTRYPOINT ["/msp"]
@@ -618,14 +626,14 @@ Tahap: **MR** · **main** · **rc** = kandidat rilis (§5.4) · **rel** = pipeli
 | QG-02 | MR gate | MR | ≥ 1 approval owner (2 untuk path berisiko saat tim ≥ 4), approver ≠ author, approval setelah commit terakhir, thread resolved, label wajib | Ya | §2.3 |
 | QG-03 | Lint & format | MR | gofmt/goimports bersih, `go mod tidy -diff` kosong, `go vet` + golangci-lint (termasuk depguard batas modul) 0 temuan; ESLint, Prettier 0 error | Ya | DoD, NFR-MAINT-01, ADR-01 |
 | QG-04 | Kompilasi & type check | MR | `go build ./...` (semua build tag), `tsc --noEmit`: 0 error | Ya | NFR-MAINT-01 |
-| QG-05 | Unit, integration & fuzz smoke | MR | `go test -race` dan Vitest 100% lulus (karantina §16.3 maks 14 hari); fuzz smoke tanpa crash | Ya | DoD §12.2 |
+| QG-05 | Unit, integration & fuzz smoke | MR | `go test -race` dan Vitest 100% lulus (karantina §16.3: hanya ber-issue + owner, maks 7 hari, ≤ 1% suite); fuzz smoke tanpa crash | Ya | DoD §12.2 |
 | QG-06 | Coverage package kritis | MR | ≥ 85% statement (setara line, NFR-MAINT-01) untuk package normalisasi, ER, scoring | Ya | NFR-MAINT-01 |
 | QG-07 | Coverage backend | MR | ≥ 75% statement untuk seluruh `apps/api` (tanpa kode generate `internal/db/`, `internal/api/`) | Ya | NFR-MAINT-01 |
 | QG-08 | Coverage frontend | MR | ≥ 70% line `packages/ui` + logika `apps/web` (hooks, lib, formatter). Halaman dicakup E2E | Advisory 4 minggu, lalu Ya | Proposed |
 | QG-09 | Isolasi tenant | MR, main, sch, rel | 100% lulus, role `msp_app` `NOBYPASSRLS` | Ya, **tidak bisa di-waive** | NFR-SEC-03, FR-AUD-006, RG-7 |
 | QG-10 | Test privasi | MR | Redaksi PII di log dan payload prompt LLM: 100% lulus | Ya | NFR-PRIV-01, NFR-PRIV-04, FR-AI-005 |
 | QG-11 | Keamanan migrasi | MR | Versi goose unik & berurutan; up dari kosong; `schema.sql` sesuai; `sqlc diff`/`vet` bersih; squawk 0 error; RLS lengkap; contract hanya dengan `db-contract` | Ya | §9, NFR-SEC-03 |
-| QG-12 | Lint OpenAPI | MR | Spectral: 0 error | Ya | DoD §12.2 |
+| QG-12 | Lint OpenAPI | MR | Spectral: 0 error, termasuk rule kustom subset OpenAPI 3.1 yang lolos spike toolchain Sprint 0 (04 TQ-18, §18 langkah 10) | Ya | DoD §12.2 |
 | QG-13 | Breaking change OpenAPI | MR | oasdiff ERR = 0, **kecuali** label `api-breaking` + rencana versi | Ya | DoD §12.2 |
 | QG-14 | Sinkronisasi kontrak | MR | Stub oapi-codegen & client TS up to date; contoh payload valid; skema event terbit immutable; Schemathesis smoke tanpa 5xx | Ya | ADR-08, DoD |
 | QG-15 | Design tokens | MR | `build.mjs --check` lolos (CSS up to date, kontras ≥ WCAG AA light & dark); versi paket naik bila token berubah | Ya | NFR-A11Y-01 |
@@ -747,7 +755,7 @@ Kode yang mendukung versi baru di-deploy dulu (versi terdaftar, belum aktif). **
 | Artefak | Versi | Disimpan di | Immutable |
 |---|---|---|---|
 | Snapshot dataset | `ds-YYYY.MM.n` | File mentah + manifest di bucket `msp-snapshots` (object lock bila didukung; fallback salinan append-only off-site), metadata di `ingest.dataset_snapshot` | Ya (FR-DATA-001) |
-| Model skor | `priority-X.Y.Z` | File YAML di `apps/api/internal/intelligence/scoring/models/` (di-embed ke binary) + sha256 di `intel.score_model` + `versions.lock` | Ya setelah aktif |
+| Model skor | `priority-X.Y.Z` | File YAML di `apps/api/internal/intelligence/internal/scoring/models/` (di-embed ke binary) + sha256 di `intel.score_model` + `versions.lock` | Ya setelah aktif |
 | Metrik geo | `geo-X.Y.Z` | Konfigurasi di repo + `versions.lock` | Ya |
 | Prompt AI | `brief-X.Y.Z` | Prompt registry modul `ai` + `versions.lock` | Ya |
 
@@ -925,9 +933,9 @@ Job hanya menerima variabel ber-scope bila menyatakan `environment:` yang sesuai
 
 ### 12.3 Secret & konfigurasi di server
 
-- Ansible mendekripsi SOPS di runner `deploy` lalu menulis setiap secret sebagai **file** di **tmpfs** `/run/msp/<warna>/` (mode 0400). File di-mount ke container sebagai Compose `secrets:` (`/run/secrets/<nama>`). Binary membaca konvensi **`<VAR>_FILE`** (mis. `DATABASE_URL_APP_FILE=/run/secrets/database_url_app`), sehingga secret tidak tampil di `docker inspect`.
+- Ansible mendekripsi SOPS di runner `deploy` lalu menulis setiap secret sebagai **file** di **tmpfs** `/run/msp/<warna>/` (mode 0400). File di-mount ke container sebagai Compose `secrets:` (`/run/secrets/<nama>`). Binary membaca konvensi **`MSP_<NAMA>_FILE`** (mis. `MSP_DATABASE_URL_APP_FILE=/run/secrets/database_url_app`), sehingga secret tidak tampil di `docker inspect`. Nilai secret tidak pernah dikirim sebagai env biasa; binary menolak start di staging/production bila secret diberikan tanpa `_FILE` (04 §18.1).
 - Konsekuensi tmpfs (ADR-22): setelah reboot, secret hilang. Unit systemd `msp-rehydrate` memicu pipeline `rehydrate` lewat *pipeline trigger token* (token hanya bisa memicu, tidak membaca secret). Job berjalan di runner `deploy` dan menjalankan `rehydrate.yml`. Bila gagal, on-call menjalankannya manual (runbook).
-- Konfigurasi non-secret = env var sesuai 04 §18.1 (`MSP_ENV`, `MSP_VERSION`, `MSP_BASE_URL`, `S3_ENDPOINT_URL`, `OTEL_EXPORTER_OTLP_ENDPOINT`, dll.), dari variabel inventory Ansible. Binary gagal start bila variabel wajib hilang. `.env.example` di root berisi semua variabel dengan nilai dummy aman.
+- Konfigurasi non-secret = env var berprefiks `MSP_` sesuai 04 §18.1 (`MSP_ENV`, `MSP_VERSION`, `MSP_BASE_URL`, `MSP_S3_ENDPOINT_URL`, dll.; pengecualian: variabel standar `OTEL_*` seperti `OTEL_EXPORTER_OTLP_ENDPOINT`), dari variabel inventory Ansible. Binary gagal start bila variabel wajib hilang. `.env.example` di root berisi semua variabel dengan nilai dummy aman.
 
 ### 12.4 Jangan pernah mencetak secret & rotasi
 
@@ -941,7 +949,7 @@ Tidak ada `set -x` di job yang menyentuh secret. Task Ansible yang menyentuh sec
 | Kunci cosign | 12 bulan; verifikasi menerima kunci lama + baru selama 30 hari | Dugaan bocor (semua image ditandatangani ulang) |
 | Token GitLab (bot, Renovate, trigger) | Kedaluwarsa ≤ 365 hari, diganti 30 hari sebelumnya | Sama |
 | API key LLM/email | 90 hari | Sama |
-| Kunci master webhook (`WEBHOOK_SECRET_MASTER_KEYS`, berversi) | 12 bulan (lihat bawah) | Dugaan bocor |
+| Kunci master webhook (`MSP_WEBHOOK_SECRET_MASTER_KEYS_FILE`, berversi) | 12 bulan (lihat bawah) | Dugaan bocor |
 
 **Kunci master webhook.** Secret per endpoint (FR-EXP-003) dienkripsi aplikasi (AES-256-GCM) dengan key ring berversi (`secret_kid`, ADR-22). Rotasi: (1) tambah versi kunci baru ke SOPS dan deploy (dekripsi menerima semua versi aktif, enkripsi memakai yang terbaru); (2) job River mengenkripsi ulang semua `secret_ciphertext`; (3) setelah 100% + 7 hari, versi lama dihapus.
 
@@ -1118,7 +1126,7 @@ Dihitung script mingguan (GitLab API → Prometheus/Grafana, karena dashboard DO
 | Durasi pipeline MR | p50 ≤ 10 menit, p90 ≤ 15 menit | Profil job; tambah concurrency/shard; pindahkan ke nightly |
 | Merge → `staging-verified` | p50 ≤ 30 menit | Paralelkan E2E staging |
 | Antre job (pending) | p90 ≤ 1 menit | Tambah `concurrent` runner atau kapasitas `ci-01` |
-| Flaky rate | ≤ 2% job (lulus setelah retry) | **Karantina** (test Go `t.Skip` bersyarat `MSP_QUARANTINE` + issue; Playwright `test.fixme`): jalan di nightly, tidak memblokir MR, maks 14 hari |
+| Flaky rate & karantina | ≤ 1% job lulus setelah retry (05 §9.2); test ter-karantina ≤ **1%** suite | **Karantina** hanya dengan issue berlabel `flaky` + owner, maks **7 hari** (05 §5.4). Penanda di kode: test Go memanggil helper `testutil.Quarantine(t, "#<issue>")` (skip kecuali `MSP_QUARANTINE=run`), Playwright memakai tag `@quarantine` (dikecualikan di MR via `--grep-invert`). Test ter-karantina tetap jalan di nightly dan tidak memblokir MR. Job `quarantine-check` gagal bila ada penanda tanpa issue/owner, lewat 7 hari, atau total > 1% suite |
 | `main` merah | ≤ 1 jam per kejadian | Stop-the-line (§5.5) |
 | Disk `ci-01`/registry | < 80% | Cleanup policy, prune cache |
 
@@ -1185,14 +1193,14 @@ backend:test:
     - { name: $POSTGIS_IMAGE, alias: postgres, variables: { POSTGRES_USER: msp_owner, POSTGRES_PASSWORD: ci, POSTGRES_DB: msp } }
   variables:
     MSP_ENV: ci
-    DATABASE_URL_DIRECT: postgres://msp_owner:ci@postgres:5432/msp?sslmode=disable   # migrate
-    DATABASE_URL_APP: postgres://msp_app:ci@postgres:5432/msp?sslmode=disable        # NOBYPASSRLS
+    MSP_DATABASE_URL_DIRECT: postgres://msp_owner:ci@postgres:5432/msp?sslmode=disable   # migrate (nilai dummy CI)
+    MSP_DATABASE_URL_APP: postgres://msp_app:ci@postgres:5432/msp?sslmode=disable        # NOBYPASSRLS
   script:
     - cd apps/api && go run ./cmd/msp migrate up
     - go tool gotestsum --junitfile report.xml -- -race -tags=integration -coverpkg=./... -coverprofile=cover.out ./...  # QG-05
     - go tool gotestsum --junitfile tenant.xml -- -tags=integration -count=1 -run 'TenantIsolation' ./...               # QG-09
     - ../../scripts/ci/go_coverage_gate cover.out --total 75 --exclude internal/db,internal/api
-        --pkg ./internal/identity/internal/normalize/...=85 --pkg ./internal/identity/internal/resolve/...=85
+        --pkg ./internal/identity/internal/normalize/...=85 --pkg ./internal/identity/internal/er/...=85
         --pkg ./internal/intelligence/internal/scoring/...=85                                                         # QG-06/07
     - go tool gocover-cobertura < cover.out > coverage.xml
   coverage: '/total:\s+\(statements\)\s+(\d+\.\d+)%/'
@@ -1207,16 +1215,16 @@ db:migrations:
   extends: .go
   needs: []
   services: [{ name: $POSTGIS_IMAGE, alias: postgres, variables: { POSTGRES_USER: msp_owner, POSTGRES_PASSWORD: ci, POSTGRES_DB: msp } }]
-  variables: { DATABASE_URL_DIRECT: "postgres://msp_owner:ci@postgres:5432/msp?sslmode=disable" }
+  variables: { MSP_DATABASE_URL_DIRECT: "postgres://msp_owner:ci@postgres:5432/msp?sslmode=disable" }
   rules:
     - <<: *if-mr
       changes: { paths: [apps/api/db/**/*, apps/api/sqlc.yaml, apps/api/internal/db/**/*], compare_to: refs/heads/main }
   script:                                                                                    # QG-11
     - cd apps/api && ../../scripts/ci/check_goose_versions db/migrations origin/main
     - go run ./cmd/msp migrate up
-    - pg_dump --schema-only --no-owner "$DATABASE_URL_DIRECT" | ../../scripts/ci/normalize_dump | diff -u db/schema.sql -
+    - pg_dump --schema-only --no-owner "$MSP_DATABASE_URL_DIRECT" | ../../scripts/ci/normalize_dump | diff -u db/schema.sql -
     - sqlc diff && sqlc vet
-    - psql "$DATABASE_URL_DIRECT" -v ON_ERROR_STOP=1 -f ../../scripts/ci/check_rls.sql
+    - psql "$MSP_DATABASE_URL_DIRECT" -v ON_ERROR_STOP=1 -f ../../scripts/ci/check_rls.sql
     - git diff --name-only --diff-filter=A origin/main -- db/migrations | xargs -r squawk
     - ../../scripts/ci/check_migration_phase --labels "$CI_MERGE_REQUEST_LABELS"
 
@@ -1233,7 +1241,7 @@ e2e:smoke:                           # services = image MR (build tag dev)
     - { name: "$CI_REGISTRY_IMAGE/mr/msp-backend:$CI_COMMIT_SHA", alias: worker, command: ["worker"] }
     - { name: "$CI_REGISTRY_IMAGE/mr/msp-web:$CI_COMMIT_SHA", alias: web }
     - { name: "$CI_REGISTRY/msp/webhook-sink@sha256:<digest>", alias: webhook-sink }
-  variables: { MSP_ENV: ci, S3_ENDPOINT_URL: "http://s3:8333" }       # + DATABASE_URL_* seperti backend:test
+  variables: { MSP_ENV: ci, MSP_S3_ENDPOINT_URL: "http://s3:8333" }   # + MSP_DATABASE_URL_* seperti backend:test
   script:
     - corepack enable && pnpm install --frozen-lockfile
     - scripts/ci/wait_for http://api:8080/readyz http://web:3000/healthz
@@ -1350,7 +1358,7 @@ deploy:production:
             name: "msp-migrate-{{ msp_version }}"
             image: "{{ backend_image }}"
             command: ["migrate", "up"]
-            env: { DATABASE_URL_DIRECT_FILE: /run/secrets/database_url_migrate }
+            env: { MSP_DATABASE_URL_DIRECT_FILE: /run/secrets/database_url_migrate }
             mounts: [{ type: bind, read_only: true, source: "{{ secrets_root }}/{{ color_new }}/database_url_migrate", target: /run/secrets/database_url_migrate }]
             networks: [{ name: msp-backend }]
             detach: false                          # tunggu selesai; exit code ≠ 0 → rescue
@@ -1397,13 +1405,19 @@ http:
 # compose.app.yml.j2 (cuplikan) — satu project per warna: msp-blue / msp-green
 x-backend: &backend
   image: "{{ backend_image }}"                     # digest yang sama untuk api, worker, migrate
-  environment:
+  environment: &backend-env
     MSP_ENV: "{{ msp_env }}"
     MSP_VERSION: "{{ msp_version }}"
     OTEL_RESOURCE_ATTRIBUTES: "msp.color={{ color_new }}"
-    DATABASE_URL_APP_FILE: /run/secrets/database_url_app
+    MSP_DATABASE_URL_APP_FILE: /run/secrets/database_url_app        # via PgBouncer db-01:6432
   secrets: [database_url_app, redis_url, webhook_secret_master_keys]
   healthcheck: { test: ["CMD", "/msp", "tool", "healthcheck"], interval: 10s, retries: 3 }
+x-worker: &worker                                  # client River: koneksi langsung, pool kecil khusus (04 §17.4)
+  <<: *backend
+  environment:
+    <<: *backend-env
+    MSP_DATABASE_URL_DIRECT_FILE: /run/secrets/database_url_direct  # db-01:5432 (LISTEN/NOTIFY, leader election)
+  secrets: [database_url_app, database_url_direct, redis_url, webhook_secret_master_keys]
 services:
   api:
     <<: *backend
@@ -1416,12 +1430,13 @@ services:
       - traefik.http.services.api-{{ color_new }}.loadbalancer.healthcheck.path=/readyz
       - traefik.http.services.api-{{ color_new }}.loadbalancer.healthcheck.interval=5s
   worker-pipeline:
-    <<: *backend
+    <<: *worker
     command: ["worker", "--queues=pipeline"]
     stop_grace_period: 15m                         # River soft stop; job wajib resumable
     networks: [backend]
 secrets:
   database_url_app: { file: "/run/msp/{{ color_new }}/database_url_app" }
+  database_url_direct: { file: "/run/msp/{{ color_new }}/database_url_direct" }
   # … redis_url, webhook_secret_master_keys
 ```
 
@@ -1440,7 +1455,7 @@ Urutan menyiapkan CI/CD dari nol. Setiap langkah menghasilkan artefak di repo, k
 7. Role `gitlab_runner`: `ci-01` (`ci-docker`, `ci-build`, cache S3 ke SeaweedFS lokal, `allowed_images`) dan `ops-01` (`deploy`, *protected*).
 8. `scripts/bootstrap/gitlab_settings`: protected branch/tag (§2.5), fast-forward + squash, template squash, merge checks, cleanup policy registry, server hook gitleaks.
 9. CI/CD variables (§12.2) dengan scope environment. Bot user: rilis (Maintainer), Renovate, `mr:gate` (Reporter). Token berkedaluwarsa.
-10. Fondasi repo: `.gitlab/CODEOWNERS`, MR template, `.editorconfig`, `.env.example`, `commitlint.config.js`, `tools/release/` (semantic-release), `renovate.json`, `.golangci.yml` (termasuk aturan depguard batas modul), `apps/api/sqlc.yaml`, `.spectral.yaml`, `.squawk.toml`, `.semgrep/`, `.markdownlint-cli2.yaml`, `lychee.toml`, `ci/images/tools/Dockerfile`, directive `tool` di `apps/api/go.mod`.
+10. Fondasi repo: `.gitlab/CODEOWNERS`, MR template, `.editorconfig`, `.env.example`, `commitlint.config.js`, `tools/release/` (semantic-release), `renovate.json`, `.golangci.yml` (termasuk aturan depguard batas modul), `apps/api/sqlc.yaml`, `.spectral.yaml`, `.squawk.toml`, `.semgrep/`, `.markdownlint-cli2.yaml`, `lychee.toml`, `ci/images/tools/Dockerfile`, directive `tool` di `apps/api/go.mod`. **Spike toolchain OpenAPI (Sprint 0, 04 TQ-18):** spec contoh OpenAPI 3.1 (problem + `errors[]`, cursor page, `oneOf`, nullable) dijalankan lewat oapi-codegen (≥ v2.8.0, Go ≥ 1.25) + openapi-typescript + Spectral + oasdiff + Schemathesis; konstruksi yang lolos menjadi rule Spectral kustom (QG-12). Bila gagal: spec ditulis OpenAPI 3.0.3 (atau di-*down-convert* lewat overlay) dan job `contracts` disesuaikan.
 11. Pipeline pertama: build image `ci-tools`, lalu `.gitlab-ci.yml` MR (lint, test, security, `mr:gate`). Uji di MR percobaan, termasuk pemblokiran merge oleh `mr:gate`.
 12. Provision `stg-01` (role `docker`, `traefik`, `msp_app`, Postgres/Redis/SeaweedFS staging) → pipeline `main`: build, scan, sign, `deploy:staging`, verifikasi, `staging-verified`.
 13. Provision production: `db-01`/`db-02` (role `postgres`, replikasi, PgBouncer, `pgbackrest` ke `stor-01` + off-site), `stor-01` (SeaweedFS + `filer.sync` off-site), `app-01` (Traefik, `msp_app`), `monitoring_agent` di semua host.
@@ -1464,12 +1479,12 @@ ID `Q-CI-nn` bersifat lokal di dokumen ini. Setelah diputuskan, keputusan dipind
 | Q-CI-02 | Tetap di GitLab CE, atau beli Premium (approval rules, Code Owners, merge trains, protected environments)? | CE + mitigasi §1.3. Ditinjau saat tim ≥ 6 engineer | §2.3, §2.6, §6.2 |
 | Q-CI-03 | Alternatif CI yang lebih ringan (Forgejo + Actions, Woodpecker) bila beban operasional GitLab terlalu besar? | GitLab CE | §1.4 |
 | Q-CI-04 | Provider DC dan lokasi off-site (keduanya di Indonesia, kota/provider berbeda). SLA penggantian hardware dan ketersediaan `dr-01` | Jakarta + lokasi kedua di Indonesia | RTO kehilangan DC (§11.6), D-14 |
-| Q-CI-05 | Kapan `app-02` + VIP (keepalived/VRRP atau LB provider) ditambahkan? Kapan failover DB otomatis (Patroni)? | `app-02` sebelum paid GA; Patroni saat ada node DB ketiga | NFR-AVAIL-01, §6.3 |
+| Q-CI-05 | Kapan `app-02` + VIP (keepalived/VRRP atau LB provider) ditambahkan? Kapan failover DB otomatis (Patroni)? | `app-02` aktif sebelum M-3 (early paid, PRD R-08); Patroni saat ada node DB ketiga | NFR-AVAIL-01, §6.3 |
 | Q-CI-06 | Kanal alert on-call dan lokasi probe eksternal | Chat + email; probe di VPS lokasi lain | §16.1 |
 | Q-CI-07 | Siapa Maintainer (berhak deploy production) dan rotasi on-call di luar jam kerja? | Tech lead + 1 engineer senior | §2.5, §6.2, §14.5 |
 | Q-CI-08 | Nama domain dan penyedia DNS (DNS-01 untuk GitLab internal, Let's Encrypt untuk `app.<domain>`) | `<domain>` placeholder | §3.1, §17.3 |
 | Q-CI-09 | Lisensi dataset: apakah subset boleh dipakai di staging dan eval AI (Q-05)? | Hanya sintetis sampai dikonfirmasi | §10.2, QG-26 penuh |
 | Q-CI-10 | Apakah SOPS + GitLab variables cukup untuk NFR-SEC-04 ("secret hanya di secret manager"), atau perlu OpenBao/Vault? | Cukup untuk MVP; OpenBao dievaluasi di V1 (ADR-22) | §12 |
-| Q-CI-11 | Aksi `msp tool` tambahan (`healthcheck`, `snapshot-publish`, `score-model-activate`) di luar daftar 04 §3.1 disetujui? | Ya (kecil, satu binary) | §5.1, §10, D-21.1 |
+| Q-CI-11 | ~~Aksi `msp tool` tambahan (`healthcheck`, `snapshot-publish`, `score-model-activate`) di luar daftar 04 §3.1 disetujui?~~ | **Ditutup**: sudah tercantum di 04 §3.1 | §5.1, §10, D-21.1 |
 | Q-CI-13 | Object storage final: SeaweedFS atau Garage? Fitur object lock, versioning, dan SSE mana yang benar-benar didukung versi yang dipasang? | SeaweedFS; fitur yang tidak didukung diganti salinan append-only off-site + LUKS | §10.1, §11.6, ADR-22 |
 | Q-CI-12 | Threshold QG-34 dan sinyal canary (job discarded, latency) awal | Nilai default §6.3 & §10.2 | Kalibrasi setelah Q-01/Q-02 + 4 minggu data beta |
