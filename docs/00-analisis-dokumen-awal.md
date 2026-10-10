@@ -139,7 +139,7 @@ Revisi 0.2 menerapkan arahan founder: **KISS, DRY, make it work → right → fa
 | D-05 | Prospek = satu tempat usaha (`google_place_id`). Pengelompokan multi-cabang di F2 | Accepted (disederhanakan) |
 | D-06 | Priority score disederhanakan ke 6 faktor yang datanya ada (PRD Lampiran A) | Accepted |
 | D-07 | Band HOT ≥ 80 / WARM 60–79 / COLD < 60 | Accepted |
-| D-08 | Credit: unlock 1 credit permanen; export auto-unlock hanya saat berhasil; refund manual oleh ops | Accepted (disederhanakan) |
+| D-08 | Credit: **unlock satu-satunya operasi berbayar** untuk kontak (1 credit, permanen). Export & kirim webhook gratis ("Unlock & export/kirim" menjalankan unlock dulu). Refund manual oleh ops | Accepted (disederhanakan) |
 | D-09 | Plan Starter / Growth / Agency | Proposed (menunggu pricing) |
 | D-10 | Integrasi CRM di F2. F1 cukup export + webhook | Accepted |
 | D-11 | Modular monolith, satu binary Go | Accepted |
@@ -171,7 +171,7 @@ Revisi 0.2 menerapkan arahan founder: **KISS, DRY, make it work → right → fa
 | Q-05 | Aturan pakai/tampil/export data | Tim legal |
 | Q-06 | Data acuan revenue | Ditunda: band revenue di F2 |
 | Q-07 | Calon customer beta & Offering mereka | Terbuka |
-| Q-08 | GitHub tetap jadi mirror atau ditinggalkan? | Terbuka (default: GitLab sebagai repo utama) |
+| Q-08 | GitHub tetap jadi mirror atau ditinggalkan? | **Terjawab:** GitLab repo utama; mirror GitHub opsional, tanpa CI |
 | Q-09 | Spesifikasi 2 server & lokasi backup off-site | Terbuka |
 | Q-11 | Validasi hukum PDP | Tim legal |
 

@@ -200,7 +200,7 @@ Disederhanakan dari MVP Pack Rev 1.2 §9. Faktor tanpa data di dataset (signal, 
 
 | Faktor | Bobot | Nilai 0–100 |
 |---|---|---|
-| ICP Fit | 30 | Rata-rata kecocokan kriteria ICP (cocok 1, sebagian 0,5, tidak 0). Kriteria *wajib* yang tidak cocok → prospek tidak tampil |
+| ICP Fit | 30 | Rata-rata kecocokan kriteria ICP (cocok 1, sebagian 0,5, tidak 0). **Sebagian**: rating ≥ minimum − 0,3, jumlah ulasan ≥ separuh minimum, atau kategori satu induk dengan kategori ICP. Kategori "Lainnya" tidak pernah cocok. Kriteria *wajib* yang tidak cocok → prospek tidak tampil |
 | Opportunity | 25 | Skor opportunity relevan tertinggi (Lampiran B) |
 | Wilayah | 15 | `market_score` kelurahan. Bila kelurahan "Data terbatas", pakai kecamatan |
 | Kontak | 15 | Seluler 80 · telepon tetap 60 · hanya akun sosial 30 · tidak ada 0 |

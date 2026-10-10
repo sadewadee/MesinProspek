@@ -48,7 +48,7 @@ Kondisi saat ini:
 | Secret | Variabel CI terproteksi GitLab → file `.env` di server (izin 600) |
 | Observability | Log JSON (`slog`), endpoint `/metrics` → Prometheus + Grafana + alert (email/Telegram) |
 
-**Sengaja tidak dipakai di F1:** Redis, PgBouncer, object storage internal, server kedua/HA, blue/green deploy, Ansible, SOPS, image signing/SBOM, mutation testing, dan mesin search terpisah. Masing-masing baru ditambahkan bila ada kebutuhan nyata (F2/F3).
+**Sengaja tidak dipakai di F1:** lihat daftar di [`CLAUDE.md`](../CLAUDE.md) § KISS (satu sumber).
 
 ## Kosakata teknis bersama
 
@@ -56,18 +56,19 @@ Semua dokumen memakai nama-nama ini persis.
 
 | Hal | Nama |
 |---|---|
-| Binary & subcommand | `msp api`, `msp worker`, `msp migrate`, `msp tool import <file.jsonl[.gz]>`, `msp tool geo-sync`, `msp tool rescore` |
+| Binary & subcommand | `msp api`, `msp worker`, `msp migrate`, `msp tool import --observed-at <YYYY-MM-DD> <file.jsonl[.gz]>` (tanggal pengambilan dataset wajib), `msp tool geo-sync`, `msp tool rescore` |
+| Hitung ulang | Rantai tunggal: metrik wilayah → skor. Otomatis setelah import, setelah geo-sync, dan saat ICP disimpan (ICP itu saja). `msp tool rescore` manual hanya setelah versi model/bobot berubah |
 | Target Makefile (lokal = CI) | `make generate` (oapi-codegen, client TS, sqlc, design tokens), `make lint`, `make test` |
 | Format dataset | JSON Lines: satu objek JSON-LD schema.org per baris |
 | Antrean River | `import`, `score`, `export`, `webhook`, `ai` |
-| Service Compose (prod & staging) | `caddy`, `web`, `api`, `worker`, `kratos`, `postgres` |
-| Service Compose (server ops) | `gitlab`, `gitlab-runner`, `prometheus`, `alertmanager`, `grafana` |
+| Service Compose (prod & staging) | `caddy`, `web`, `api`, `worker`, `kratos`, `postgres`, `node-exporter` |
+| Service Compose (server ops) | `gitlab`, `gitlab-runner`, `prometheus`, `alertmanager`, `grafana`, `blackbox-exporter` (probe eksternal ke production), `node-exporter` |
 | Environment | `local` (laptop, Docker Compose), `staging` (server ops), `production` (server prod) |
-| Domain | `app.<domain>` (production), `staging.<domain>`, `gitlab.<domain>`, `grafana.<domain>` |
+| Domain | `app.<domain>` (production), `staging.<domain>`, `gitlab.<domain>`, `registry.<domain>` (container registry GitLab), `grafana.<domain>` |
 | Direktori Compose di server | `/opt/msp` (prod), `/opt/msp-staging` (staging, di server ops), `/opt/ops` (GitLab, runner, monitoring) |
 | Menjalankan tool di server | `docker compose run --rm worker msp <subcommand>` |
 | Backup | pgBackRest stanza `msp` |
-| API | Prefix `/api/v1` · health `/healthz` (proses hidup) dan `/readyz` (DB siap) · metrik `/metrics` (internal) |
+| Rute HTTP | API `/api/v1` · Kratos `/.ory/*` · health `/healthz` (proses hidup) dan `/readyz` (DB siap) · metrik `/metrics` di listener internal `:9090` (allowlist IP + basic auth) |
 | Env var | Prefix `MSP_`, mis. `MSP_DATABASE_URL`, `MSP_ANTHROPIC_API_KEY`, `MSP_LLM_FALLBACK_BASE_URL`, `MSP_LLM_FALLBACK_API_KEY`, `MSP_LLM_FALLBACK_MODEL`, `MSP_GEOAPI_BASE_URL`, `MSP_STORAGE_DIR`, `MSP_ENCRYPTION_KEY` |
 | Image | `<registry>/msp/api:<git-sha>`, `<registry>/msp/web:<git-sha>`. Rilis = tag Git `vX.Y.Z` |
 | Versi model | Skor `priority-X.Y.Z`, wilayah `geo-X.Y.Z`, prompt AI `brief-X.Y.Z` |
@@ -80,7 +81,8 @@ MesinProspek/
 │  ├─ api/            Go: cmd/msp, internal/<modul>, db/migrations, db/queries
 │  └─ web/            Next.js
 ├─ packages/
-│  ├─ design-tokens/  build dari docs/02-design-system/tokens
+│  ├─ design-tokens/  CSS & preset Tailwind dari docs/02-design-system/tokens/build.mjs
+│  ├─ ui/             komponen React (Radix + tokens)
 │  └─ api-client/     client TS hasil generate OpenAPI
 ├─ contracts/openapi.yaml
 ├─ data/              taksonomi kategori, pola URL (sosial, link aggregator, subdomain gratis)

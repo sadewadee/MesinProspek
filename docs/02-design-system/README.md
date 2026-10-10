@@ -40,7 +40,7 @@ komponen (packages/ui)                                ← tidak boleh hardcode h
 
 ### 2.1 Format file
 - Format **DTCG** (Design Tokens Community Group): setiap token memiliki `$value`, `$type`, dan opsional `$description`. Alias ditulis `{path.ke.token}`.
-- Warna memakai hex string (`#rrggbb` / `#rrggbbaa`). Dimensi memakai string `px`. Keduanya kompatibel dengan Style Dictionary v4.
+- Warna memakai hex string (`#rrggbb` / `#rrggbbaa`). Dimensi memakai string `px`.
 - **Mode gelap**: `$value` = mode terang. Override gelap ditaruh di `$extensions["com.mesinprospek.mode"].dark`. Alias di-resolve per mode, jadi alias ke token semantik otomatis mengikuti mode.
 - Line height disimpan sebagai dimensi absolut (px), bukan rasio, agar tinggi baris tabel presisi.
 
@@ -63,7 +63,7 @@ node docs/02-design-system/tokens/build.mjs --check   # CI: gagal bila CSS basi 
 node docs/02-design-system/tokens/build.mjs --report  # tabel kontras lengkap (markdown)
 ```
 
-`build.mjs` adalah implementasi referensi (Node, tanpa dependency; toolchain frontend sudah memakai Node). Saat `packages/design-tokens` dibuat (Style Dictionary → CSS, preset Tailwind, TS), **kontrak output tetap sama**: nama CSS variable identik dan semua pasangan kontras lolos. CI menjalankan `--check` sebagai quality gate (lihat `06-ci-cd.md`).
+`build.mjs` adalah satu-satunya build token (Node, tanpa dependency). `packages/design-tokens` memakai output-nya langsung (CSS variables + preset Tailwind). CI menjalankan `--check` sebagai quality gate (lihat `06-ci-cd.md`).
 
 ### 2.4 Versioning token
 | Perubahan | Versi |
@@ -136,7 +136,7 @@ VERIFIED dan LIKELY_VALID memakai hue yang sama. Keduanya dibedakan lewat **bobo
 | Token | Alias ke | Ikon |
 |---|---|---|
 | `color.freshness.fresh` / `aging` / `stale` | success / warning / danger | `clock` / `clock-alert` / `history` |
-| `color.confidence.high` / `medium` / `low` | success / warning / danger | meter 3 bar (terisi 3/2/1) |
+| `color.confidence.high` / `medium` / `low` *(F2)* | success / warning / danger | meter 3 bar (terisi 3/2/1) |
 
 > Karena freshness, confidence, dan verifikasi berbagi hue, komponen **wajib** menampilkan label teks ("Tinggi", "Usang", dst.). Dua badge berwarna sama dalam satu baris dibedakan oleh label dan ikonnya.
 
@@ -153,7 +153,7 @@ Palet data-viz memakai palet referensi skill dataviz yang **sudah divalidasi ula
 
 | Token | Isi | Aturan |
 |---|---|---|
-| `color.chart.categorical.1..8` | blue, orange, aqua, yellow, magenta, green, violet, red | **Urutan tetap**, diberikan berurutan, tidak pernah di-cycle. Seri ke-9 dilebur ke "Lainnya". Di mode terang, slot 3, 4, dan 5 berada di bawah 3:1 terhadap surface, sehingga **wajib** ada label langsung atau tampilan tabel. |
+| `color.chart.categorical.1..8` *(F2: chart analitik; F1 hanya memakai peta & FactorBar)* | blue, orange, aqua, yellow, magenta, green, violet, red | **Urutan tetap**, diberikan berurutan, tidak pernah di-cycle. Seri ke-9 dilebur ke "Lainnya". Di mode terang, slot 3, 4, dan 5 berada di bawah 3:1 terhadap surface, sehingga **wajib** ada label langsung atau tampilan tabel. |
 | — (batas) | Chart all-pairs (peta, scatter, small multiples) | Maksimal **3 seri**. Lebih dari itu: lebur ke "Lainnya" atau pecah menjadi facet. |
 | `color.geo.sequential.1..7` | Satu hue biru, terang → gelap | Untuk metrik area kontinu (densitas, skor). Mode gelap **membalik anchor**: nilai kecil mendekati warna surface. Tidak pernah rainbow. |
 | `color.geo.competition.{low,medium,high}` | Ramp ordinal oranye | Legend selalu menyertakan label Rendah/Sedang/Tinggi. |
@@ -215,7 +215,7 @@ Komponen dibangun di `packages/ui` di atas Radix primitives. Komponen hanya bole
 | **Button** | label, ikon opsional | `accent.*`, `fg.on-accent`, `radius.md`, `size.control.*` | primary / secondary / ghost / danger; loading; disabled. Tombol berbayar menampilkan biaya ("Unlock · 1 credit"). | Fokus `border.focus`. Aksi berbayar wajib lewat dialog konfirmasi. |
 | **Badge** | ikon + label | `color.{score,verification,claim,freshness,confidence,status}.*`, `radius.sm`, `text.label` | Varian `solid` / `subtle`. Badge claim memakai `border-style.claim.*`. | Label teks wajib. Tooltip berisi angka (confidence) dan tanggal. |
 | **ScoreBadge** | angka skor + band + (opsional) badge coverage | `color.score.*.solid/on-solid`, `text.numeric` | UNSCORED menampilkan label "Belum dinilai" tanpa angka (tidak pernah "—" atau "0", BR-TRUST-03). `coverage` < 0,6 menampilkan badge "Data terbatas" (`status.warning`). | `aria-label` lengkap, misalnya "Skor prioritas 92, HOT". |
-| **ConfidenceMeter** | 3 bar + label | `color.confidence.*` | Tinggi 3 bar, Sedang 2, Rendah 1. Angka di tooltip. | Bukan warna saja: jumlah bar + label. |
+| **ConfidenceMeter** *(F2)* | 3 bar + label | `color.confidence.*` | Tinggi 3 bar, Sedang 2, Rendah 1. Angka di tooltip. | Bukan warna saja: jumlah bar + label. |
 | **FactorBar** (penjelasan skor) | nama faktor, bar kontribusi, bobot, nilai, badge claim | `color.accent.default` (bar), `color.claim.*`, `text.numeric` | Faktor Unknown: bar kosong bergaris putus + "Tidak dihitung". | Tersedia sebagai tabel untuk screen reader. |
 | **MaskedValue + Unlock** | nilai ter-mask, tombol unlock | `fg.muted`, `text.mono` | Ter-mask → dialog biaya → terbuka (copy, WhatsApp, telepon). | Nilai ter-mask dibacakan "disembunyikan". |
 | **EvidenceDrawer** | judul claim, daftar sumber, metadata | `bg.surface-raised`, `shadow.lg`, `size.drawer`, `color.claim.*` | Loading, kosong (claim UNKNOWN), error + retry. | Focus trap. Esc menutup. Fokus kembali ke pemicu. |
@@ -297,5 +297,5 @@ Aturan tambahan:
 | D-17 | Brand final | **Selesai:** Forest & Mint, Plus Jakarta Sans + Inter. Logo menyusul. |
 | DS-01 | Set ikon: Lucide diusulkan (ISC) | Proposed |
 | DS-02 | Basemap peta & gaya peta dasar | Menunggu Q-05 (lisensi dataset) |
-| DS-03 | Migrasi `build.mjs` → `packages/design-tokens` (Style Dictionary v4) dengan kontrak output yang sama | Saat bootstrap monorepo |
+| DS-03 | `packages/design-tokens` memakai output `build.mjs` langsung (tanpa Style Dictionary) | Saat bootstrap monorepo (WP-07) |
 | DS-04 | Ilustrasi empty state | Setelah brand final |
