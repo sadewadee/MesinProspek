@@ -53,8 +53,6 @@ SELECT queue, kind, count(*), (array_agg(errors->-1->>'error'))[1] AS contoh_err
 WHERE state = 'discarded' AND finalized_at > now() - interval '24 hours' GROUP BY 1, 2;
 ```
 
-Log GitLab dan monitoring: `cd /opt/ops && docker compose logs --since 1h <service>`. Staging: perintah sama di `/opt/msp-staging`.
-
 ## 2. Akses
 
 - SSH hanya dengan kunci, dari IP di allowlist firewall. Tanpa login password dan tanpa login `root`. Tiap orang punya user sendiri.
