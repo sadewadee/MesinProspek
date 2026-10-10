@@ -63,8 +63,8 @@ Semua dokumen memakai nama-nama ini persis.
 | Target Makefile (lokal = CI) | `make generate` (oapi-codegen, client TS, sqlc, design tokens), `make lint`, `make test` |
 | Format dataset | JSON Lines: satu objek JSON-LD schema.org per baris |
 | Antrean River | `import`, `score`, `export`, `webhook`, `ai`, `billing` (grant bulanan) |
-| Service Compose (production & staging) | `caddy`, `web`, `api`, `worker`, `kratos`, `postgres` |
-| Service Compose (ops, di server yang sama) | `gitlab`, `gitlab-runner`, `prometheus`, `alertmanager`, `grafana`, `node-exporter`. Uptime dipantau layanan eksternal |
+| Service Compose (production & staging) | `web`, `api`, `worker`, `kratos`, `postgres` (`local` ditambah `caddy`) |
+| Service Compose (ops, di server yang sama) | `caddy` (satu untuk semua domain), `gitlab`, `gitlab-runner`, `prometheus`, `alertmanager`, `grafana`, `node-exporter`. Uptime dipantau layanan eksternal |
 | Environment | `local` (laptop, Docker Compose), `staging` dan `production` (keduanya di satu server, project Compose terpisah) |
 | Domain | `app.<domain>` (production), `staging.<domain>`, `gitlab.<domain>`, `registry.<domain>` (container registry GitLab), `grafana.<domain>` |
 | Direktori Compose di server | `/opt/msp` (production), `/opt/msp-staging` (staging), `/opt/ops` (GitLab, runner, monitoring) |

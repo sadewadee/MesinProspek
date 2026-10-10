@@ -3,32 +3,45 @@
 | Field | Value |
 |---|---|
 | Versi | 0.2 (lean). Menggantikan v0.1 · 2026-10-10 |
-| Basis | [README](README.md) (stack F1, kosakata), [PRD](01-prd.md) NFR-03/04/05/09 + §12, D-18, D-19, D-22, D-26 ([00 §7](00-analisis-dokumen-awal.md)). Terkait: [05](05-test-strategy.md) (isi test), [08](08-engineering-standards.md) (`make`, migrasi), [09](09-runbook-operasional.md) (operasi) |
+| Basis | [README](README.md) (stack F1, kosakata), [PRD](01-prd.md) NFR-03/04/05/09 + §12 + §13, D-18, D-19, D-22, D-26, D-29 ([00 §7](00-analisis-dokumen-awal.md)). Terkait: [04](04-technical-design.md) §2.1 (kapasitas), [05](05-test-strategy.md) (isi test), [08](08-engineering-standards.md) (`make`, migrasi), [09](09-runbook-operasional.md) (operasi) |
 
-> KISS: GitLab CE + satu runner + Docker Compose + skrip shell. Contoh YAML dan skrip bersifat ilustratif. Semua image dan tool di-pin ke versi eksak; angka versi di contoh hanya contoh.
+> KISS: satu server, GitLab CE + dua runner (CI dan deploy) + Docker Compose + skrip shell. Contoh YAML dan skrip bersifat ilustratif. Semua image dan tool di-pin ke versi eksak; angka versi di contoh hanya contoh.
 
 ## 1. Prinsip
 
 - **Trunk-based.** Satu branch `main`. Branch kerja berumur pendek, MR kecil (08 STD-GIT-01).
-- **Build once, promote.** Image dibangun sekali per commit `main` dan di-tag git SHA. Staging dan production menjalankan image yang sama; yang berbeda hanya `.env`.
+- **Build once, promote.** Image dibangun sekali per commit `main` dan di-tag git SHA. Staging dan production menjalankan image yang sama; yang berbeda hanya `.env` dan batas resource.
 - **Migrasi dulu.** `msp migrate` jalan sebelum container baru start. Setiap migrasi kompatibel dengan versi aplikasi sebelumnya.
 - **Rollback = deploy tag sebelumnya.** Skema DB tidak di-rollback.
 - **Founder menyetujui production** (D-22). Hanya founder yang membuat tag `v*` dan menjalankan deploy production.
+- **Production didahulukan.** CI dan staging berbagi server dengan production, jadi batas resource-nya lebih kecil, build dibuat ringan (cache), dan keduanya yang dihentikan lebih dulu saat server sesak (09 AL-09).
 
 ## 2. Server & environment
 
-Ada dua dedicated server di Indonesia (D-19, D-26). Direktori Compose mengikuti README.
-- **`ops`**: `/opt/ops` berisi `gitlab` (GitLab CE + container registry), `gitlab-runner` (satu runner, Docker executor), `prometheus`, `alertmanager`, `grafana` (login admin bawaan Grafana lewat HTTPS, tanpa OAuth), `blackbox-exporter` (probe ke production), dan `node-exporter`. `/opt/msp-staging` berisi stack staging. Stack `/opt/ops` di-update manual lewat SSH, karena pipeline tidak me-restart GitLab yang sedang menjalankannya.
-- **`prod`**: `/opt/msp` berisi `caddy`, `web`, `api`, `worker`, `kratos`, `postgres`, `node-exporter`.
+Satu dedicated server di Indonesia untuk semuanya (D-19, D-26). Direktori Compose mengikuti README.
 
-| Environment | Server | Deploy | Data |
+| Environment | Tempat | Deploy | Data |
 |---|---|---|---|
 | `local` | laptop | `docker compose` (Postgres + PostGIS, Kratos, Mailpit) | Fixture sintetis (05) |
-| `staging` | `ops` | Otomatis tiap merge ke `main`, dan pada tag sebelum production | Dataset bisnis nyata + GeoAPI, akun test. Tanpa data customer |
-| `production` | `prod` | Manual, tag `vX.Y.Z`, founder | Data nyata |
+| `staging` | server, `/opt/msp-staging` | Otomatis tiap merge ke `main`, dan pada tag sebelum production | Dataset bisnis nyata + GeoAPI, akun test. Tanpa data customer |
+| `production` | server, `/opt/msp` | Manual, tag `vX.Y.Z`, founder | Data nyata |
 
-- **Runner**: `concurrent = 4`, `privileged = true` (volume `/certs/client`, `/cache`) agar job build dan E2E bisa memakai `docker:dind`. Runner hanya terdaftar untuk project ini. Privileged setara root di `ops`; risiko ini diterima di F1 karena runner hanya menjalankan MR tim.
-- **Edge `ops`**: `caddy` staging adalah satu-satunya proses yang memakai port 80/443 di `ops`. Caddy ini juga meneruskan `gitlab.<domain>` (+ `registry.<domain>`) dan `grafana.<domain>` lewat network Docker bersama (`sites/ops.caddy`, §5).
+- **`/opt/ops`** (file dari `deploy/ops/`): `caddy`, `gitlab` (+ container registry; git hanya lewat HTTPS), `gitlab-runner` (runner `ci`), `prometheus`, `alertmanager`, `grafana` (login admin bawaan lewat HTTPS, tanpa OAuth), `node-exporter`. Stack ini di-update manual lewat SSH, karena pipeline tidak me-restart GitLab yang sedang menjalankannya. Caddy sengaja ada di sini, bukan di project aplikasi, agar GitLab tetap bisa diakses sebelum production ter-deploy (bootstrap, RB-11). Uptime dipantau oleh layanan eksternal (09 AL-01).
+- **Edge.** Hanya `caddy` yang mempublikasikan port (80/443), dan semua domain lewat Caddy ini (§5). Docker melewati aturan `ufw` untuk port yang dipublish, jadi service lain tidak memakai `ports:`.
+- **Network.** Stack `/opt/ops` membuat network Docker `edge-production` dan `edge-staging`. `web`, `api`, dan `kratos` tiap environment bergabung ke `edge-${MSP_ENV}`, sehingga `caddy` dan `prometheus` menjangkaunya lewat nama container (`msp-api-1:9090`, `msp-staging-api-1:9090`). Network dipisah per environment karena kedua project memakai nama service yang sama. `postgres` dan `worker` hanya ada di network project masing-masing.
+- **Runner `ci`**: container `gitlab-runner` di `/opt/ops`, Docker executor, tag `ci`, `concurrent = 1`, dan `privileged = true` (volume `/certs/client`, `/cache`) agar job build dan E2E bisa memakai `docker:dind`. Batas job diatur lewat `cpus`/`memory` dan `service_cpus`/`service_memory` di `config.toml`. Privileged setara root di server, termasuk production. Risiko ini diterima di F1 karena runner hanya menjalankan MR tim, dan GitLab di server yang sama memang sudah memegang secret production. Pemisahan ada di §11.
+- **Runner `deploy`**: paket `gitlab-runner` di host (bukan container), shell executor, berjalan sebagai user `deploy`, tag `deploy`, `concurrent = 1`. Runner ini ditandai *Protected*, sehingga hanya menjalankan job dari branch/tag terproteksi, yaitu `deploy/deploy.sh` dan `deploy/backup.sh`. Kedua runner hanya terdaftar untuk project ini. Deploy tidak memakai SSH.
+- **Batas resource** wajib untuk setiap container (`deploy.resources.limits`). Total per kelompok ada di 04 §2.1; pembagian awal per service di bawah ini disesuaikan dengan data Grafana. Batas staging ada di `deploy/docker-compose.staging.yml`. File ini dipakai lewat `COMPOSE_FILE=compose.yaml:compose.staging.yaml` di `.env` staging.
+
+| Service | Production | Staging |
+|---|---|---|
+| `postgres` | 4 CPU · 16 GB | 0,75 · 3 GB |
+| `worker` | 1,25 · 3 GB | 0,5 · 1,5 GB |
+| `api` | 0,75 · 1,5 GB | 0,25 · 0,5 GB |
+| `web` | 0,5 · 1 GB | 0,25 · 0,75 GB |
+| `kratos` | 0,25 · 0,25 GB | 0,25 · 0,25 GB |
+
+Di `/opt/ops`: `caddy` 0,25 · 0,25 GB, `gitlab` 4 · 8 GB, job CI 1 · 2 GB + service `dind` 1 · 2 GB, dan monitoring 1 · 2 GB.
 
 ## 3. Alur Git
 
@@ -43,18 +56,18 @@ Ada dua dedicated server di Indonesia (D-19, D-26). Direktori Compose mengikuti 
 | Founder | Maintainer (satu-satunya) | Membuat tag `v*`, menjalankan `deploy-production`, mengelola variabel CI |
 
 - **Protected branch `main`**: push = *No one*, merge = *Developers + Maintainers*, "Pipelines must succeed", "All threads must be resolved", squash wajib. **Protected tag `v*`**: create = *Maintainers*. Job manual di pipeline tag hanya bisa dijalankan oleh yang boleh membuat tag itu, yaitu founder.
-- **Batas GitLab CE.** Approval wajib, CODEOWNERS, dan protected environment adalah fitur berbayar. Karena itu ada dua aturan proses: (1) agent tidak me-merge MR-nya sendiri; (2) MR yang mengubah `.gitlab-ci.yml`, `deploy/`, atau `scripts/ci/` hanya di-merge founder, karena job apa pun di `main` bisa membaca variabel terproteksi.
+- **Batas GitLab CE.** Approval wajib, CODEOWNERS, dan protected environment adalah fitur berbayar. Karena itu ada dua aturan proses: (1) agent tidak me-merge MR-nya sendiri; (2) MR yang mengubah `.gitlab-ci.yml`, `deploy/`, atau `scripts/ci/` hanya di-merge founder. Alasannya, job apa pun di `main` bisa membaca variabel terproteksi dan berjalan sebagai shell di server lewat runner `deploy`.
 
 ## 4. Pipeline (`.gitlab-ci.yml`)
 
 | Stage | Kapan | Isi |
 |---|---|---|
 | `check` | MR, `main` | `make generate` + `git diff --exit-code`, `make lint`, `make test` (08 §0), `govulncheck`, cek MR. Job `e2e`: stack Compose + Playwright Chromium (05) |
-| `build` | `main` | Image `api` & `web` → registry GitLab dengan tag SHA. Laporan `trivy image` HIGH/CRITICAL (tidak memblokir) |
-| `deploy-staging` | `main` otomatis; tag `v*` | `deploy/deploy.sh` ke `ops`, lalu smoke J-2 dengan akun test yang sudah terverifikasi (`main`) atau J-2..J-6 semua browser dengan akun yang sama (tag). J-1 hanya di job `e2e` (Mailpit) |
-| `deploy-production` | tag `vX.Y.Z`, manual, Maintainer | `deploy/deploy.sh` ke `prod`. Smoke manual per 09 RB-01 |
+| `build` | `main` | Image `api` & `web` → registry GitLab dengan tag SHA (cache inline dari image `:main`). Laporan `trivy image` HIGH/CRITICAL (tidak memblokir) |
+| `deploy-staging` | `main` otomatis; tag `v*` | Runner `deploy`: `deploy/deploy.sh` di `/opt/msp-staging`. Lalu `smoke-staging` (runner `ci`): J-2 dengan akun test yang sudah terverifikasi (`main`), atau J-2..J-6 di semua browser dengan akun yang sama (tag). J-1 hanya di job `e2e` (Mailpit) |
+| `deploy-production` | tag `vX.Y.Z`, manual, Maintainer | Runner `deploy`: `deploy/deploy.sh` di `/opt/msp`. Smoke manual per 09 RB-01 |
 | `rollback` | manual, Maintainer | Retry job `deploy-production` di pipeline tag sebelumnya (09 RB-02). Langkahnya sama dengan deploy, jadi tidak perlu job terpisah (DRY) |
-| *schedule* | harian 01:00 WIB | Job `backup` (§8) |
+| *schedule* | harian 01:00 WIB | Job `backup` (§8): pgBackRest + GitLab |
 
 ```yaml
 # .gitlab-ci.yml (ilustratif)
@@ -63,6 +76,7 @@ workflow:
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event" || $CI_PIPELINE_SOURCE == "schedule"
     - if: $CI_COMMIT_BRANCH == "main" || $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
+default: { tags: [ci] }                       # runner Docker; job deploy memakai tag `deploy`
 variables:
   API_IMAGE: $CI_REGISTRY_IMAGE/api:$CI_COMMIT_SHA     # = <registry>/msp/api:<git-sha>
   WEB_IMAGE: $CI_REGISTRY_IMAGE/web:$CI_COMMIT_SHA
@@ -76,10 +90,15 @@ check:
   extends: .mr-main
   image: golang:1.25-bookworm                 # tool Go via `go tool` (go.mod), tool JS via pnpm-lock
   services: [{ name: "postgis/postgis:16-3.5", alias: postgres }]
-  variables: { POSTGRES_PASSWORD: test, MSP_DATABASE_URL: "postgres://postgres:test@postgres:5432/postgres?sslmode=disable" }
+  variables:
+    POSTGRES_PASSWORD: test
+    MSP_DATABASE_URL: "postgres://postgres:test@postgres:5432/postgres?sslmode=disable"
+    GOMODCACHE: $CI_PROJECT_DIR/.cache/go-mod
+    GOCACHE: $CI_PROJECT_DIR/.cache/go-build
+  cache: { key: { files: [apps/api/go.sum, pnpm-lock.yaml] }, paths: [.cache/, .pnpm-store/] }
   before_script:                              # .nvmrc = versi eksak Node, mis. 24.11.0
     - curl -fsSL "https://nodejs.org/dist/v$(cat .nvmrc)/node-v$(cat .nvmrc)-linux-x64.tar.gz" | tar -xz -C /usr/local --strip-components=1
-    - corepack enable && pnpm install --frozen-lockfile && git fetch -q origin main
+    - corepack enable && pnpm install --frozen-lockfile --store-dir .pnpm-store && git fetch -q origin main
   script:
     - make generate && git diff --exit-code   # oapi-codegen, client TS, sqlc, tokens.css tidak basi
     - make lint                               # termasuk gitleaks (08 §0)
@@ -90,7 +109,7 @@ e2e:
   extends: .mr-main
   image: docker:28
   services: ["docker:28-dind"]
-  resource_group: e2e                         # satu stack E2E sekaligus di runner
+  # e2e.yml: env test, network `edge` tidak external, cache_from image :main, service `playwright`
   script: [docker compose -f deploy/docker-compose.prod.yml -f deploy/docker-compose.e2e.yml up --build --exit-code-from playwright]
 build:
   extends: .main
@@ -99,8 +118,12 @@ build:
   services: ["docker:28-dind"]
   script:
     - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
-    - docker build -f apps/api/Dockerfile -t "$API_IMAGE" . && docker push "$API_IMAGE"
-    - docker build -f apps/web/Dockerfile -t "$WEB_IMAGE" . && docker push "$WEB_IMAGE"
+    - |
+      for app in api web; do                  # cache inline dari :main → build kecil dan cepat
+        docker build -f apps/$app/Dockerfile --cache-from "$CI_REGISTRY_IMAGE/$app:main" --build-arg BUILDKIT_INLINE_CACHE=1 \
+          -t "$CI_REGISTRY_IMAGE/$app:$CI_COMMIT_SHA" -t "$CI_REGISTRY_IMAGE/$app:main" .
+        docker push --all-tags "$CI_REGISTRY_IMAGE/$app"
+      done
 trivy:                                        # laporan saja; dibaca founder sebelum tag rilis
   extends: .main
   stage: build
@@ -109,41 +132,47 @@ trivy:                                        # laporan saja; dibaca founder seb
   variables: { TRIVY_USERNAME: $CI_REGISTRY_USER, TRIVY_PASSWORD: $CI_REGISTRY_PASSWORD }
   script:
     - for i in "$API_IMAGE" "$WEB_IMAGE"; do trivy image --severity HIGH,CRITICAL --ignore-unfixed "$i"; done
+.deploy:
+  tags: [deploy]                              # shell di server, hanya ref terproteksi
+  script: [deploy/deploy.sh "$CI_COMMIT_SHA"]
 deploy-staging:
+  extends: .deploy
   stage: deploy-staging
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main" && $CI_PIPELINE_SOURCE == "push"
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
+  environment: staging
+smoke-staging:
+  stage: deploy-staging
+  needs: [deploy-staging]
   image: mcr.microsoft.com/playwright:v1.56.0-noble   # versi = @playwright/test di lockfile
   rules:
     - if: $CI_COMMIT_BRANCH == "main" && $CI_PIPELINE_SOURCE == "push"
       variables: { E2E_ARGS: "--project=chromium --grep @smoke" }   # J-2; J-1 butuh Mailpit (hanya di stack test)
     - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
       variables: { E2E_ARGS: "--grep-invert @ci-only" }              # J-2..J-6, semua browser
-  environment: staging
-  resource_group: staging
-  before_script: [apt-get update -qq && apt-get install -yqq openssh-client curl && corepack enable && pnpm install --frozen-lockfile]
+  environment: { name: staging, action: verify }                     # variabel staging: URL + akun test
   script:
-    - deploy/deploy.sh "$CI_COMMIT_SHA"
+    - corepack enable && pnpm install --frozen-lockfile
     - pnpm --filter ./apps/web exec playwright test $E2E_ARGS
 deploy-production:
+  extends: .deploy
   stage: deploy-production
-  image: alpine:3.22
   rules: [{ if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/, when: manual }]
   environment: production
-  resource_group: production
-  before_script: [apk add --no-cache bash curl openssh-client]
-  script: [deploy/deploy.sh "$CI_COMMIT_SHA"]
 backup:                                       # pipeline schedule harian
-  extends: deploy-production
+  tags: [deploy]
   stage: check
   rules: [{ if: $CI_PIPELINE_SOURCE == "schedule" }]
   environment: { name: production, action: access }
   script: [deploy/backup.sh]
 ```
 
-**`deploy/deploy.sh <git-sha>`** dipakai staging, production, dan rollback. Variabel per environment: `DEPLOY_HOST`, `DEPLOY_DIR` (`/opt/msp-staging` atau `/opt/msp`), `MSP_APP_HOST`.
-1. Tulis `.env`: setiap key di `deploy/.env.example` diisi dari variabel CI, ditambah `MSP_IMAGE_REPO=$CI_REGISTRY_IMAGE` dan `MSP_IMAGE_TAG=<git-sha>`. Salin `.env` (chmod 600), `docker-compose.prod.yml` (sebagai `compose.yaml`, agar perintah 09 jalan tanpa `-f`), `Caddyfile`, `kratos/`, dan `postgres/` ke `$DEPLOY_DIR`.
-2. `docker login` dengan deploy token `read_registry`, lalu `docker compose pull --ignore-buildable`.
+**`deploy/deploy.sh <git-sha>`** dijalankan runner `deploy` langsung di server, untuk staging, production, dan rollback. Variabel per environment: `DEPLOY_DIR` (`/opt/msp-staging` atau `/opt/msp`) dan `MSP_APP_HOST`.
+1. Tulis `.env`: setiap key di `deploy/.env.example` diisi dari variabel CI, ditambah `MSP_IMAGE_REPO=$CI_REGISTRY_IMAGE` dan `MSP_IMAGE_TAG=<git-sha>`. Salin ke `$DEPLOY_DIR`: `.env` (chmod 600), `docker-compose.prod.yml` sebagai `compose.yaml` (agar perintah 09 jalan tanpa `-f`), `docker-compose.staging.yml` sebagai `compose.staging.yaml`, `kratos/`, dan `postgres/`.
+2. `cd $DEPLOY_DIR`, `docker login` dengan deploy token `read_registry`, lalu `docker compose pull --ignore-buildable`.
 3. `docker compose run --rm worker msp migrate`, lalu `docker compose run --rm kratos migrate sql -e --yes`. Bila gagal, deploy berhenti dan versi lama tetap jalan.
-4. `docker compose up -d --build --wait --wait-timeout 300`. `--build` hanya membangun ulang `postgres` bila Dockerfile-nya berubah. Lalu `docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile`, karena perubahan file bind-mount tidak memicu recreate.
+4. `docker compose up -d --build --wait --wait-timeout 300`. `--build` hanya membangun ulang `postgres` bila Dockerfile-nya berubah.
 5. `curl -fsS https://$MSP_APP_HOST/readyz`. Bila gagal, job merah dan founder memutuskan rollback (09 RB-02).
 
 - Mengganti container menimbulkan jeda beberapa detik. Ini diterima untuk NFR-03 (99%); zero-downtime ada di F3.
@@ -154,57 +183,60 @@ backup:                                       # pipeline schedule harian
 
 ```yaml
 # deploy/docker-compose.prod.yml (ringkas). Dipakai staging & production. Semua service: restart: unless-stopped
+# Setiap service: deploy.resources.limits = kolom production §2; staging menimpanya lewat docker-compose.staging.yml
 x-app: &app
   image: ${MSP_IMAGE_REPO}/api:${MSP_IMAGE_TAG}       # api & worker = image yang sama
   env_file: .env
   depends_on: { postgres: { condition: service_healthy } }
 services:
-  caddy:
-    image: caddy:2.10-alpine
-    ports: ["80:80", "443:443"]                       # satu-satunya port yang dipublish
-    environment: { MSP_APP_HOST: "${MSP_APP_HOST}", MSP_OPS_IP: "${MSP_OPS_IP}", MSP_METRICS_PASSWORD_HASH: "${MSP_METRICS_PASSWORD_HASH}" }
-    volumes: ["./Caddyfile:/etc/caddy/Caddyfile:ro", "./sites:/etc/caddy/sites:ro", "caddy_data:/data"]
   web:                                                # tanpa env_file: web tidak memegang secret
     image: ${MSP_IMAGE_REPO}/web:${MSP_IMAGE_TAG}
+    networks: [default, edge]
     healthcheck: { test: ["CMD", "wget", "-qO-", "http://localhost:3000/"], interval: 5s }
-  api: { <<: *app, command: ["msp", "api"], healthcheck: { test: ["CMD", "wget", "-qO-", "http://localhost:8080/readyz"], interval: 5s } }
+  api: { <<: *app, command: ["msp", "api"], networks: [default, edge], healthcheck: { test: ["CMD", "wget", "-qO-", "http://localhost:8080/readyz"], interval: 5s } }   # :9090 metrik → Prometheus
   worker: { <<: *app, command: ["msp", "worker"], stop_grace_period: 60s }   # job River sempat selesai
-  kratos: { image: "oryd/kratos:v1.3.1", command: ["serve", "-c", "/etc/kratos/kratos.yml"], env_file: .env, volumes: ["./kratos:/etc/kratos:ro"] }
-  node-exporter: { image: "prom/node-exporter:v1.9.1", command: ["--path.rootfs=/host", "--web.telemetry-path=/node/metrics"], pid: host, volumes: ["/:/host:ro,rslave"] }   # metrik host
+  kratos: { image: "oryd/kratos:v1.3.1", command: ["serve", "-c", "/etc/kratos/kratos.yml"], env_file: .env, volumes: ["./kratos:/etc/kratos:ro"], networks: [default, edge] }
   postgres:
     build: ./postgres                                 # FROM postgis/postgis:16-3.5 + apt pgbackrest
     image: msp-postgres:16
     env_file: .env                                    # POSTGRES_PASSWORD, PGBACKREST_* (prod)
     volumes: ["pgdata:/var/lib/postgresql/data"]
     healthcheck: { test: ["CMD", "pg_isready", "-U", "postgres"], interval: 5s }
-volumes: { caddy_data: {}, pgdata: {} }
+networks:
+  edge: { name: "edge-${MSP_ENV}", external: true }   # dibuat stack /opt/ops (§2)
+volumes: { pgdata: {} }
 ```
 
 ```caddyfile
-# deploy/Caddyfile. MSP_APP_HOST = app.<domain> (production) atau staging.<domain> (staging)
-{$MSP_APP_HOST} {
+# deploy/ops/Caddyfile. Satu Caddy untuk semua domain; target = nama container (project = nama direktori README)
+(app) {                                  # {args[0]} = msp (production) atau msp-staging
 	@api path /api/* /healthz /readyz
-	reverse_proxy @api api:8080
+	reverse_proxy @api {args[0]}-api-1:8080
 	handle_path /.ory/* {
-		reverse_proxy kratos:4433        # public base_url = https://<host>/.ory/; admin 4434 tidak dirutekan
+		reverse_proxy {args[0]}-kratos-1:4433   # public base_url = https://<host>/.ory/; admin 4434 tidak dirutekan
 	}
-	@scrape {                            # hanya Prometheus di ops: allowlist IP + basic auth
-		path /metrics /node/metrics
-		remote_ip {$MSP_OPS_IP}
-	}
-	handle @scrape {
-		basic_auth {
-			prometheus {$MSP_METRICS_PASSWORD_HASH}   # caddy hash-password
-		}
-		reverse_proxy /node/metrics node-exporter:9100
-		reverse_proxy api:9090           # listener metrik internal (MSP_METRICS_ADDR)
-	}
-	reverse_proxy web:3000
+	reverse_proxy {args[0]}-web-1:3000      # metrik :9090 tidak dirutekan
 }
-import sites/*.caddy                    # kosong di prod; di ops: gitlab, registry, grafana
+app.{$MSP_DOMAIN} {
+	import app msp
+}
+staging.{$MSP_DOMAIN} {
+	import app msp-staging
+}
+gitlab.{$MSP_DOMAIN} {
+	reverse_proxy gitlab:80                 # GitLab: listen_https = false, TLS di Caddy
+}
+registry.{$MSP_DOMAIN} {
+	reverse_proxy gitlab:5050
+}
+grafana.{$MSP_DOMAIN} {
+	@luar not remote_ip {$MSP_ADMIN_IPS}    # allowlist = IP admin SSH (09 §2)
+	respond @luar 403
+	reverse_proxy grafana:3000
+}
 ```
 
-Docker melewati aturan `ufw` untuk port yang dipublish, jadi hanya `caddy` yang boleh memakai `ports:`. Karena itu Prometheus di `ops` membaca `/metrics` (`api:9090`) dan `/node/metrics` (`node-exporter`) lewat Caddy. Image `api` berbasis Alpine (ada `wget` untuk healthcheck). Image `web` memakai Next.js `output: "standalone"`.
+Image `api` berbasis Alpine (ada `wget` untuk healthcheck). Image `web` memakai Next.js `output: "standalone"`.
 
 ## 6. Migrasi DB
 
@@ -216,29 +248,31 @@ Migrasi memakai goose di `apps/api/db/migrations`, di-embed di binary, dan dijal
 
 ## 7. Secret & konfigurasi
 
-- `deploy/.env.example` adalah satu-satunya daftar key (DRY), berisi nilai dummy dan komentar: `MSP_*`, secret Kratos, `POSTGRES_PASSWORD`, `PGBACKREST_*`.
-- **Variabel CI GitLab**, di-scope per environment (`staging` / `production`): setiap key di atas, **Protected** + **Masked** untuk secret. Juga `DEPLOY_HOST`, `DEPLOY_DIR`, `SSH_PRIVATE_KEY` (tipe File, satu kunci per server), `SSH_KNOWN_HOSTS`, dan deploy token registry.
+- `deploy/.env.example` adalah satu-satunya daftar key (DRY), berisi nilai dummy dan komentar: `MSP_*`, secret Kratos, `POSTGRES_PASSWORD`, `PGBACKREST_*`. Isinya hanya secret dan pengaturan proses (04 §14).
+- **Pengaturan produk tidak ada di `.env`.** Provider, model, dan base URL AI (termasuk fallback) serta plan diubah dari halaman ops, tercatat di audit, dan berlaku tanpa deploy (D-29, 04 §11–12). Dari AI, yang ada di `.env` hanya API key-nya: `MSP_ANTHROPIC_API_KEY` dan `MSP_LLM_FALLBACK_API_KEY`.
+- **Variabel CI GitLab**, di-scope per environment (`staging` / `production`): setiap key di atas, **Protected** + **Masked** untuk secret. Juga `DEPLOY_DIR` dan deploy token registry.
 - Deploy menulis `.env` ke `$DEPLOY_DIR` dengan izin 600 (§4). Validasi nilai cukup di satu tempat, yaitu saat aplikasi start (08 STD-GO-05). Nilai yang salah membuat `msp migrate` gagal sebelum ada container yang diganti. **Rotasi**: ubah variabel, lalu jalankan ulang job deploy untuk tag yang sedang berlaku (09 RB-12).
-- Salinan secret production, `PGBACKREST_REPO1_CIPHER_PASS`, dan `gitlab-secrets.json` disimpan di password manager founder. Tanpa salinan ini, backup tidak bisa dipakai bila kedua server hilang.
+- `/opt/ops/.env` (domain, IP admin, password admin Grafana, SMTP/Telegram Alertmanager) diisi manual saat bootstrap.
+- Salinan berikut disimpan di password manager founder: secret production, `/opt/ops/.env`, `PGBACKREST_REPO1_CIPHER_PASS`, serta `gitlab-secrets.json` + `gitlab.rb` (keduanya tidak ikut backup GitLab). Tanpa salinan ini, backup tidak bisa dipakai bila server hilang.
 
 ## 8. Backup & restore
 
-- **pgBackRest**, stanza `msp`, berjalan di container `postgres` `prod`. Repo = object storage S3-compatible off-site di Indonesia (D-14, penyedia Q-09), terenkripsi `aes-256-cbc`, `repo1-retention-full=4`. Konfigurasi lewat env `PGBACKREST_*`.
-- **WAL kontinu.** Diaktifkan sekali di `prod`: `ALTER SYSTEM SET archive_mode = on`, `archive_command = 'pgbackrest --stanza=msp archive-push %p'`, `archive_timeout = '5min'`, lalu restart dan `pgbackrest stanza-create`. Data paling banyak hilang ≈ 5 menit → **RPO ≤ 15 menit** (NFR-04). Karena pengaturan ini tersimpan di data dir, staging tidak mengarsip, dan restore uji dengan `--archive-mode=off` (09 RB-10) tidak menulis ke repo production.
-- **Jadwal.** Pipeline schedule harian 01:00 WIB menjalankan job `backup` → `deploy/backup.sh` lewat SSH ke `prod`: `pgbackrest backup` (`--type=full` hari Minggu, `diff` hari lain) → `check` → `info`. Job gagal bila backup terakhir > 26 jam, dan GitLab mengirim email ke founder. Bila `ops` mati, WAL tetap terarsip; yang tertunda hanya backup full/diff.
-- **Uji restore** sekali sebelum rilis F1 (PRD §12.4), lalu tiap bulan, ke **DB sementara yang terpisah** di server `ops` (`/opt/msp-restore`, 09 RB-10). Durasi (RTO ≤ 8 jam) dan titik pulih dicatat. Setelah selesai: `docker compose down -v` dan hapus direktorinya, sehingga tidak ada data production yang tertinggal di server staging.
-- **GitLab**: cron harian di `ops` menjalankan `gitlab-backup create CRON=1`, upload ke object storage yang sama (bucket terpisah) lewat `backup_upload_connection`. DB staging tidak di-backup; isinya bisa di-import ulang.
+- **pgBackRest**, stanza `msp`, berjalan di container `postgres` production. Repo = object storage S3-compatible off-site di Indonesia (D-14, penyedia Q-09), terenkripsi `aes-256-cbc`, `repo1-retention-full=4`. Konfigurasi lewat env `PGBACKREST_*`.
+- **WAL kontinu.** Diaktifkan sekali di production: `ALTER SYSTEM SET archive_mode = on`, `archive_command = 'pgbackrest --stanza=msp archive-push %p'`, `archive_timeout = '5min'`, lalu restart dan `pgbackrest stanza-create`. Data paling banyak hilang ≈ 5 menit → **RPO ≤ 15 menit** (NFR-04). Karena pengaturan ini tersimpan di data dir, staging tidak mengarsip, dan restore uji dengan `--archive-mode=off` (09 RB-10) tidak menulis ke repo production.
+- **GitLab off-site.** Tanpa backup ini, satu-satunya salinan repo, variabel CI, dan registry ada di server ini. `gitlab-backup create CRON=1` di-upload ke object storage yang sama (bucket terpisah) lewat `backup_upload_connection`. Salinan lokal hanya disimpan sebentar (`backup_keep_time`), dan retensi off-site diatur dengan aturan lifecycle bucket.
+- **Jadwal.** Pipeline schedule harian 01:00 WIB menjalankan job `backup` → `deploy/backup.sh` di runner `deploy`: di `/opt/msp` `pgbackrest backup` (`--type=full` hari Minggu, `diff` hari lain) → `check` → `info`, lalu di `/opt/ops` `gitlab-backup create`. Job gagal bila salah satu langkah gagal atau backup pgBackRest terakhir > 26 jam, dan GitLab mengirim email ke founder. WAL tetap terarsip walau GitLab mati.
+- **Uji restore** sekali sebelum rilis F1 (PRD §12.4), lalu tiap bulan. Restore dilakukan ke **project sementara di server yang sama** (`/opt/msp-restore`, 09 RB-10), dengan volume sendiri, hanya `postgres`, dan tidak menyentuh data staging. Durasi (RTO ≤ 8 jam) dan titik pulih dicatat. Setelah selesai, jalankan `docker compose down -v` dan hapus direktorinya. DB staging tidak di-backup karena isinya bisa di-import ulang.
 
 ## 9. Bootstrap server
 
-`deploy/bootstrap.sh` idempotent dan sama untuk kedua server: `ssh root@<ip> 'bash -s' < deploy/bootstrap.sh`.
-- **User**: satu user per admin (sudo, kunci SSH) dan user `deploy` untuk CI (grup `docker`, setara root). Direktori Compose (README) dimiliki `deploy`.
-- **SSH** kunci saja (`PasswordAuthentication no`, `PermitRootLogin no`). **Firewall `ufw`**: tolak semua koneksi masuk kecuali 80/443, dan 22 dari allowlist (IP admin + IP `ops` untuk runner).
+`deploy/bootstrap.sh` bersifat idempotent dan dijalankan dari clone repo: `scp -r deploy root@<ip>:` lalu `ssh root@<ip> bash deploy/bootstrap.sh`. Karena login root dimatikan setelah run pertama, run berikutnya memakai user admin + `sudo`.
+- **User**: satu user per admin (sudo, kunci SSH), dan user `deploy` (grup `docker`, setara root) untuk runner `deploy`. Direktori Compose (README) dimiliki `deploy`.
+- **SSH** kunci saja (`PasswordAuthentication no`, `PermitRootLogin no`). **Firewall `ufw`**: tolak semua koneksi masuk kecuali 80/443, dan 22 dari allowlist IP admin.
 - **Update**: `unattended-upgrades` untuk security update; reboot manual di jam sepi (09 §6). **Docker**: Engine + plugin compose dari repo apt resmi; rotasi log `json-file` (`max-size: 50m`, `max-file: 3`).
-- Langkah tambahan sekali di `ops`: start stack `/opt/ops`, daftarkan runner, pasang cron backup GitLab.
-- Langkah tambahan di `prod`: cron penjaga `ops` (tiap 5 menit `curl -fsS https://grafana.<domain>/api/health`; gagal 3× berturut-turut → email ke founder), agar matinya server monitoring tetap ketahuan (09 §1.1).
+- **Ops**: pasang paket `gitlab-runner` (runner `deploy`, user `deploy`), salin `deploy/ops/` ke `/opt/ops`, lalu `docker compose up -d`. Bootstrap berhenti dengan pesan bila `/opt/ops/.env` belum ada; isi file itu dari password manager.
+- **Manual sekali**: daftarkan runner `ci` dan `deploy` (§2), buat pipeline schedule `backup`, dan daftarkan `https://app.<domain>/readyz` dan `https://gitlab.<domain>` di uptime monitor eksternal (09 AL-01).
 
-**Bangun ulang server = bootstrap + restore + deploy** (09 RB-11). `prod`: bootstrap → restore pgBackRest → Retry `deploy-production` tag yang berlaku → DNS. `ops`: bootstrap → `gitlab-backup restore` → daftarkan runner → pipeline `main`.
+**Bangun ulang server** (RTO ≤ 8 jam, NFR-04; langkah di 09 RB-11): server baru → bootstrap → DNS ke IP baru (Caddy butuh DNS untuk TLS; runner dan registry diakses lewat domain) → `gitlab-backup restore` + daftarkan ulang runner → restore pgBackRest ke `/opt/msp` → Retry `deploy-production` tag yang berlaku → pipeline `main` untuk staging.
 
 ## 10. Rilis & versi
 
@@ -251,9 +285,10 @@ Migrasi memakai goose di `apps/api/db/migrations`, di-embed di binary, dan dijal
 
 | Upgrade | Pemicu |
 |---|---|
+| Pindahkan GitLab + CI (dan staging) ke server kedua | Contention terukur: AL-09 sering, atau p95 production naik saat pipeline/import staging berjalan (PRD §13, 04 §2.1) |
 | Deploy tanpa downtime (2 replika `api` di belakang Caddy, atau blue/green); server aplikasi kedua + replika DB | Target 99,5% dan HA di F3 (NFR-03) |
-| Image CI siap pakai (Go + Node), cache Go/pnpm/BuildKit, runner kedua | Pipeline MR > 15 menit atau antrean E2E sering menunggu |
+| Image CI siap pakai (Go + Node), runner CI tambahan | Pipeline MR > 15 menit atau antrean job sering menunggu |
 | Renovate, image signing + SBOM, Semgrep, ZAP | Update dependency manual mulai berat, diminta customer/audit, atau ada temuan keamanan |
-| SOPS/Vault, Ansible/Terraform | Lebih dari 2 server atau tim ops bertambah |
+| SOPS/Vault, Ansible/Terraform | Server atau tim ops bertambah |
 | Preview environment per MR | Review UI di staging menjadi bottleneck |
 | GitLab berbayar (protected environment, approval wajib) | Tim manusia bertambah dan aturan proses §3 tidak cukup |
