@@ -471,6 +471,7 @@ Dihasilkan saat `VALIDATING` dan disimpan di `ingest.validation_report` (JSONB) 
 {
   "snapshot": "ds-2026.10.1", "source": "biz_dataset_a", "mapping_version": "1.2.0",
   "rows": { "received": 5104332, "parsed": 5103990, "valid": 5021877, "rejected": 82113 },
+  "warnings_by_reason": { "RATING_WITHOUT_REVIEWS": 1180 },
   "rejects_by_reason": { "INVALID_COORD": 40211, "MISSING_REQUIRED:name": 1203, "OUT_OF_COUNTRY": 3555,
                          "DUP_SOURCE_RECORD_ID": 3420, "UNPARSEABLE_ROW": 342, "FIELD_TYPE:rating": 33382 },
   "fill_rate": {
@@ -1501,6 +1502,8 @@ Memenuhi MVP Pack §12 (diperluas), FR-AUTH-004, FR-BILL-001/003/004, FR-EXP-*, 
 | 503 | `AI_UNAVAILABLE`, `FEATURE_DISABLED` (kill switch), `MAINTENANCE_READ_ONLY` (flag `maintenance.read_only`, §18.3; semua operasi tulis) | — |
 | 504 | `DEPENDENCY_TIMEOUT` | — |
 
+**Kode warning baris** (baris tetap diterima; muncul di `warnings_by_reason`): `RATING_WITHOUT_REVIEWS` (rating ada tetapi `review_count` 0/kosong → rating disimpan sebagai Unknown untuk opportunity reputasi, EC-26).
+
 **Kode alasan reject baris** (bukan HTTP error; muncul di `rejects_by_reason` laporan validasi snapshot, laporan/CSV reject upload, dan `upload_row.reject_reasons`; stabil seperti `code` di atas): `MISSING_REQUIRED:<field>` (field wajib kosong; untuk `require_any` field ditulis gabungan, mis. `MISSING_REQUIRED:website|phone|address.full`), `DUP_SOURCE_RECORD_ID` (kemunculan ke-2 dst. dalam satu snapshot), `INVALID_COORD`, `OUT_OF_COUNTRY`, `UNPARSEABLE_ROW`, `FIELD_TYPE:<field>`, `FIELD_RANGE:<field>`, `ENCODING_ERROR`, `SUPPRESSED_VALUE` (field dibuang, record tetap jalan). Prefiks sebelum `:` adalah kode stabil yang dipakai test dan UI; sufiks adalah nama field kanonik (§4.3.1).
 
 ```json
@@ -1681,6 +1684,7 @@ err := tenancy.WithTx(ctx, ws, func(tx pgx.Tx) error {
 | Replay | Penerima menolak bila selisih `now − t` > 300 s dan men-dedupe `MSP-Event-Id` (didokumentasikan + contoh kode verifikasi) |
 | Sukses | 2xx dalam 10 detik. Body respons dibaca maksimal 64 KB lalu dibuang |
 | Retry | Semua non-2xx/timeout/error jaringan kecuali `410 Gone`. Jadwal: **1 m, 5 m, 30 m, 2 j, 6 j, 12 j** (±10% jitter) → 7 percobaan, ±20 j 36 m (≤ 24 jam, FR-EXP-003), diimplementasikan dengan `NextRetry` kustom + `MaxAttempts` 7 pada job River `webhook.deliver`. `429` menghormati `Retry-After` (≤ 1 jam) dalam jadwal yang sama |
+| `error_code` delivery | Enum `webhook_delivery.error_code` (null bila 2xx): `HTTP_<status>` (mis. `HTTP_500`), `TIMEOUT`, `CONNECTION_ERROR`, `TLS_ERROR`, `RESPONSE_TOO_LARGE`, **`DESTINATION_BLOCKED`** (IP tujuan ditolak `net.Dialer.Control`/netguard atau egress proxy, termasuk DNS rebinding; dihitung gagal dan tetap di-retry sesuai jadwal karena DNS bisa berubah, alert AL egress) |
 | DLQ | Percobaan habis (job `discarded`) → delivery `DLQ` + `release` hold credit. Kirim ulang manual (`/redeliver`) membuat percobaan baru tanpa tagihan baru |
 | Kesehatan endpoint | ≥ 20 delivery berturut-turut masuk DLQ (`consecutive_dlq_count`) → `DISABLED_FAILING` + email ke Admin. `410` → langsung disable. Admin mengaktifkan ulang lewat `PATCH /v1/webhooks/{id}` (`status: ACTIVE`, counter di-reset) |
 | Status endpoint (API & UI) | Dua dimensi terpisah. (1) **`status`** (lifecycle, enum `webhook_endpoint_status`): `ACTIVE` \| `DISABLED_MANUAL` \| `DISABLED_FAILING` — hanya `ACTIVE` yang menerima delivery. (2) **`test.status`** (`last_test_status`, enum `webhook_test_status`, tidak pernah null): `UNTESTED` (default saat dibuat; juga di-reset ke `UNTESTED` bila URL diubah) \| `PASSED` \| `FAILED`, beserta `test.tested_at`, `test.response_code`, `test.latency_ms`, `test.error_code` (`TIMEOUT`, `HTTP_STATUS`, `TLS_ERROR`, `CONNECTION_ERROR`, `URL_REJECTED`; null bila `PASSED`/`UNTESTED`). Status uji **tidak memblokir** delivery (informatif); UI menampilkan "Belum lolos uji" untuk `ACTIVE` + `UNTESTED`/`FAILED`. Respons juga memuat `stats_7d` (`delivered`, `failed`, `success_ratio`) dan `last_delivery_at` |

@@ -170,6 +170,7 @@ Semua akun internal wajib MFA (FR-AUTH-006) dan setiap aksi tercatat di audit (F
 | Suppression & permintaan subjek data | — | — | ✓ | ✓ |
 | Grant/refund credit, ubah plan | — | — | ✓ | ✓ |
 | Akses support read-only ke data tenant (dengan alasan) | ✓ | ✓ | ✓ | ✓ |
+| Baca audit log internal (tanpa edit/hapus) | ✓ | ✓ | ✓ | ✓ |
 | Kelola akun & peran internal | — | — | — | ✓ |
 
 ### 8.2 DATA — Fondasi data & pipeline

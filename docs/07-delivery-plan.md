@@ -346,7 +346,7 @@ Ukuran: **S** ≤ 15 SP, **M** 16–30, **L** 31–45, **XL** > 45. Epic V1 ke a
 | US-PLAT-044 | Teknis: eksekusi PERF-01..07 pada build RC (QG-31) + k6 sekali di hardware produksi (data sintetis) sebelum early paid | NFR-PERF-01..07 | — | 3 | QA | SPR-16 | EP-30 | US-PLAT-034 |
 | US-PLAT-045 | Teknis: `app-02` — reuse role Ansible `app-01`, Traefik di dua host di belakang VIP (keepalived/VRRP atau LB provider), Redis replica + Sentinel, playbook deploy `serial: 1` | R-08, NFR-AVAIL-01, NFR-AVAIL-02 | — | 5 | OPS | SPR-16 | EP-08 | Q-D-09 (hardware app-02), Q-CI-05, US-PLAT-024 |
 | US-PLAT-046 | Teknis: kesiapan multi-host — sesi & invalidasi cache membership lewat Redis bersama (pub/sub), worker River aktif di dua host (leader election periodic job), Kratos di dua host; drill failover `app-01` → `app-02` | R-08, FR-AUTH-005, NFR-AVAIL-01 | — | 3 | GO | SPR-16 | EP-08 | US-PLAT-045 |
-| US-PLAT-047 | Teknis: kesiapan beta — workspace beta + grant credit, workspace sintetis `msp-synthetic` untuk smoke produksi, kanal feedback beta | FR-OPS-006, FR-INTL-010 | — | 2 | QA | SPR-12 | EP-30 | US-OPS-011 |
+| US-PLAT-047 | Teknis: kesiapan beta — workspace beta + grant credit, workspace sintetis `msp-synthetic-monitor` untuk smoke produksi (`msp-synthetic` hanya untuk data uji staging), kanal feedback beta | FR-OPS-006, FR-INTL-010 | — | 2 | QA | SPR-12 | EP-30 | US-OPS-011 |
 | US-PLAT-048 | Teknis: retest temuan security + pentest eksternal (opsional) + laporan RG-7 (0 Critical/High) | RG-7, NFR-SEC-06 | — | 3 | QA | SPR-17 | EP-05 | US-PLAT-038 |
 
 #### DATA — fondasi data & pipeline (22 story, 96 SP inti)
