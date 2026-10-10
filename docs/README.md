@@ -62,6 +62,7 @@ Semua dokumen memakai nama-nama ini persis.
 | Service Compose (prod & staging) | `caddy`, `web`, `api`, `worker`, `kratos`, `postgres` |
 | Service Compose (server ops) | `gitlab`, `gitlab-runner`, `prometheus`, `alertmanager`, `grafana` |
 | Environment | `local` (laptop, Docker Compose), `staging` (server ops), `production` (server prod) |
+| Domain | `app.<domain>` (production), `staging.<domain>`, `gitlab.<domain>`, `grafana.<domain>` |
 | Direktori Compose di server | `/opt/msp` (prod), `/opt/msp-staging` (staging, di server ops), `/opt/ops` (GitLab, runner, monitoring) |
 | Menjalankan tool di server | `docker compose run --rm worker msp <subcommand>` |
 | Backup | pgBackRest stanza `msp` |

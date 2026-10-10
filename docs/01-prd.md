@@ -130,7 +130,7 @@ Pertanyaan terbuka: jumlah record, cakupan wilayah, tanggal pengambilan, dan kad
 | **ACT** | | |
 | FR-ACT-01 | List, tag, catatan, dan pemilik (assign ke anggota) untuk prospek | — |
 | FR-ACT-02 | Unlock kontak: 1 credit per prospek, permanen per workspace. Yang di-mask hanya **nomor telepon**; website dan akun sosial selalu terlihat | Unlock ganda tidak menagih ulang |
-| FR-ACT-03 | Export CSV/XLSX sebagai job async dengan preview biaya, maksimal 10.000 baris per job. Prospek yang belum di-unlock ikut di-unlock saat export **berhasil** | Gagal → tidak ditagih |
+| FR-ACT-03 | Export CSV/XLSX sebagai job async, maksimal 10.000 baris per job. Bila ada prospek yang belum di-unlock, user ditawari **"Unlock & export"** dengan preview biaya | Export gagal bisa diulang tanpa biaya |
 | FR-ACT-04 | Webhook: daftar URL HTTPS (ditolak bila mengarah ke IP privat/internal), payload ber-tanda tangan HMAC, retry otomatis, log pengiriman, kirim prospek terpilih | Uji SSRF lulus |
 | FR-ACT-05 | AI brief per prospek: **Claude**, fallback ke API **OpenAI-compatible** (D-15). Hanya dari fakta profil, setiap kalimat merujuk fakta. Cache 7 hari. Ada kill switch | Brief tanpa rujukan fakta ditolak lalu dibuat ulang sekali |
 | **BILL** | | |
@@ -158,7 +158,7 @@ Pertanyaan terbuka: jumlah record, cakupan wilayah, tanggal pengambilan, dan kad
 | BR-SCORE-02 | Band: **HOT** ≥ 80, **WARM** 60–79, **COLD** < 60. Bila coverage < 0,6 atau kriteria ICP *wajib* tidak diketahui → maksimal WARM, dengan label "Data terbatas" |
 | BR-SCORE-03 | Persentil memakai `percent_rank()` Postgres dalam kelompok pembanding (kategori × kab/kota) |
 | BR-OPP-01 | Klaim "tidak ada X" hanya dibuat bila field X terisi ≥ 50% di kategori × kab/kota yang sama (minimal 20 prospek). Bila tidak, opportunity tersebut tidak dibuat |
-| BR-CRED-01 | Unlock 1 credit/prospek, permanen. Export **atau kirim ke webhook** untuk prospek yang belum di-unlock = auto-unlock, ditagih hanya bila berhasil. AI brief yang gagal tidak ditagih. Semua debit memakai idempotency key. Refund dilakukan manual oleh ops |
+| BR-CRED-01 | **Unlock adalah satu-satunya operasi berbayar untuk kontak**: 1 credit/prospek, permanen. Export dan kirim ke webhook sendiri gratis; untuk prospek yang belum di-unlock, unlock dijalankan dulu (dengan preview biaya), lalu export/kirim berjalan, dan bila gagal cukup diulang tanpa biaya. AI brief yang gagal tidak ditagih. Semua debit memakai idempotency key. Refund dilakukan manual oleh ops |
 | BR-AI-01 | Ke LLM hanya dikirim fakta level bisnis. Nomor telepon tidak dikirim |
 
 ## 11. Non-functional requirements

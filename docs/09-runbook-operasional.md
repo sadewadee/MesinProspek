@@ -8,11 +8,11 @@ Prosedur operasi F1 untuk `production` dan `staging`. Versi 0.2 (lean). Stack da
 ### 1.1 Server
 | Server | Service Compose | Direktori | URL |
 |---|---|---|---|
-| `prod` | `caddy`, `web`, `api`, `worker`, `kratos`, `postgres` (+ pgBackRest, stanza `msp`) | `/opt/msp` | `https://<domain>` · health `/healthz`, `/readyz` · halaman ops `/ops` |
+| `prod` | `caddy`, `web`, `api`, `worker`, `kratos`, `postgres` (+ pgBackRest, stanza `msp`) | `/opt/msp` | `https://app.<domain>` · health `/healthz`, `/readyz` · halaman ops `/ops` |
 | `ops` | `gitlab` (+ container registry), `gitlab-runner`, `prometheus`, `alertmanager`, `grafana` | `/opt/ops` | `https://gitlab.<domain>`, `https://grafana.<domain>` |
 | `ops` (staging) | `caddy`, `web`, `api`, `worker`, `kratos`, `postgres` | `/opt/msp-staging` | `https://staging.<domain>` |
 
-Direktori dibuat oleh `deploy/bootstrap.sh` (06). Prometheus mengambil `/metrics` aplikasi dan metrik host (disk, CPU, RAM) kedua server; Alertmanager mengirim alert ke email dan Telegram `<grup-ops>`. Probe eksternal `<layanan-uptime>` (di luar kedua server) memeriksa `https://<domain>/readyz` dan `https://gitlab.<domain>` tiap menit, sehingga server `ops` yang mati tetap terdeteksi.
+Direktori dibuat oleh `deploy/bootstrap.sh` (06). Prometheus mengambil `/metrics` aplikasi dan metrik host (disk, CPU, RAM) kedua server; Alertmanager mengirim alert ke email dan Telegram `<grup-ops>`. Probe eksternal `<layanan-uptime>` (di luar kedua server) memeriksa `https://app.<domain>/readyz` dan `https://gitlab.<domain>` tiap menit, sehingga server `ops` yang mati tetap terdeteksi.
 
 ### 1.2 Dependensi eksternal
 | Dependensi | Dipakai untuk | Bila gangguan |
@@ -72,7 +72,7 @@ WHERE state = 'discarded' AND finalized_at > now() - interval '24 hours' GROUP B
 2. GitLab → **Build → Pipelines** → pipeline tag `vX.Y.Z` → job manual deploy production → **Run**. Job menulis `.env`, lalu `docker compose pull` → `msp migrate` → `docker compose up -d --wait` (06).
 3. Gagal di `msp migrate`: versi lama tetap jalan. Baca log job, perbaiki lewat rilis baru. Gagal di `up --wait`: RB-02.
 
-**Verifikasi:** `curl -fsS https://<domain>/readyz`; `docker compose ps` semua `healthy`. Smoke test di workspace uji `<workspace-uji>`: login email dan Google → search → profil → unlock 1 prospek → export kecil → webhook ke `<endpoint-uji>` → AI brief → `/ops` terbuka dengan MFA. Pantau 5xx dan p95 di Grafana selama 30 menit.
+**Verifikasi:** `curl -fsS https://app.<domain>/readyz`; `docker compose ps` semua `healthy`. Smoke test di workspace uji `<workspace-uji>`: login email dan Google → search → profil → unlock 1 prospek → export kecil → webhook ke `<endpoint-uji>` → AI brief → `/ops` terbuka dengan MFA. Pantau 5xx dan p95 di Grafana selama 30 menit.
 
 ### RB-02 — Rollback
 **Kapan:** setelah deploy, error naik atau ada bug kritis yang tidak bisa diperbaiki dalam 30 menit.
@@ -199,11 +199,11 @@ Aturan alert ada di `deploy/` (Prometheus + probe eksternal); ambang di bawah ad
 
 | ID | Alert & ambang | Dampak | Langkah pertama |
 |---|---|---|---|
-| AL-01 | **Situs down:** probe `https://<domain>/readyz` gagal 2× berturut | Semua user. SEV-1 | `docker compose ps`; service mati/unhealthy → L1 → `docker compose up -d <service>`. `/healthz` OK tetapi `/readyz` gagal → DB: log `postgres`, disk (RB-13). Tidak bisa SSH → console/reboot di panel hosting; rusak permanen → RB-11. Baru deploy → RB-02. Probe `gitlab.<domain>` gagal = server `ops` mati: SEV-2 (prod jalan tanpa monitoring dan deploy) |
+| AL-01 | **Situs down:** probe `https://app.<domain>/readyz` gagal 2× berturut | Semua user. SEV-1 | `docker compose ps`; service mati/unhealthy → L1 → `docker compose up -d <service>`. `/healthz` OK tetapi `/readyz` gagal → DB: log `postgres`, disk (RB-13). Tidak bisa SSH → console/reboot di panel hosting; rusak permanen → RB-11. Baru deploy → RB-02. Probe `gitlab.<domain>` gagal = server `ops` mati: SEV-2 (prod jalan tanpa monitoring dan deploy) |
 | AL-02 | **5xx tinggi:** > 5% respons API 5xx selama 10 menit | Sebagian aksi gagal. SEV-2, SEV-1 bila > 50% | L2. Mulai setelah deploy → RB-02. Error DB → langkah DB di AL-03. Error login → L1 untuk `kratos` |
 | AL-03 | **p95 di atas NFR-01:** search > 1 s atau profil > 500 ms selama 15 menit | App lambat. SEV-3, SEV-2 bila > 2× target | Ada import/rescore jalan → wajar sementara, pindahkan ke jam sepi bila mengganggu. Query macet: `SELECT pid, now()-query_start AS durasi, left(query,100) FROM pg_stat_activity WHERE state <> 'idle' ORDER BY durasi DESC LIMIT 10;` → yang > 5 menit dan bukan backup: `SELECT pg_cancel_backend(<pid>);`. CPU/RAM/IO host jenuh di Grafana → engineering (query/indeks) dan founder (kapasitas) |
 | AL-04 | **Antrean River tertahan:** job `available` tertua > 15 menit di `export`, `webhook`, `ai`, atau > 2 jam di `import`, `score` | Export, webhook, AI brief, atau skor tertunda. SEV-2 | Q1, `docker compose ps worker`, L1 untuk `worker`. Worker mati/macet → `docker compose restart worker` (job idempotent, STD-DB-06). Hanya `import`/`score` yang panjang karena import besar → tunggu |
-| AL-05 | **Banyak job gagal:** > 10 job `discarded` dalam 1 jam di `import`, `export`, `webhook`, atau `ai` | Aksi user gagal (export gagal tidak ditagih). SEV-2 | Q2. `webhook` → biasanya endpoint customer menolak/timeout: kabari customer. `ai` → AL-08. `export` → disk (RB-13) atau bug (engineering). `import` → laporan RB-03. Tidak ada redrive massal di F1: setelah penyebab beres, user mengulang aksinya; ops mengulang import (aman, upsert) |
+| AL-05 | **Banyak job gagal:** > 10 job `discarded` dalam 1 jam di `import`, `export`, `webhook`, atau `ai` | Aksi user gagal (export/kirim yang gagal bisa diulang tanpa biaya). SEV-2 | Q2. `webhook` → biasanya endpoint customer menolak/timeout: kabari customer. `ai` → AL-08. `export` → disk (RB-13) atau bug (engineering). `import` → laporan RB-03. Tidak ada redrive massal di F1: setelah penyebab beres, user mengulang aksinya; ops mengulang import (aman, upsert) |
 | AL-06 | **Arsip WAL/backup gagal:** tidak ada WAL terarsip > 15 menit, `failed_count` naik, atau backup terakhir > 26 jam | RPO ≤ 15 menit (NFR-04) tidak terjamin; `pg_wal` menumpuk sampai disk penuh. SEV-2, SEV-1 bila disk > 90% | RB-09 dan L1 untuk `postgres`. Penyebab umum: storage off-site tidak terjangkau, kredensial kedaluwarsa (RB-12), kuota bucket habis, disk lokal penuh. Setelah beres: `docker compose exec -u postgres postgres pgbackrest --stanza=msp backup` |
 | AL-07 | **Disk penuh:** > 80% peringatan, > 90% kritis, di server mana pun | Postgres berhenti menulis bila disk penuh → situs down. SEV-2, SEV-1 bila > 90% di `prod` | RB-13 |
 | AL-08 | **Provider AI gagal:** > 20% AI brief memakai fallback selama 15 menit (peringatan); > 20% gagal di kedua provider selama 10 menit (kritis) | AI brief lambat/gagal, fitur lain normal. SEV-3 / SEV-2 | Halaman status penyedia + L1 untuk `worker`. 401/403 → kunci salah/dicabut (RB-12). 429 → kuota/rate limit di konsol penyedia. 5xx/timeout → tunggu penyedia. Kritis > 30 menit → kill switch AI (RB-07), nyalakan lagi setelah pulih |
@@ -224,7 +224,7 @@ Aturan alert ada di `deploy/` (Prometheus + probe eksternal); ambang di bawah ad
 Subjek: [MesinProspek] Gangguan <fitur> — <tanggal>
 Halo,
 Sejak pukul <jam> WIB, <fitur> di MesinProspek <tidak dapat digunakan / lebih lambat dari biasanya>.
-Tim kami sedang menanganinya. <Credit tidak ditagih untuk export yang gagal.>
+Tim kami sedang menanganinya. <Export atau kirim webhook yang gagal bisa diulang tanpa biaya.>
 Kabar berikutnya paling lambat pukul <jam> WIB.
 Salam, Tim MesinProspek
 

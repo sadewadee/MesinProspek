@@ -92,7 +92,7 @@
 | **ACT / BILL** | | | |
 | FR-ACT-01 | List, tag, catatan, assign ke anggota workspace yang sama saja | I | — |
 | FR-ACT-02 | Unlock 1 credit, permanen, idempotent, juga saat paralel | I | TC-ACT-01 |
-| FR-ACT-03 | Preview biaya, job async, tagih hanya bila berhasil, tanpa tagih ganda saat job diulang | I, E | TC-ACT-02 |
+| FR-ACT-03 | Preview biaya, "Unlock & export" menagih lewat unlock, export gagal bisa diulang tanpa biaya, tanpa tagih ganda | I, E | TC-ACT-02 |
 | FR-ACT-04 | Validasi URL (SSRF), HMAC, retry, log pengiriman | U, I | TC-ACT-03, TC-ACT-04 |
 | FR-ACT-05 | Fakta saja + rujukan, tanpa telepon (BR-AI-01), fallback, cache 7 hari, kill switch, AI credit (Lampiran D) | U, I | TC-AI-01..03 |
 | FR-BILL-01 | Saldo = jumlah ledger; idempotency key; grant & refund oleh ops | U, I | TC-ACT-01 |
@@ -136,7 +136,7 @@
 | TC-PRIV-01 | User workspace A membaca/mengubah list, ICP, catatan, feedback, unlock, ledger, export, webhook milik B lewat ID; query langsung dengan konteks A | 404 untuk akses by ID; 0 baris milik B. Test katalog: tiap tabel data workspace punya RLS aktif + policy (menangkap tabel baru tanpa RLS) | I | FR-PRIV-01, NFR-05 |
 | TC-PRIV-02 | Telepon prospek masuk suppression list setelah di-unlock | Tersembunyi di profil, tidak ada di file export dan payload webhook | I | FR-PRIV-02 |
 | TC-ACT-01 | Unlock prospek yang sama dua kali berurutan dan 2 request paralel; saldo 0 | Satu debit saja, saldo = jumlah ledger; saldo 0 → ditolak tanpa entri ledger | I | FR-ACT-02, FR-BILL-01, BR-CRED-01 |
-| TC-ACT-02 | Export 10 prospek (3 sudah di-unlock): sukses; gagal (fake `storage` error); job diulang setelah sukses | Preview 7 credit; sukses → 7 debit + 7 unlock; gagal → 0 debit, 0 unlock, status gagal; ulang → tidak ditagih lagi | I | FR-ACT-03, BR-CRED-01 |
+| TC-ACT-02 | "Unlock & export" 10 prospek (3 sudah di-unlock); lalu job export dibuat gagal (fake `storage` error) dan diulang | Preview 7 credit; konfirmasi → 7 debit + 7 unlock (via unlock); export gagal → tidak ada debit tambahan; ulang → sukses, tetap total 7 debit | I | FR-ACT-02/03, BR-CRED-01 |
 | TC-ACT-03 | Daftar URL: skema `http://`; `https://` ke `localhost`, `127.0.0.1`, `2130706433` (desimal), `[::1]`, `10.x`, `172.16.x`, `192.168.x`, `169.254.169.254`, `0.0.0.0`, `[fd00::1]`; host publik yang resolve ke IP privat, host publik yang redirect 302 ke `169.254.169.254` | Semua ditolak saat daftar; IP dicek ulang saat koneksi (resolver fake); redirect tidak diikuti → pengiriman gagal tercatat | U, I | FR-ACT-04, NFR-05 |
 | TC-ACT-04 | Penerima `httptest` membalas 500, 500, 200; lalu selalu 500; body diubah 1 byte | Signature HMAC-SHA256 valid; 3 percobaan tercatat lalu sukses; selalu 500 → berhenti di batas retry, status gagal; body diubah → verifikasi gagal | I | FR-ACT-04 |
 | TC-AI-01 | Buat brief dengan LLM fake; fake membalas kalimat tanpa rujukan fakta, lalu valid | Request ke LLM hanya berisi fakta bisnis, tanpa telepon (mentah/E.164) dan nilai kontak; jawaban tanpa rujukan ditolak → dibuat ulang sekali; gagal lagi → error jelas | U, I | FR-ACT-05, BR-AI-01 |

@@ -199,7 +199,7 @@
 | | |
 |---|---|
 | Pertanyaan | "Berapa biayanya, dan di mana file saya?" |
-| Dialog biaya | Jumlah prospek · sudah di-unlock (gratis) · akan di-unlock (n credit) · saldo sebelum → sesudah · format CSV/XLSX · "Credit hanya ditagih bila export berhasil" (FR-ACT-03, BR-CRED-01). Prospek yang di-suppress dikecualikan dan disebutkan jumlahnya |
+| Dialog biaya | Jumlah prospek · sudah di-unlock (gratis) · akan di-unlock (n credit) · saldo sebelum → sesudah · format CSV/XLSX · "Unlock dijalankan sekarang; export yang gagal bisa diulang gratis" (FR-ACT-03, BR-CRED-01). Prospek yang di-suppress dikecualikan dan disebutkan jumlahnya |
 | Riwayat | Tabel job: dibuat, oleh, jumlah baris, credit, status (Antre / Diproses / Selesai / Gagal), Unduh / Coba lagi. Status job diperbarui otomatis |
 | State khusus | CREDIT KURANG · FITUR DIMATIKAN · Gagal → "Tidak ada credit yang ditagih" · lebih dari 10.000 baris → minta persempit filter |
 
@@ -399,7 +399,7 @@ Nada: lugas, sopan, tanpa menyalahkan user. Istilah produk mengikuti PRD: *credi
 | Situasi | Copy |
 |---|---|
 | Dialog unlock | "Unlock kontak Rumah Makan Sari Rasa? Biaya 1 credit · saldo 184 → 183. Kontak terbuka permanen untuk workspace ini." |
-| Dialog export | "Export 120 prospek (CSV). 85 sudah di-unlock (gratis), 35 akan di-unlock · 35 credit. Saldo 184 → 149. Credit hanya ditagih bila export berhasil." |
+| Dialog export | "Export 120 prospek (CSV). 85 sudah di-unlock (gratis), 35 akan di-unlock · 35 credit. Saldo 184 → 149. Unlock dijalankan sekarang; bila export gagal, ulangi tanpa biaya." |
 | Credit kurang | "Credit tidak cukup. Aksi ini butuh 35 credit, saldo Anda 20. Minta Admin workspace menambah credit." |
 | Tidak diketahui | "Tidak diketahui — data sumber tidak memuat jam buka." |
 | Data terbatas | "Data terbatas: sebagian faktor skor tidak diketahui (coverage 52%), jadi band maksimal WARM." |
