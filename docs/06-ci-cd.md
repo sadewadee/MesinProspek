@@ -7,549 +7,604 @@
 | Dokumen | CI/CD |
 | Versi | 0.1 (Draft) |
 | Tanggal | 2026-10-10 |
-| Basis | `README.md` (konvensi teknis & struktur monorepo), `00-analisis-dokumen-awal.md` (D-11, D-12, D-14), `01-prd.md` (§10 NFR, §12 release gate & DoD), MVP Pack v1.2 §11, §14, §15 |
-| Terkait | `04-technical-design.md` (arsitektur, data model, ADR), `05-test-strategy.md` (isi dan level test suite) |
+| Basis | `README.md` (konvensi & struktur monorepo), `00-analisis-dokumen-awal.md` (D-11, D-12, D-14), `01-prd.md` (§10 NFR, §12 release gate & DoD), `04-technical-design.md` (ADR-18, ADR-21, ADR-22), MVP Pack v1.2 §11, §14, §15 |
+| Terkait | `04-technical-design.md` (arsitektur, data model, deployment diagram), `05-test-strategy.md` (isi dan level test suite) |
+| Keputusan baru | **D-18** platform CI/CD = GitLab CE self-hosted · **D-19** hosting & runtime = dedicated server di DC Indonesia. Keduanya **Proposed** (§1.2). |
+| Menggantikan | Baris README *Repo*, *CI/CD*, dan *Hosting* (GitHub, GitHub Actions, AWS). README perlu diperbarui. |
 | Audience | Engineering, DevOps/Platform, QA, Tech lead |
 | Menutup | G-17 (strategi CI/CD, environment, migrasi DB) |
 
-> Konvensi: `QG-nn` = quality gate (didefinisikan di §8). Semua pilihan tooling berstatus **Proposed** sesuai README. Contoh YAML di dokumen ini **ilustratif**, bukan file final: file nyata di `.github/workflows/` dibuat saat bootstrap (§18). Jam ditulis dalam WIB (UTC+7). Ekspresi cron selalu UTC. Path modul backend (mis. `msp/identity/resolve`) adalah asumsi kerja; nama final ditetapkan di `04-technical-design.md`.
+> Konvensi: `QG-nn` = quality gate (§8). Semua pilihan berstatus **Proposed**. Contoh YAML, Ansible, dan konfigurasi bersifat **ilustratif**, bukan file final. Jam ditulis dalam WIB (UTC+7); schedule GitLab diset ke zona `Asia/Jakarta`. Path modul backend mengikuti 04 §3 (`apps/api/msp/<modul>/`); sub-path seperti `identity/internal/normalize/` adalah asumsi kerja.
 
 ---
 
-## 1. Prinsip
+## 1. Prinsip & keputusan
 
 | # | Prinsip | Konsekuensi konkret |
 |---|---|---|
-| P-1 | **Trunk-based development** | Satu branch jangka panjang: `main`. Branch fitur berumur pendek (target ≤ 2 hari, maksimal 5). Pekerjaan yang belum selesai masuk `main` di balik feature flag (§13), bukan di branch panjang. |
-| P-2 | **Build once, deploy many** | Image dibangun **sekali** per commit di `main`. Staging dan production menjalankan **image digest yang sama** (`sha256:…`). Tidak ada rebuild per environment. Konfigurasi environment masuk saat runtime (§12). |
-| P-3 | **Everything as code** | Pipeline (`.github/workflows/`), infrastruktur (`infra/terraform/`), kebijakan repo (CODEOWNERS, ruleset, Renovate), skema DB (Alembic), kontrak (`contracts/`), design tokens, konfigurasi versi skor/geo/prompt. Perubahan manual di console AWS dianggap drift (§11.5). |
-| P-4 | **Fast feedback** | Target pipeline PR **≤ 10 menit p50** (p90 ≤ 15 menit) lewat path filtering, Turborepo `--affected`, cache uv/pnpm/Docker layer, dan job paralel. Test lambat dipindah ke merge queue, post-deploy, atau nightly. |
-| P-5 | **Shift-left security** | Secret scanning, SAST, dependency review, license policy, dan scan IaC berjalan di PR. Image yang tidak lolos scan tidak pernah ditandatangani, sehingga tidak bisa di-deploy (§5, §15). |
-| P-6 | **Rilis data & model yang reproducible** | Snapshot dataset (`ds-YYYY.MM.n`), model skor (`priority-X.Y.Z`), geo (`geo-X.Y.Z`), dan prompt (`brief-X.Y.Z`) dirilis lewat pipeline dengan gate dan approval, terpisah dari rilis kode. Versi yang sudah dirilis immutable (NFR-DATA-01, FR-INTL-009). |
-| P-7 | **Data tetap di region** | Runner GitHub-hosted berada di luar Indonesia. Runner hanya memproses kode dan **data sintetis**. Dataset berlisensi, golden set, dan data production tidak pernah diunduh ke runner. Job yang butuh data berjalan sebagai ECS task di ap-southeast-3, dan CI hanya menerima laporan agregat (D-14, NFR-PRIV-03, BR-PRIV-04). |
-| P-8 | **Rollback murah, forward-fix untuk data** | Rollback aplikasi = deploy ulang digest sebelumnya (≤ 15 menit). Skema DB tidak di-rollback: migrasi selalu kompatibel dengan versi aplikasi sebelumnya (expand/contract, §9). |
+| P-1 | **Trunk-based development** | Satu branch jangka panjang: `main`. Branch fitur berumur ≤ 2 hari (maks 5). Pekerjaan yang belum selesai masuk `main` di balik feature flag (§13). |
+| P-2 | **Build once, deploy many** | Image dibangun **sekali** per commit `main` dan dipromosikan ke staging lalu production dengan **digest yang sama** (`sha256:…`). Versi dan konfigurasi environment disuntikkan saat runtime (§12). |
+| P-3 | **Everything as code** | `.gitlab-ci.yml`, `infra/ansible/` (server, OS, layanan), secret terenkripsi SOPS, kebijakan repo (setelan proyek GitLab via script API), skema DB (Alembic), kontrak (`contracts/`), design tokens, dan konfigurasi versi skor/geo/prompt. Perubahan manual di server dianggap drift (§11.4). |
+| P-4 | **Fast feedback** | Pipeline MR **≤ 10 menit p50** (p90 ≤ 15) lewat `rules:changes`, DAG `needs:`, cache uv/pnpm/Turborepo di cache S3 runner, dan BuildKit registry cache. |
+| P-5 | **Shift-left security** | Secret scanning (CI + server hook), SAST, audit dependency, license policy, dan scan IaC berjalan di MR. Image yang gagal scan tidak ditandatangani, sehingga tidak bisa di-deploy (§5, §15). |
+| P-6 | **Rilis data & model reproducible** | `ds-YYYY.MM.n`, `priority-X.Y.Z`, `geo-X.Y.Z`, `brief-X.Y.Z` dirilis lewat pipeline dengan gate dan approval, terpisah dari rilis kode. Versi terbit immutable (NFR-DATA-01, FR-INTL-009). |
+| P-7 | **Data tetap di zonanya** | Seluruh infrastruktur (kode, CI, registry, runtime, backup) berada di Indonesia (D-14). Runner MR (`ci-01`) hanya memproses kode dan **data sintetis**, dan tidak punya rute ke zona production/staging. Dataset berlisensi dan data production hanya diproses di host environment-nya. |
+| P-8 | **Rollback murah, forward-fix untuk data** | Rollback aplikasi = kembalikan traffic ke warna sebelumnya atau deploy ulang digest sebelumnya (≤ 5–15 menit). Skema DB tidak di-rollback: migrasi selalu kompatibel dengan versi N-1 (§9). |
+| P-9 | **Gate production = protected tag** | Setiap operasi yang mengubah production (rilis aplikasi, apply infra, publish dataset, aktivasi model) berjalan di pipeline **protected tag** yang hanya bisa dibuat Maintainer. Job manual di pipeline tersebut hanya bisa dijalankan Maintainer (§2.5). |
 
 ### 1.1 Alur besar
 
 ```
  feat/* fix/* chore/* docs/*
-        │  PR
+        │  merge request
         ▼
- ┌───────────────────────────┐    review CODEOWNERS     ┌─────────────────────────────┐
- │ pr.yml (path-filtered)    │ ───────────────────────► │ merge queue (pr.yml pada    │
- │ lint·type·test·migrasi·   │                          │ merge_group, commit gabung) │
- │ kontrak·tokens·a11y·E2E   │                          └──────────────┬──────────────┘
- │ smoke·security → ci-ok    │                                         │ squash merge
- └───────────────────────────┘                                         ▼
-                                                                     main
-                                                                       │ push
-                                                                       ▼
- ┌──────────────────────────────────────────────────────────────────────────────────────┐
- │ main.yml: build msp-api & msp-web (push by digest) → Trivy gate → SBOM → cosign sign │
- │        → deploy staging (migrate → worker → api → web) → verifikasi staging          │
- │        → commit status `staging-verified`                                            │
- └──────────────────────────────────────────────────────────────────────────────────────┘
-                                                                       │
-   release-please PR ──merge──► tag vX.Y.Z + GitHub Release ──────────►│
-                                                                       ▼
- ┌──────────────────────────────────────────────────────────────────────────────────────┐
- │ release.yml: resolve digest commit tag → readiness gate → approval (Env production)  │
- │        → verify signature → migrate → canary + bake (auto-rollback) → verifikasi     │
- └──────────────────────────────────────────────────────────────────────────────────────┘
-
- Paralel: nightly.yml (regresi penuh, k6, ZAP, data quality, drift), infra.yml (Terraform),
-          data-release.yml / model-release.yml (§10), rollback.yml (§14)
+ ┌──────────────────────────────────┐   review + approval   ┌───────────────────────────────┐
+ │ MR pipeline (rules:changes, DAG) │ ────────────────────► │ mr:gate (manual, blocking):   │
+ │ lint·type·test·migrasi·kontrak·  │                       │ approval owner, label, thread │
+ │ tokens·a11y·E2E smoke·security   │                       └───────────────┬───────────────┘
+ └──────────────────────────────────┘     rebase + squash + fast-forward    │
+                                                                            ▼
+                                                                          main
+ ┌──────────────────────────────────────────────────────────────────────────────────────────┐
+ │ main pipeline: build msp-api & msp-web (BuildKit) → Trivy → SBOM → cosign sign           │
+ │   → deploy staging (Ansible, blue/green Traefik) → verifikasi → status `staging-verified`│
+ │   → release:cut (manual, semantic-release) → tag vX.Y.Z + GitLab Release                 │
+ └──────────────────────────────────────────────────────────────────────────────────────────┘
+                                                                            │ protected tag
+ ┌──────────────────────────────────────────────────────────────────────────▼───────────────┐
+ │ tag pipeline vX.Y.Z: resolve digest → readiness gate → deploy:production (manual,        │
+ │   Maintainer) → verify signature → migrate → canary 10% → 100% → bake → auto-rollback    │
+ └──────────────────────────────────────────────────────────────────────────────────────────┘
+ Paralel: scheduled pipelines (nightly, drift, Renovate, drill), tag pipeline `infra-*`, `ds-*`,
+          `priority-*`/`geo-*`/`brief-*` (§10, §11), job rollback (§14)
 ```
 
-### 1.2 Pilihan tooling tambahan (di luar README, Proposed)
+### 1.2 Keputusan D-18 dan D-19 (Proposed)
 
-| Area | Pilihan | Alasan singkat | Alternatif yang ditolak |
-|---|---|---|---|
-| Rilis & changelog | **release-please** (manifest mode) | Repo poliglot (Python + TS). Konvensi sudah Conventional Commits. Release PR memberi titik review yang eksplisit. Satu versi aplikasi untuk seluruh deployable. | changesets (berorientasi paket npm, butuh file changeset manual per PR) |
-| Lint OpenAPI | **Spectral** (+ `spectral-owasp-ruleset`) | Ruleset kustom berbasis YAML mudah ditulis (mis. wajib `Idempotency-Key` pada operasi berbayar). Ada ruleset OWASP API. | Redocly CLI (bagus, tetapi aturan kustomnya lebih terbatas) |
-| Breaking change API | **oasdiff** | Mendukung OpenAPI 3.1, output level ERR/WARN, mudah di-diff terhadap base. | openapi-diff |
-| Lint SQL migrasi | **squawk** | Fokus ke operasi berbahaya di PostgreSQL (lock, index non-concurrent, rename/drop). | Manual review saja |
-| Validasi JSON Schema | **check-jsonschema** | CLI Python (jalan via `uvx`), mendukung draft 2020-12, juga memvalidasi workflow GitHub dan config Renovate. | ajv-cli |
-| Client TS | **openapi-typescript** (+ `openapi-fetch`) | Ringan, type-only, cocok dipadukan dengan TanStack Query. Final di 04. | orval |
-| Workflow lint | **actionlint** + **zizmor** | Sintaks dan keamanan GitHub Actions (injection, permission berlebih, pin SHA). | — |
-| Docs lint | **markdownlint-cli2** + **lychee** | Cepat, link check internal bisa offline. | — |
-| Supply chain | **syft** (SBOM SPDX), **cosign** keyless, provenance BuildKit (`mode=max`) | Sesuai kebutuhan SBOM + signing. Provenance BuildKit tidak bergantung plan GitHub (lihat §15.3). | Docker Content Trust |
-| Registry | **Amazon ECR** di akun `shared`, ap-southeast-3, tag immutable | Satu region dengan runtime, IAM via OIDC, pull lintas akun ke staging/production. | GHCR (di luar region, auth terpisah) |
-| Deploy ECS | ECS deployment **canary/blue-green bawaan** + alarm CloudWatch | Tanpa CodeDeploy. Bake time dan auto-rollback berbasis alarm. | CodeDeploy, rolling saja |
-| State Terraform | Backend S3 dengan **native lockfile** (`use_lockfile`) | Tanpa tabel DynamoDB. | S3 + DynamoDB lock |
-| Dependency update | **Renovate self-hosted** (GitHub Action + GitHub App token) | Tidak memberi akses kode ke pihak ketiga. Grouping dan automerge lebih fleksibel daripada Dependabot. | Mend-hosted Renovate, Dependabot |
-| Paralelisasi Python | **pytest-xdist** | Memenuhi target ≤ 10 menit. | — |
-| Feature flag | Flag store di Postgres + registry di repo, antarmuka tipis kompatibel OpenFeature | Audit wajib (FR-OPS-007), tanpa vendor tambahan di MVP. | LaunchDarkly/Unleash (biaya, residensi) |
-| Web performance | **Lighthouse CI** (nightly, staging) | Proxy lab untuk NFR-PERF-03. Nilai p75 sesungguhnya dari RUM. | — |
+| ID | Sub-keputusan | Alasan singkat |
+|---|---|---|
+| **D-18** | **Platform CI/CD = GitLab CE self-hosted** | Tidak memakai GitHub (arahan founder). Satu paket: code host, MR, CI, registry, scheduled pipeline. |
+| D-18.1 | GitLab CE (Omnibus) di `ops-01` adalah **repo utama**. Mirror ke GitHub opsional (Q-CI-01). Akses UI/git hanya lewat WireGuard. | Residensi kode, kontrol penuh |
+| D-18.2 | GitLab CI: `.gitlab-ci.yml`, merge request pipelines, `rules:changes` (path filter), `needs:` (DAG), `resource_group`, scheduled pipelines, `environment` untuk pencatatan deploy | Fitur inti tersedia di CE |
+| D-18.3 | Runner: GitLab Runner **Docker executor** di `ci-01` (`ci-docker` non-privileged untuk MR, `ci-build` BuildKit rootless untuk image). Runner **`deploy`** berstatus *protected* di `ops-01`, hanya mengambil job dari ref terlindungi. | Kode MR yang belum direview tidak pernah berjalan di host yang punya rute ke production |
+| D-18.4 | **GitLab Container Registry** (`ops-01`). Deploy selalu by digest. Cleanup policy: image MR dihapus 7 hari, `sha-*` disimpan 90 hari, `v*` permanen. | Satu sistem dengan CI, di Indonesia |
+| D-18.5 | Merge: **squash + fast-forward** (rebase wajib), *Pipelines must succeed*, *All threads resolved*. Approval ditegakkan job manual blocking **`mr:gate`** (CE tidak punya required approvals/Code Owners). | Pengganti merge train (Premium) dan approval rules (Premium) |
+| D-18.6 | Gate production = **protected tags** (`v*`, `infra-*`, `ds-*`, `priority-*`, `geo-*`, `brief-*`) yang hanya bisa dibuat Maintainer + **job manual** di pipeline tag. | Pengganti protected environments (Premium) |
+| D-18.7 | Rilis: **semantic-release** + `@semantic-release/gitlab`, dipicu manual (`release:cut`). Tanpa commit balik ke repo, sehingga commit yang di-tag = commit yang sudah dibangun dan diverifikasi. | release-please berorientasi GitHub. changesets berorientasi paket npm. |
+| D-18.8 | Security scanning: **Semgrep CE** + **Bandit** (SAST), **gitleaks** (CI + pre-receive server hook), **Trivy** (fs, image, config), **OSV-Scanner** + **pip-audit** + **pnpm audit** (dependency), license allowlist (OSV-Scanner), **OWASP ZAP** baseline di staging | Pengganti CodeQL, Dependabot, dan dependency review GitHub |
+| D-18.9 | Supply chain: **syft** (SBOM SPDX), **cosign** dengan **key pair** (private key terenkripsi SOPS; tanpa keyless OIDC; tanpa upload ke transparency log publik), provenance BuildKit, image **`ci-tools`** buatan sendiri dengan versi tool di-pin | Tidak ada OIDC GitHub/Fulcio. Tidak membocorkan metadata ke log publik. |
+| D-18.10 | **Renovate self-hosted** sebagai scheduled pipeline (bot user + project access token) | Tidak ada Dependabot |
+| **D-19** | **Hosting & runtime = dedicated server di DC Indonesia** | Residensi (D-14), biaya, sejalan dengan ADR-18 di 04 |
+| D-19.1 | Topologi: `app-01` (kelak `app-02`), `db-01` (primary), `db-02` (hot standby + read replica), `stor-01` (MinIO), `ops-01` (GitLab, registry, monitoring, Tang), `ci-01` (runner), `stg-01` (staging all-in-one), `dr-01` (target drill/DR; boleh sewa per jam) | Selaras 04 §2.2 |
+| D-19.2 | Runtime app: **Docker Engine + Docker Compose**. **Traefik v3** (Let's Encrypt) sebagai reverse proxy. Deploy **blue/green** dengan *weighted service* Traefik (canary 10% → 100%). | Sederhana untuk 1–2 server. Swarm/k3s hanya opsi masa depan (D-19.10). |
+| D-19.3 | **PostgreSQL 16 + PostGIS** bare metal (paket PGDG) + PgBouncer. Streaming replication ke `db-02` (hot standby). Failover manual via playbook. | Kontrol versi & tuning. Patroni saat ada node ketiga. |
+| D-19.4 | **Redis** (AOF `everysec`) di `app-01` (04 §2.2). **MinIO** single-node multi-drive (erasure coding) di `stor-01`. | Selaras 04 |
+| D-19.5 | Provisioning & konfigurasi: **Ansible** (hardening OS, user, nftables, **WireGuard** untuk akses admin/SSH, fail2ban, unattended security upgrades, Docker, layanan). Disk **LUKS** dengan unlock otomatis Clevis + Tang (fallback dropbear-initramfs). | Satu alat untuk provisioning, konfigurasi, dan deploy |
+| D-19.6 | Secret: **SOPS + age** di repo (`infra/`), didekripsi Ansible saat deploy ke **tmpfs** (ADR-22). Kredensial deploy disimpan di **GitLab CI/CD variables masked + protected**, di-scope per environment. | Tanpa cloud secret manager |
+| D-19.7 | Backup/DR: **pgBackRest** (full mingguan, diff harian, WAL archive kontinu `archive_timeout = 60s`) ke repo lokal (`stor-01`) **dan** off-site S3-compatible di lokasi berbeda (tetap di Indonesia). Replikasi bucket MinIO off-site. Backup GitLab harian. Drill restore bulanan sebagai scheduled pipeline. | NFR-AVAIL-02 (RPO ≤ 15 menit, RTO ≤ 4 jam) |
+| D-19.8 | Observability self-hosted di `ops-01`: Prometheus + Alertmanager + Grafana + Loki + Tempo (via OpenTelemetry Collector), **GlitchTip** (kompatibel Sentry SDK), blackbox exporter + **probe eksternal** di luar DC | ADR-21. Probe eksternal mendeteksi DC/jaringan down. |
+| D-19.9 | Zona jaringan terpisah: `edge/prod`, `data/prod`, `ops`, `ci`, `stg` (nftables, VLAN privat). Port publik hanya 80/443 (`app-01`) dan UDP WireGuard (`ops-01`). | Blast radius kecil |
+| D-19.10 | Docker Swarm/k3s **bukan** bagian MVP. Ditinjau bila > 2 app server atau dibutuhkan autoscaling. | Hindari kompleksitas dini |
+
+### 1.3 Batasan GitLab CE & mitigasi
+
+| Fitur yang tidak ada di CE (tier berbayar) | Dampak | Mitigasi di dokumen ini |
+|---|---|---|
+| Required MR approvals, approval rules, Code Owners approval | Approval tidak ditegakkan platform | Job manual blocking `mr:gate` yang membaca approval via API + `.gitlab/CODEOWNERS` (§2.3) |
+| Merge trains, merged results pipelines | Tidak ada merge queue | Fast-forward merge (rebase wajib), sehingga pipeline terakhir selalu berjalan di atas `main` terbaru (§2.6) |
+| Protected environments, deployment approvals | Job deploy tidak bisa dibatasi per environment | Protected tags + job manual (hanya Maintainer) + `resource_group` + cek *four-eyes* opsional (§6.2) |
+| Push rules (blok secret, regex pesan commit) | — | **Server hook** `pre-receive` gitleaks (tersedia di self-managed) + validasi judul MR (§15.1) |
+| Security dashboard, MR security widget | Temuan tidak tampil terpusat | Job gagal + laporan sebagai artifact + komentar MR oleh script |
+| Audit events lengkap, DORA dashboard | Jejak & metrik terbatas | Log GitLab dikirim ke Loki. Deployment tercatat via `environment`. DORA dihitung script → Grafana (§16) |
+
+> Sebelum bootstrap, verifikasi ulang tier setiap fitur yang dipakai (mis. *environment-scoped variables*, *protected runners*, *server hooks*, *cleanup policies*) terhadap versi GitLab CE yang dipasang. Lihat §18 langkah 6.
+
+### 1.4 Alternatif platform CI (pemetaan singkat)
+
+| Kebutuhan | **GitLab CE** (dipilih) | Forgejo/Gitea + Actions (act_runner) | Woodpecker CI (+ Forgejo/Gitea) | Jenkins |
+|---|---|---|---|---|
+| Definisi pipeline | `.gitlab-ci.yml` | `.forgejo/workflows/*.yml` (mirip GitHub Actions) | `.woodpecker/*.yml` | `Jenkinsfile` (Groovy) |
+| Path filter / DAG | `rules:changes` / `needs` | `on.paths` (per workflow) / `needs` | `when.path` / `depends_on` | `changeset` / `parallel` |
+| Registry | Built-in | Package registry OCI built-in | Dari forge | Eksternal (Harbor/Distribution) |
+| Gate production | Protected tag + job manual | Tag protection + `workflow_dispatch` (tanpa reviewer environment) | Event `deployment`/promote | Step `input` + matrix authorization |
+| Secret | Variable masked/protected (+ scope env) | Secret repo/org | Secret + filter event | Credentials plugin |
+| Catatan | Paling lengkap dalam satu paket. Berat (RAM ≥ 8 GB) | Ringan. Kompatibilitas Actions tidak 100% | Ringan, sederhana. Fitur gate minim | Fleksibel. Beban maintenance plugin tinggi |
+
+Migrasi ke alternatif cukup murah karena logika pipeline berada di script repo (`scripts/ci/`, `scripts/release/`) dan playbook Ansible. YAML CI hanya mengorkestrasi.
+
+### 1.5 Tooling tambahan (di luar README, Proposed)
+
+| Area | Pilihan | Alasan |
+|---|---|---|
+| Rilis & changelog | semantic-release (`commit-analyzer`, `release-notes-generator`, `@semantic-release/gitlab`) | D-18.7 |
+| Validasi judul MR | commitlint (`@commitlint/config-conventional`) | Squash commit = judul MR |
+| Lint OpenAPI | Spectral (+ `spectral-owasp-ruleset`) | Ruleset kustom YAML (mis. wajib `Idempotency-Key` pada operasi berbayar) |
+| Breaking change API | oasdiff | OpenAPI 3.1, level ERR/WARN |
+| Lint SQL migrasi | squawk | Operasi berbahaya PostgreSQL (lock, index non-concurrent, rename/drop) |
+| Validasi JSON Schema | check-jsonschema | Draft 2020-12, CLI Python (`uvx`) |
+| Client TS | openapi-typescript (+ `openapi-fetch`) | Final di 04 (ADR-08) |
+| Batas modul | import-linter | ADR-01 di 04 |
+| Docs lint | markdownlint-cli2 + lychee | Cepat, link internal offline |
+| Ansible | ansible-lint, yamllint, Molecule (role kritis) | QG-21 |
+| Build image | BuildKit rootless (`buildctl-daemonless.sh`) | Tanpa runner privileged |
+| Paralelisasi Python | pytest-xdist | Target ≤ 10 menit |
+| Metrik CI | gitlab-ci-pipelines-exporter → Prometheus | Durasi & flaky rate (§16.3) |
+| Web performance | Lighthouse CI (nightly, staging) | Proxy lab NFR-PERF-03 |
+| Feature flag | Flag store Postgres (`platform.feature_flag`, 04 §3.2) + registry di repo | Audit wajib (FR-OPS-007). Fitur feature flag GitLab tidak dipakai karena perubahan flag harus tercatat di audit produk. |
 
 ---
 
-## 2. Branching & PR workflow
+## 2. Branching & merge request workflow
 
 ### 2.1 Model branch
 
 | Branch | Fungsi | Umur | Dibuat oleh |
 |---|---|---|---|
-| `main` | Trunk. Selalu dapat dirilis (fitur belum siap disembunyikan flag). | Permanen | — |
-| `feat/<scope>-<deskripsi>` | Fitur baru. Contoh `feat/srch-zero-result-guidance` | ≤ 2 hari (maks 5) | Engineer |
+| `main` | Trunk, selalu dapat dirilis | Permanen | — |
+| `feat/<scope>-<deskripsi>` | Fitur baru, mis. `feat/srch-zero-result-guidance` | ≤ 2 hari (maks 5) | Engineer |
 | `fix/<scope>-<deskripsi>` | Perbaikan bug | ≤ 2 hari | Engineer |
 | `chore/<deskripsi>` | Maintenance, refactor, build, CI | ≤ 2 hari | Engineer |
-| `docs/<deskripsi>` | Dokumentasi, termasuk design tokens yang hanya berupa dokumentasi | ≤ 2 hari | Engineer/Design/Product |
-| `release-please--branches--main` | Release PR otomatis | Sampai rilis | Bot release-please |
+| `docs/<deskripsi>` | Dokumentasi | ≤ 2 hari | Engineer/Design/Product |
 | `renovate/*` | Update dependency | Sampai merge | Bot Renovate |
-| `release/vX.Y` | **Hanya** untuk hotfix saat `main` tidak bisa dirilis (§6.6) | Sampai hotfix rilis | Tech lead |
+| `release/vX.Y` | **Hanya** hotfix saat `main` tidak bisa dirilis (§6.6) | Sampai hotfix rilis | Maintainer |
 
-Aturan: tidak ada branch `develop`. Fitur yang butuh lebih dari 5 hari dipecah menjadi beberapa PR kecil di balik flag `rel.*` (§13). Branch dihapus otomatis setelah merge.
+Tidak ada branch `develop`. Fitur besar dipecah menjadi beberapa MR kecil di balik flag `rel.*`. Source branch dihapus otomatis setelah merge.
 
 ### 2.2 Conventional Commits
 
-Merge memakai **squash**, sehingga **judul PR menjadi pesan commit** di `main`. Judul PR divalidasi di CI (QG-01).
+Merge memakai **squash**, dengan template squash commit `%{title}` + baris `MR: %{reference}`. Akibatnya **judul MR = pesan commit** di `main`, dan divalidasi commitlint (QG-01).
 
 ```
 <type>(<scope>)!: <ringkasan imperatif, huruf kecil>
-
 type  : feat | fix | perf | refactor | test | docs | chore | ci | build | revert
-scope : web | api | worker | identity | intelligence | query | action | usage | ops |
-        contracts | tokens | ui | infra | data | docs | deps
-!     : breaking change (wajib disertai footer "BREAKING CHANGE: ..." di body PR)
+scope : web | api | worker | platform | ingest | identity | intelligence | geo | query | action |
+        ai | usage | ops | contracts | tokens | ui | infra | data | docs | deps
+!     : breaking change (wajib label `api-breaking` bila menyangkut kontrak)
 ```
 
-| Contoh judul | Efek di release-please |
+| Contoh judul | Efek semantic-release |
 |---|---|
 | `feat(intelligence): tambah faktor geo pada priority score` | minor |
 | `fix(action): retry webhook memakai backoff eksponensial` | patch |
-| `feat(contracts)!: ganti format cursor pagination /v1/prospects` | major (dan wajib label `api-breaking`, §2.7) |
-| `chore(deps): update ruff ke 0.x` | tidak masuk changelog |
+| `feat(contracts)!: ganti format cursor pagination /v1/prospects` | major |
+| `chore(deps): update ruff` | tidak memicu rilis |
 
-Body PR yang menyertakan ID requirement (mis. `Refs: FR-SRCH-008, TC-SRCH-012`) dibawa ke changelog.
+Changelog di GitLab Release menautkan setiap baris ke MR, dan deskripsi MR memuat ID requirement (`Refs: FR-…`).
 
-### 2.3 Review & CODEOWNERS
+### 2.3 Review, CODEOWNERS, dan `mr:gate`
 
-- Minimal **1 approval** dari CODEOWNERS area yang tersentuh. Path berisiko tinggi (lihat tabel) butuh **2 approval** saat tim ≥ 4 engineer. Sebelum itu cukup 1 approval + checklist keamanan di PR template.
-- Approval lama gugur saat ada push baru (*dismiss stale approvals*), dan push terakhir harus disetujui orang lain (*require approval of the most recent push*).
-- Penulis PR tidak boleh menyetujui PR-nya sendiri, termasuk PR bot yang dipicu penulis.
+File `.gitlab/CODEOWNERS` memakai format GitLab, sehingga langsung berlaku bila kelak pindah ke tier berbayar. Di CE, file ini dibaca oleh script `mr:gate` dan dipakai untuk menyarankan reviewer (komentar otomatis di MR).
 
 ```
-# .github/CODEOWNERS (ilustratif). Pola terakhir yang cocok menang, jadi urutan penting.
-*                                         @sadewadee/backend @sadewadee/web
-/apps/web/                                @sadewadee/web
-/packages/ui/                             @sadewadee/web @sadewadee/design
-/packages/design-tokens/                  @sadewadee/design @sadewadee/web
-/docs/02-design-system/                   @sadewadee/design
-/apps/api/                                @sadewadee/backend
-/apps/api/src/msp/identity/               @sadewadee/data-intel
-/apps/api/src/msp/intelligence/           @sadewadee/data-intel
-/apps/api/src/msp/ai/prompts/             @sadewadee/data-intel @sadewadee/product
-/apps/api/src/msp/usage/                  @sadewadee/backend          # billing & ledger
-/apps/api/src/msp/auth/                   @sadewadee/security
-/apps/api/migrations/                     @sadewadee/backend @sadewadee/platform
-/contracts/                               @sadewadee/api-owners
-/data/                                    @sadewadee/data-intel
-/infra/                                   @sadewadee/platform
-/.github/                                 @sadewadee/platform
-/docs/                                    @sadewadee/product
-/docs/04-technical-design.md              @sadewadee/backend
-/docs/05-test-strategy.md                 @sadewadee/qa
-/docs/06-ci-cd.md                         @sadewadee/platform
+# .gitlab/CODEOWNERS (ilustratif). Pola terakhir yang cocok menang.
+*                                   @msp/backend @msp/web
+/apps/web/                          @msp/web
+/packages/ui/                       @msp/web @msp/design
+/packages/design-tokens/            @msp/design @msp/web
+/docs/02-design-system/             @msp/design
+/apps/api/                          @msp/backend
+/apps/api/msp/identity/             @msp/data-intel
+/apps/api/msp/intelligence/         @msp/data-intel
+/apps/api/msp/ai/                   @msp/data-intel
+/apps/api/msp/usage/                @msp/backend
+/apps/api/msp/platform/             @msp/backend @msp/security
+/apps/api/migrations/               @msp/backend @msp/platform
+/contracts/                         @msp/api-owners
+/data/                              @msp/data-intel
+/infra/                             @msp/platform
+/.gitlab-ci.yml  /ci/  /scripts/ci/ @msp/platform
+/docs/                              @msp/product
 ```
 
-| Path berisiko tinggi (2 approval saat tim ≥ 4) | Alasan |
+Job **`mr:gate`** (manual, `allow_failure: false`) menjadikan pipeline berstatus *blocked*. Dengan *Pipelines must succeed*, MR **tidak bisa di-merge** sebelum job ini dijalankan dan lulus. Script memeriksa:
+1. ≥ 1 approval dari owner setiap area yang tersentuh. **2 approval** untuk path berisiko (tabel di bawah) saat tim ≥ 4 engineer.
+2. Approver ≠ author, dan approval diberikan **setelah commit terakhir** (dicek dari system note MR, karena CE tidak me-reset approval saat ada push).
+3. Semua thread resolved, MR bukan draft.
+4. Label wajib ada bila relevan (`api-breaking` saat oasdiff ERR, `db-contract` saat migrasi contract).
+5. Pengecualian: MR Renovate berlabel `automerge` (patch/minor devDependency, §15.4) tidak butuh approval manusia.
+
+Reviewer (atau author) menjalankan `mr:gate` setelah approval diberikan. Token API yang dipakai bersifat read-only (`read_api`, role Reporter).
+
+| Path berisiko (2 approval saat tim ≥ 4) | Alasan |
 |---|---|
 | `apps/api/migrations/**` dengan label `db-contract` | Operasi destruktif (§9) |
-| `apps/api/src/msp/auth/**`, kebijakan RLS | Isolasi tenant (NFR-SEC-03) |
-| `infra/terraform/envs/production/**` | Infrastruktur production |
-| `.github/workflows/**` | Supply chain (§15) |
+| `apps/api/msp/platform/**` (auth, tenancy, RLS) | Isolasi tenant (NFR-SEC-03) |
+| `infra/**` | Server & secret |
+| `.gitlab-ci.yml`, `ci/**`, `scripts/ci/**`, `scripts/release/**` | Supply chain (§15) |
 | `contracts/**` dengan label `api-breaking` | Kontrak publik |
 
-> Catatan: tim (`@org/team`) hanya tersedia bila repo dimiliki **GitHub Organization**. Bila `sadewadee/MesinProspek` masih berada di akun personal, tim diganti username, dan beberapa fitur (merge queue, required reviewers environment) tidak tersedia. Lihat §18 langkah 1 dan Q-CI-01.
-
-### 2.4 PR template
+### 2.4 MR template
 
 ```markdown
-<!-- .github/pull_request_template.md (ilustratif) -->
+<!-- .gitlab/merge_request_templates/Default.md (ilustratif) -->
 ## Ringkasan
-<!-- Apa dan kenapa. Judul PR mengikuti Conventional Commits. -->
+<!-- Apa dan kenapa. Judul MR mengikuti Conventional Commits. -->
 
 ## Requirement
 Refs: FR-___ / NFR-___ / BR-___      Test: TC-___ (05-test-strategy.md)
 
 ## Checklist
-- [ ] Test ditambah/diubah (unit/integration/E2E sesuai level di 05)
+- [ ] Test ditambah/diubah sesuai level di 05
 - [ ] Tidak ada data pribadi nyata di test, fixture, log, atau screenshot
-- [ ] Migrasi DB: fase `expand` / `contract` dicatat. Kompatibel dengan versi aplikasi sebelumnya (§9)
+- [ ] Migrasi DB: fase `expand`/`contract` dicatat, kompatibel dengan versi sebelumnya (§9)
 - [ ] Tabel tenant baru memiliki RLS policy
-- [ ] Perubahan kontrak: OpenAPI/JSON Schema diperbarui dan client TS di-regenerate
-- [ ] Breaking API? Label `api-breaking` + bagian "Rencana versi API" di bawah
-- [ ] Feature flag: nama, tipe, owner, tanggal kedaluwarsa terdaftar di registry (§13)
-- [ ] Perubahan skor/geo/prompt: versi dinaikkan, laporan regresi/eval terlampir (§10)
-- [ ] UI: screenshot/video sebelum-sesudah (desktop 1280 px + mobile 360 px), copy id-ID & en-US
-- [ ] Event analytics & audit dipasang (bila relevan)
-- [ ] Runbook/dokumentasi diperbarui (bila perilaku operasional berubah)
+- [ ] Kontrak: OpenAPI/JSON Schema diperbarui, client TS di-regenerate
+- [ ] Breaking API? Label `api-breaking` + "Rencana versi API" di bawah
+- [ ] Feature flag terdaftar di registry (nama, tipe, owner, kedaluwarsa) (§13)
+- [ ] Skor/geo/prompt: versi dinaikkan, laporan regresi/eval terlampir (§10)
+- [ ] UI: screenshot sebelum-sesudah (1280 px + 360 px), copy id-ID & en-US
+- [ ] Event analytics & audit dipasang (bila relevan); runbook diperbarui (bila perlu)
 
 ## Catatan migrasi / rollout
-<!-- Urutan deploy khusus, backfill, flag yang harus dinyalakan, dsb. -->
-
 ## Rencana versi API (wajib bila `api-breaking`)
-<!-- Endpoint terdampak, periode deprecation, konsumen terdampak. -->
 ```
 
-### 2.5 Branch protection (repository ruleset) & required checks
+### 2.5 Protected branch, protected tag, merge check
 
-Ruleset untuk `main` (dikelola sebagai kode lewat Terraform provider `github` atau script bootstrap, §18):
+Setelan dikelola sebagai kode oleh `scripts/bootstrap/gitlab_settings.py` (GitLab API) dan diperiksa ulang oleh job drift mingguan.
 
-| Aturan | Nilai |
+| Setelan | Nilai |
 |---|---|
-| Wajib pull request | Ya. Tanpa bypass, kecuali break-glass oleh admin repo (tercatat) |
-| Required approvals | 1 (2 untuk path berisiko saat tim ≥ 4), CODEOWNERS wajib, dismiss stale, approval push terakhir |
-| Conversation resolution | Wajib |
-| Required status checks | `ci-ok` (agregator `pr.yml`), `CodeQL` (code scanning: blokir alert severity ≥ High), `pr-title` |
-| Wajib merge queue | Ya (§2.6) |
-| Metode merge | Squash saja. Linear history |
-| Force push, hapus branch | Diblokir |
-| Ruleset tag `v*` dan `design-tokens-v*` | Hanya GitHub App release (release-please) yang boleh membuat. Update/hapus diblokir untuk semua |
+| `main`: allowed to push | **No one** (termasuk force push) |
+| `main`: allowed to merge | Developers + Maintainers (approval ditegakkan `mr:gate`) |
+| `release/v*`: push/merge | Maintainers |
+| Merge method | **Fast-forward merge** + squash wajib. Template squash `%{title}` |
+| Merge checks | Pipelines must succeed. *Skipped pipelines are considered successful* = **off**. All threads must be resolved. |
+| Protected tags (create: Maintainers saja) | `v*` dan `design-tokens-v*` (juga bot rilis), `infra-*`, `ds-*`, `priority-*`, `geo-*`, `brief-*` |
+| Runner `deploy` | *Protected*: hanya menjalankan job dari branch/tag terlindungi |
+| CI/CD variables | Kredensial deploy & kunci: masked + protected + scope environment (§12.2) |
+| Lain-lain | Sign-up nonaktif, 2FA wajib untuk semua user, visibilitas proyek *private*, *public pipelines* off, CI job token scope dibatasi ke proyek ini |
 
-**Kenapa satu agregator `ci-ok`:** job yang di-skip karena path filter dihitung lulus, tetapi workflow yang tidak terpicu sama sekali membuat required check menggantung. Karena itu path filter diterapkan di level **job** (bukan `on.paths`), lalu job `ci-ok` (`if: always()`) gagal bila ada job dependensi yang `failure` atau `cancelled`. Hasilnya, daftar required check tetap stabil walaupun job bertambah.
+**Siapa bisa men-deploy production:** pipeline tag terlindungi berjalan dengan izin pembuat tag. Job manual di pipeline tag hanya bisa dijalankan oleh user yang berhak membuat tag tersebut, yaitu **Maintainer**. Jumlah Maintainer dibatasi (tech lead + 1–2 engineer senior, Q-CI-07).
 
-### 2.6 Merge queue
+### 2.6 Pengganti merge queue
 
-- Dipakai **GitHub merge queue**. `pr.yml` juga terpicu oleh event `merge_group`, sehingga check dijalankan ulang pada commit gabungan (base terbaru + PR). Ini mencegah `main` merah akibat dua PR yang masing-masing hijau tetapi konflik secara semantik.
-- Konfigurasi: build concurrency 3, batas grup 3 PR, timeout check 30 menit, merge method squash.
-- Pada `merge_group`, path filter dihitung terhadap `merge_group.base_sha`. Label PR tidak tersedia di payload event ini, jadi job yang bergantung pada label (`api-breaking`, `db-contract`) mengambil label lewat API dari nomor PR yang ada di `merge_group.head_ref` (`gh-readonly-queue/main/pr-<n>-<sha>`).
-- Bila plan GitHub tidak menyediakan merge queue untuk repo privat, fallback: *require branches to be up to date* + auto-merge. Konsekuensinya PR harus di-rebase berulang (Q-CI-01).
+CE tidak memiliki merge train. Dengan **fast-forward merge**, MR wajib di-rebase ke `main` terbaru sebelum merge. Pipeline terakhir MR (termasuk `mr:gate`) dengan demikian berjalan di atas commit yang persis akan menjadi `main`. Biayanya: rebase berulang saat `main` sibuk. Mitigasinya adalah MR kecil dan pipeline cepat (P-4). Bila antrean rebase menjadi bottleneck (> 5 MR/hari saling menunggu), evaluasi GitLab Premium (merge trains, Q-CI-02).
+
+Path filter `rules:changes` pada MR pipeline dibandingkan dengan `refs/heads/main` (`compare_to`). Job keamanan dan `mr:gate` **selalu** berjalan, sehingga setiap MR punya pipeline.
 
 ### 2.7 Label yang dibaca pipeline
 
 | Label | Efek |
 |---|---|
-| `api-breaking` | Mengizinkan breaking change OpenAPI (QG-12), selama bagian "Rencana versi API" terisi. Changelog ditandai. |
-| `db-contract` | Mengizinkan migrasi fase contract (drop/rename) (QG-10). Wajib 2 approval saat tim ≥ 4. |
-| `ai-eval` | Memaksa AI eval berjalan walau path prompt tidak berubah. Contoh: ganti model provider (D-15). |
-| `e2e-full` | Menjalankan E2E penuh di PR, bukan hanya smoke. |
-| `skip-e2e-smoke` | **Tidak ada.** Smoke tidak bisa di-skip, karena tujuannya mencegah kebiasaan melewati gate. |
+| `api-breaking` | Mengizinkan breaking change OpenAPI (QG-13) bila bagian "Rencana versi API" terisi |
+| `db-contract` | Mengizinkan migrasi fase contract (QG-11). 2 approval saat tim ≥ 4 |
+| `ai-eval` | Memaksa AI eval berjalan, mis. saat mengganti model provider (D-15) |
+| `e2e-full` | Menjalankan E2E penuh di MR |
+| `automerge` | Hanya untuk MR Renovate (§15.4) |
 
-### 2.8 Release tagging
+Label dibaca dari `$CI_MERGE_REQUEST_LABELS`. Setelah label ditambahkan, job terkait cukup di-retry.
 
-- Tag `vX.Y.Z` dan GitHub Release **hanya** dibuat oleh release-please saat Release PR di-merge (§6.1). Tag dilindungi ruleset.
-- Komponen kedua di manifest: `packages/design-tokens` → tag `design-tokens-vX.Y.Z` (SemVer paket, README).
-- Versi data/model (`ds-*`, `priority-*`, `geo-*`, `brief-*`) **bukan** git tag. Versi ini dicatat di registry versi (DB + manifest S3 + file di repo) dan dirilis lewat pipeline §10.
-- Seri 0.x dipakai selama MVP 0 dan closed beta. `v1.0.0` = rilis MVP 1 yang lolos RG-1 s.d. RG-7 (QG-31).
+### 2.8 Tag & versi
+
+| Tag (protected) | Dibuat oleh | Memicu |
+|---|---|---|
+| `vX.Y.Z` | semantic-release (job `release:cut`, token bot Maintainer) | Pipeline rilis production (§6) |
+| `design-tokens-vX.Y.Z` | Job `release:cut` bila versi paket tokens berubah | Tidak ada deploy (penanda SemVer paket) |
+| `infra-YYYY.MM.DD.n` | Maintainer | Apply Ansible production (§11.3) |
+| `ds-YYYY.MM.n` | Maintainer (data owner) | Pipeline publish snapshot (§10.2) |
+| `priority-X.Y.Z`, `geo-X.Y.Z`, `brief-X.Y.Z` | Maintainer | Pipeline aktivasi versi di production (§10.3–§10.4) |
+
+Seri `0.x` dipakai selama MVP 0 dan closed beta. `v1.0.0` = rilis MVP 1 yang lolos RG-1 s.d. RG-7 (QG-32).
 
 ---
 
-## 3. Environments
+## 3. Environments & topologi
 
-### 3.1 Ringkasan
+### 3.1 Ringkasan environment
 
 | Env | Tujuan | Data | Trigger deploy | Akses | URL | Sumber config |
 |---|---|---|---|---|---|---|
-| **local** | Pengembangan harian | Seed **sintetis** (`msp.devtools.seed`), fixture edge case EC-xx dari 05. Tanpa data production atau berlisensi. | Manual: `docker compose up` | Engineer | `http://localhost:3000` (web), `:8000` (api), `:8025` (Mailpit), `:9001` (MinIO console) | `.env` dari `.env.example` |
-| **CI** | Verifikasi PR/merge queue | Sintetis, dibuat per run, dibuang setelahnya | Otomatis per PR/`merge_group` | Pipeline saja | — (service container ephemeral) | `env:` workflow + service containers |
+| **local** | Pengembangan | Seed **sintetis** (`msp.devtools.seed`) + fixture EC-xx dari 05 | Manual `docker compose up` | Engineer | `http://localhost:3000` (web; `/api` → api), `:8025` Mailpit, `:9001` MinIO console | `.env` dari `.env.example` |
+| **CI** | Verifikasi MR & main | Sintetis per job, dibuang | Otomatis | Pipeline | — (`services:` ephemeral di `ci-01`) | Variabel job |
 | **preview** | — | — | **Ditunda** (§3.2) | — | — | — |
-| **staging** | Prod-like: integrasi, E2E penuh, DAST, load test, rehearsal rilis data/model, drill | Sintetis + **subset dataset berlisensi** (bila lisensi mengizinkan, Q-05). **Tanpa PII customer**, tanpa upload customer, tanpa salinan DB production. | Otomatis setiap merge ke `main` (`main.yml`) | Engineer: baca (console SSO, log). Deploy hanya via pipeline. ECS Exec diizinkan untuk debugging. | `https://app.staging.<domain>`, `https://api.staging.<domain>` | Terraform + SSM Parameter Store + Secrets Manager (akun staging) |
-| **production** | Customer | Data penuh: dataset berlisensi, data tenant, upload customer | Tag `vX.Y.Z` → `release.yml` + approval Environment `production` | Tanpa akses manusia permanen. Break-glass via IAM Identity Center (MFA, sesi ≤ 1 jam, alert saat dipakai). ECS Exec dinonaktifkan. | `https://app.<domain>`, `https://api.<domain>` | Terraform + SSM + Secrets Manager (akun production) |
+| **staging** | Prod-like: E2E penuh, DAST, k6, rehearsal rilis data/model, drill alert | Sintetis (termasuk dataset sintetis 5 juta establishment untuk k6, 04 §17) + **subset dataset berlisensi** bila lisensi mengizinkan (Q-05). **Tanpa PII customer**, tanpa salinan DB production | Otomatis per merge ke `main` | Engineer & tester lewat WireGuard. Deploy hanya via pipeline | `https://app.staging.<domain>` | `infra/ansible/inventories/staging` + SOPS |
+| **production** | Customer | Penuh | Tag `vX.Y.Z` + job manual Maintainer | Customer via internet. Admin hanya via WireGuard dengan akun bernama + sudo tercatat (auditd). Tanpa akses DB langsung kecuali `msp_readonly_replica` dengan alasan tercatat. | `https://app.<domain>` (`/api` → api, ADR-25), `https://files.<domain>` (MinIO presigned) | `infra/ansible/inventories/production` + SOPS |
 
-Prinsip parity: versi PostgreSQL/PostGIS, Redis, Python, dan Node di local/CI **sama** dengan staging/production (image di-pin digest, versi engine RDS di Terraform). Satu script `scripts/ci/check_version_parity.py` membandingkan keduanya di PR yang menyentuh `infra/**`.
+**Parity:** versi PostgreSQL/PostGIS, Redis, MinIO, Python, dan Node di local/CI di-pin agar sama dengan staging/production. Script `scripts/ci/check_version_parity.py` membandingkan tag image CI dengan variabel Ansible (`postgres_version`, `postgis_version`, dll.) saat `infra/**` atau `.gitlab-ci.yml` berubah.
 
 ### 3.2 Keputusan: preview environment ditunda
 
-**Keputusan (Proposed):** MVP **tidak** memakai preview environment per PR, baik full-stack maupun web-only. Sebagai gantinya:
+MVP **tidak** memakai preview environment per MR. Sebagai gantinya: (1) Storybook statis sebagai artifact MR (*expose_as*, dapat dibuka dari MR) + screenshot wajib; (2) stack lengkap di CI untuk E2E smoke; (3) staging diperbarui ≤ 30 menit setelah merge.
 
-1. Build Storybook diunggah sebagai artifact PR (review komponen dan state), ditambah screenshot wajib di PR template untuk perubahan UI.
-2. Stack lengkap di CI (docker compose) untuk E2E smoke.
-3. Staging diperbarui setiap merge (≤ 30 menit setelah merge) untuk review produk.
-
-**Alasan:**
-- *Full-stack per PR* (RDS + Redis + ECS per PR) mahal dan lambat dibuat. Seed data juga harus sintetis, sehingga nilainya tidak jauh berbeda dari stack CI.
-- *Web-only preview yang memanggil API staging* menjadikan staging dependensi bersama yang rapuh (CORS, callback auth, versi API PR yang belum di-deploy). Pola ini juga membuka akses ke data berlisensi staging dari URL preview, padahal hosting Next.js di AWS untuk preview butuh infrastruktur tambahan (OpenNext/Amplify).
-- Tim MVP kecil, sehingga bottleneck review desain belum ada.
-
-**Ditinjau ulang bila:** tim ≥ 6 engineer, atau review desain/produk menjadi bottleneck (PR UI menunggu staging > 1 hari secara rutin). Opsi saat itu: web-only preview dengan API mock (MSW) atau namespace staging per PR.
+**Alasan:** kapasitas dedicated server tetap (tidak elastis seperti cloud), sehingga stack per MR memakan RAM/CPU staging. Preview web-only yang memanggil API staging menjadikan staging dependensi bersama yang rapuh. Tim MVP juga kecil. **Ditinjau ulang** bila tim ≥ 6 engineer atau review UI menunggu staging > 1 hari secara rutin. Opsi saat itu: web + API mock (MSW) per MR di `stg-01`.
 
 ### 3.3 Aturan data per environment
 
 | Aturan | local | CI | staging | production |
 |---|:-:|:-:|:-:|:-:|
 | Data sintetis | ✓ | ✓ | ✓ | — |
-| Subset dataset berlisensi | — | — | ✓ (in-region) | ✓ |
+| Subset dataset berlisensi | — | — | ✓ | ✓ |
 | Data/upload customer | — | — | — | ✓ |
-| Restore DB production | — | — | — | Hanya drill di akun production (§7) |
-| Auth stub (`MSP_AUTH_MODE=stub`, JWT uji) | ✓ | ✓ | — | — |
+| Restore backup production | — | — | — | Hanya drill di `dr-01` (zona prod), lalu dihapus (§11.6) |
+| Auth stub (`MSP_AUTH_MODE=stub`) | ✓ | ✓ | — | — |
 | Flag fault-injection `chaos.*` | ✓ | ✓ | ✓ | Ditolak saat startup |
+| Email keluar | Mailpit | Mailpit | Mailpit (tester membaca via UI) | Provider SMTP |
 
-Aplikasi **menolak start** bila `MSP_ENV ∈ {staging, production}` dan `MSP_AUTH_MODE=stub` atau flag `chaos.*` aktif. Guard ini diuji di unit test.
+Aplikasi **menolak start** bila `MSP_ENV ∈ {staging, production}` dan auth stub atau flag `chaos.*` aktif (diuji unit test).
 
-### 3.4 Local dev (docker compose)
+### 3.4 Local dev (`infra/docker/compose.yml`)
 
-`infra/docker/compose.yml`:
+| Service | Catatan |
+|---|---|
+| `postgres` (`postgis/postgis:16-3.5`, pin digest) | Superuser lokal. Ekstensi dibuat oleh migrasi pertama (§9.6) |
+| `redis` (`redis:7`) | AOF aktif agar perilaku sama dengan production |
+| `minio` | Bucket `msp-snapshots`, `msp-uploads`, `msp-exports`, `msp-tiles` dibuat oleh init container |
+| `mailpit` | Email undangan/verifikasi |
+| `kratos` | Bila D-20 = Ory Kratos. Default lokal: auth stub |
+| `migrate` | `alembic upgrade head`, lalu exit. Service lain `depends_on: service_completed_successfully` |
+| `api`, `worker`, `web` | Mode dev (`--reload`, `next dev`) |
+| `webhook-sink` | Penerima webhook uji (FR-EXP-003) |
 
-| Service | Image (pin digest) | Catatan |
+### 3.5 Topologi server & zona jaringan
+
+```
+                      Internet
+          443/80 │                         │ UDP 51820 (WireGuard admin)
+   ┌─────────────▼─────────────┐   ┌──────▼──────────────────────────────┐   probe eksternal
+   │ app-01 (→ app-02)  [edge] │   │ ops-01                       [ops]  │◄── (di luar DC)
+   │ Traefik, web, api, kratos │   │ GitLab CE + registry, runner deploy │
+   │ worker pools blue/green,  │   │ Prometheus, Alertmanager, Grafana,  │
+   │ redis (AOF), smokescreen, │   │ Loki, Tempo, GlitchTip, Tang        │
+   │ otel-collector/alloy      │   └──────┬───────────────┬──────────────┘
+   └─────────────┬─────────────┘          │ SSH deploy    │ SSH deploy
+      VLAN privat│ (prod)                 │               │
+   ┌─────────────┼──────────────┬─────────┘        ┌──────▼───────┐   ┌──────────────┐
+┌──▼──────────┐ ┌▼────────────┐ ┌▼─────────────┐   │ stg-01 [stg] │   │ ci-01  [ci]  │
+│ db-01       │→│ db-02       │ │ stor-01      │   │ staging all- │   │ runner MR &  │
+│ PG16+PostGIS│ │ hot standby │ │ MinIO (EC)   │   │ in-one       │   │ build, cache │
+│ PgBouncer   │ │ read replica│ │ repo lokal   │   └──────────────┘   │ MinIO runner │
+│ pgBackRest  │ │             │ │ pgBackRest   │                      └──────────────┘
+└──────┬──────┘ └─────────────┘ └──────┬───────┘   ci-01: hanya ke ops-01 (GitLab/registry)
+       └── WAL/backup ──────────────────┴──► off-site S3-compatible (lokasi lain, Indonesia)
+```
+
+| Zona | Host | Inbound yang diizinkan (nftables) |
 |---|---|---|
-| `postgres` | `postgis/postgis:16-3.5` | Ekstensi `postgis`, `pg_trgm`, `unaccent` dibuat oleh migrasi pertama (§9.6) |
-| `redis` | `redis:7-alpine` | Broker Dramatiq |
-| `minio` | `minio/minio` | S3-compatible: bucket `msp-exports`, `msp-uploads`, `msp-snapshots` dibuat oleh init container. Bila image MinIO tidak lagi tersedia, ganti dengan alternatif S3-compatible (LocalStack/SeaweedFS) tanpa mengubah kode. |
-| `mailpit` | `axllent/mailpit` | Email undangan/verifikasi |
-| `migrate` | build `apps/api` | `alembic upgrade head`, lalu exit. Service lain `depends_on: service_completed_successfully` |
-| `api` | build `apps/api` | `uvicorn msp.api.main:app --reload` |
-| `worker` | build `apps/api` | `dramatiq msp.worker` |
-| `web` | build `apps/web` | `next dev` |
-| `webhook-sink` | image kecil echo server | Penerima webhook uji (E2E FR-EXP-003) |
+| edge/prod | `app-01` (`app-02`) | 80/443 publik → Traefik. SSH hanya dari subnet WireGuard dan IP privat `ops-01` |
+| data/prod | `db-01`, `db-02`, `stor-01` | 5432/6432 dari app host; 9000 MinIO dari app host & Traefik; scrape exporter dari `ops-01`; SSH dari WireGuard/`ops-01` |
+| ops | `ops-01` | UDP 51820 publik (WireGuard). GitLab, registry, Grafana hanya dari WireGuard dan zona privat |
+| ci | `ci-01` | Tanpa inbound publik. Outbound: internet (package registry) + `ops-01` (GitLab, registry). **Tidak** punya rute ke zona prod/stg |
+| stg | `stg-01` | 443 dari WireGuard. SSH dari WireGuard/`ops-01` |
 
-`compose.ci.yml` meng-override: tanpa volume bind, build memakai cache GHA, `api`/`web` dalam mode production build, healthcheck ketat untuk `--wait`.
+**Sizing awal (indikatif, direvisi setelah Q-02):**
 
-### 3.5 Akun AWS & isolasi
+| Host | Spesifikasi |
+|---|---|
+| `app-01` | 16 core, 64 GB RAM, 2× NVMe 1 TB (RAID1) |
+| `db-01`, `db-02` | 16–24 core, 128 GB RAM, 4× NVMe 2 TB (RAID10) |
+| `stor-01` | 8 core, 32 GB RAM, ≥ 4 disk data (erasure coding) |
+| `ops-01` | 16 core, 64 GB RAM, 2× NVMe 2 TB (RAID1) |
+| `ci-01` | 16 core, 64 GB RAM, 2× NVMe 1 TB |
+| `stg-01` | 16 core, 64–128 GB RAM, 2× NVMe 2 TB (menampung dataset sintetis 5 juta untuk k6) |
 
-```
-AWS Organization
-├─ msp-shared       ECR (msp-api, msp-web), OIDC role push image, bucket evidence rilis (SBOM, laporan)
-├─ msp-staging      VPC, ECS cluster msp-staging, RDS, ElastiCache, S3, Secrets Manager
-└─ msp-production   VPC, ECS cluster msp-production, RDS (Multi-AZ, PITR), ElastiCache, S3, Secrets Manager
-```
-
-Semua di **ap-southeast-3 (Jakarta)** (D-14). Pemisahan akun membatasi blast radius dan membuat IAM per environment lebih sederhana. Staging dan production menarik image dari ECR `shared` lewat izin lintas akun (read-only).
+**Risiko yang diterima di MVP:** `app-01` adalah SPOF (04 §2.2). Failover DB manual (RTO ±30 menit). `ops-01` menampung GitLab sekaligus monitoring. Bila `ops-01` mati, deploy berhenti, tetapi rollback tetap bisa karena image lama ada di cache host dan playbook dapat dijalankan Maintainer dari laptop via WireGuard (break-glass). Penambahan `app-02` dijadwalkan sebelum paid GA (Q-CI-05).
 
 ---
 
-## 4. Pipeline PR (`pr.yml`)
+## 4. Pipeline merge request
 
-Trigger: `pull_request` (opened, synchronize, reopened, ready_for_review, labeled, unlabeled) dan `merge_group`. Run sebelumnya pada PR yang sama dibatalkan (`concurrency` + `cancel-in-progress`). PR draft hanya menjalankan lint dan unit test.
+Pipeline berjalan pada event `merge_request_event`. Pipeline branch ganda dicegah oleh `workflow:rules`. `interruptible: true` membatalkan pipeline lama saat ada push baru. MR draft hanya menjalankan lint, unit test, dan security.
 
-### 4.1 Path filter (job `changes`)
+### 4.1 Path filter (`rules:changes`, `compare_to: refs/heads/main`)
 
-| Output | Path | Job yang dipicu |
+| Grup | Path | Job |
 |---|---|---|
-| `backend` | `apps/api/**`, `data/**`, `pyproject.toml`, `uv.lock` | backend-lint, backend-tests |
-| `migrations` | `apps/api/migrations/**`, model SQLAlchemy (`apps/api/src/msp/**/models*.py`) | migrations |
-| `web` | `apps/web/**`, `packages/**`, `pnpm-lock.yaml`, `turbo.json` | web-lint, web-tests, web-build |
-| `contracts` | `contracts/**`, router/schema API (`apps/api/src/msp/**/api/**`), `packages/api-client/**` | contracts |
-| `tokens` | `docs/02-design-system/tokens/**`, `packages/design-tokens/**` | tokens |
-| `e2e` | `apps/**`, `packages/**`, `contracts/**`, `infra/docker/**` | e2e-smoke |
-| `scoring` | konfigurasi versi skor & geo (`apps/api/src/msp/intelligence/**/versions/**`) | model-regression |
-| `prompts` | `apps/api/src/msp/ai/prompts/**`, `apps/api/src/msp/ai/eval/**` | ai-eval |
-| `er` | `apps/api/src/msp/identity/resolve/**`, `apps/api/src/msp/identity/normalize/**` | er-golden-synthetic |
-| `infra` | `infra/terraform/**` | `infra.yml` (workflow terpisah, §11) |
-| `docs` | `docs/**`, `**/*.md` | docs |
-| `workflows` | `.github/**`, `renovate.json` | workflow-lint |
+| backend | `apps/api/**`, `data/**`, `pyproject.toml`, `uv.lock` | `backend:lint`, `backend:test` |
+| migrations | `apps/api/migrations/**`, model SQLAlchemy (`apps/api/msp/**/internal/models*.py`) | `migrations` |
+| web | `apps/web/**`, `packages/**`, `pnpm-lock.yaml`, `turbo.json` | `web:lint`, `web:test`, `web:build` |
+| contracts | `contracts/**`, `apps/api/msp/**/routes.py`, `apps/api/msp/**/public.py`, `packages/api-client/**` | `contracts` |
+| tokens | `docs/02-design-system/tokens/**`, `packages/design-tokens/**` | `tokens` |
+| e2e | `apps/**`, `packages/**`, `contracts/**`, `infra/docker/**` | `build:mr-images`, `e2e:smoke` |
+| scoring | `apps/api/msp/intelligence/internal/scoring/models/**`, konfigurasi geo | `model:regression` |
+| prompts | `apps/api/msp/ai/**/prompts/**`, `apps/api/msp/ai/**/eval/**` | `ai:eval` |
+| er | `apps/api/msp/identity/**` | `er:golden-synthetic` |
+| infra | `infra/ansible/**`, `infra/docker/**` | `infra:lint`, `infra:molecule` |
+| ci | `.gitlab-ci.yml`, `ci/**`, `scripts/ci/**`, `renovate.json` | `ci:lint` |
+| docs | `docs/**`, `**/*.md` | `docs` |
 
-Job keamanan (gitleaks, Trivy fs, dependency review) **selalu** berjalan.
+Selalu berjalan: `mr:title`, `mr:gate`, `security:secrets`, `security:sast`, `security:deps`.
 
 ### 4.2 Job
 
 | Job | Isi | Tool | Gate |
 |---|---|---|---|
-| `pr-title` | Validasi Conventional Commits pada judul PR | `amannn/action-semantic-pull-request` | QG-01 |
-| `backend-lint` | `ruff check`, `ruff format --check`, `mypy` (strict untuk `msp`) | uv, ruff, mypy | QG-02, QG-03 |
-| `web-lint` | ESLint, `prettier --check`, `tsc --noEmit` untuk paket yang terdampak | pnpm, Turborepo `--affected` | QG-02, QG-03 |
-| `backend-tests` | Service container PostGIS + Redis → `alembic upgrade head` → pytest unit + integration (`-n auto`) → **tenant isolation suite** (`-m tenant_isolation`, dengan koneksi role aplikasi tanpa `BYPASSRLS`) → test redaksi PII (log & prompt) → coverage gate | pytest, Hypothesis (profil `ci`), pytest-xdist, coverage | QG-04, QG-05, QG-06, QG-08, QG-09 |
-| `web-tests` | Vitest + Testing Library (paket terdampak) dengan coverage threshold | Vitest | QG-04, QG-07 |
-| `migrations` | (1) satu head Alembic; (2) `upgrade head` dari DB kosong; (3) `alembic check`: tidak ada perubahan model yang belum dimigrasi; (4) render SQL migrasi baru (offline `--sql`) → **squawk**; (5) cek RLS: setiap tabel tenant-layer (punya `workspace_id`) memiliki `ENABLE` + `FORCE ROW LEVEL SECURITY` dan ≥ 1 policy (`USING` + `WITH CHECK`), pengecualian lewat allowlist ber-CODEOWNER security; (6) fase migrasi: operasi contract hanya dengan label `db-contract` | Alembic, squawk, script `check_rls.py`, `check_migration_phase.py` | QG-10 |
-| `contracts` | (1) spec ter-commit `contracts/openapi/openapi.yaml` **identik** dengan spec yang dilayani aplikasi (export dari FastAPI); (2) Spectral lint; (3) **oasdiff** breaking vs base → gagal kecuali label `api-breaking` + rencana versi; (4) regenerate client TS → `git diff --exit-code packages/api-client`; (5) `check-jsonschema --check-metaschema` untuk `contracts/events/**` dan `contracts/input/**`, lalu validasi semua contoh payload (`examples/`); (6) file skema event/webhook versi terbit (`*.v<N>.schema.json`) immutable; (7) Schemathesis smoke terhadap API ephemeral (service container, `--max-examples` kecil, check `not_a_server_error` + kesesuaian response schema) | Spectral, oasdiff, openapi-typescript, check-jsonschema, Schemathesis | QG-11, QG-12, QG-13 |
-| `tokens` | Validasi `docs/02-design-system/tokens/design-tokens.json` (struktur DTCG + resolusi alias, gagal pada referensi putus) → build Style Dictionary → `git diff --exit-code` pada output ter-commit (CSS variables, Tailwind preset, TS) → script kontras: setiap pasangan di `contrast-pairs.json` ≥ 4,5:1 (teks) / 3:1 (UI & teks besar), mode light & dark | Style Dictionary, script `check-contrast.ts` | QG-14 |
-| `web-build` | `next build` (output standalone) + build Storybook → test a11y komponen (axe-core pada setiap story; 0 pelanggaran serious/critical) → upload Storybook statis sebagai artifact (retensi 7 hari) | Next.js, Storybook, axe-core | QG-15 |
-| `e2e-smoke` | `docker compose -f compose.yml -f compose.ci.yml up --wait` → seed sintetis → Playwright `@smoke` (chromium, 2 shard) + axe di halaman yang dikunjungi. Cakupan *critical path*: login (stub) → onboarding Offering → ICP → hasil pertama; search + filter + zero-result; profil + evidence drawer; unlock (debit credit); export kecil; webhook test ke `webhook-sink`; kill switch AI menampilkan pesan nonaktif. Detail skenario di 05. | Playwright, @axe-core/playwright | QG-15, QG-16 |
-| `er-golden-synthetic` | Bila kode normalisasi/ER berubah: evaluasi pada golden set **sintetis** di repo → precision/recall dilaporkan di PR | pytest | QG-25 |
-| `model-regression` | Bila konfigurasi skor/geo berubah: cek versi naik + versi terbit tidak berubah (`versions.lock`), recompute fixture "golden scores" → diff dilaporkan sebagai komentar PR | pytest, script | QG-22, QG-23 |
-| `ai-eval` | Bila prompt berubah atau label `ai-eval`: jalankan eval set sintetis (§10.4). Butuh API key LLM → `environment: ai-eval`, tidak jalan untuk PR dari fork. | pytest + harness eval | QG-24 |
-| `security` | gitleaks (seluruh diff PR), Trivy fs (`vuln,secret,misconfig`; `CRITICAL,HIGH`; `--ignore-unfixed`), dependency review (fail on severity `high`, license allow-list), Trivy license untuk `uv.lock` | gitleaks CLI, Trivy, `actions/dependency-review-action` | QG-17, QG-18, QG-19 |
-| `codeql` (workflow `codeql.yml`) | Analisis `python`, `javascript-typescript`, `actions`. Juga terjadwal mingguan. | CodeQL | QG-18 |
-| `workflow-lint` | actionlint, zizmor, cek semua `uses:` di-pin ke SHA 40 karakter, validasi `renovate.json` | actionlint, zizmor, check-jsonschema | QG-20 |
-| `docs` | markdownlint-cli2, lychee `--offline` (link internal + anchor), script `check_doc_ids.py` (ID yang dirujuk, mis. FR-/NFR-/QG-, ada di dokumen pendefinisi; advisory) | markdownlint-cli2, lychee | QG-21 |
-| `ci-ok` | Agregator (`if: always()`). Gagal bila ada dependensi `failure`/`cancelled` | — | Required check |
+| `mr:title` | Validasi Conventional Commits pada `$CI_MERGE_REQUEST_TITLE` | commitlint | QG-01 |
+| `mr:gate` | Approval, label, thread (§2.3). Manual, blocking. | script + GitLab API | QG-02 |
+| `backend:lint` | `ruff check`, `ruff format --check`, `mypy` (strict untuk `msp`), `lint-imports` (batas modul ADR-01) | uv, ruff, mypy, import-linter | QG-03, QG-04 |
+| `web:lint` | ESLint, `prettier --check`, `tsc --noEmit` (`turbo run … --affected`) | pnpm, Turborepo | QG-03, QG-04 |
+| `backend:test` | `services:` PostGIS + Redis → `alembic upgrade head` → pytest unit + integration (`-n auto`) → **tenant isolation suite** (koneksi role `msp_app`, `NOBYPASSRLS`) → test redaksi PII (log & prompt) → coverage gate → laporan JUnit + Cobertura ke MR | pytest, Hypothesis (profil `ci`), pytest-xdist, coverage | QG-05, QG-06, QG-07, QG-09, QG-10 |
+| `web:test` | Vitest + Testing Library dengan coverage threshold | Vitest | QG-05, QG-08 |
+| `migrations` | (1) satu head; (2) `upgrade head` dari DB kosong; (3) `alembic check` (tidak ada perubahan model tertunda); (4) render SQL migrasi baru (offline `--sql`) → **squawk**; (5) cek RLS: setiap tabel tenant (`workspace_id`) memiliki `ENABLE` + `FORCE ROW LEVEL SECURITY` + policy `USING`/`WITH CHECK` (allowlist ber-owner security); (6) fase contract hanya dengan label `db-contract` | Alembic, squawk, `check_rls.py`, `check_migration_phase.py` | QG-11 |
+| `contracts` | (1) spec hasil generate FastAPI **identik** dengan `contracts/openapi/openapi.yaml` (ADR-08); (2) Spectral; (3) **oasdiff** breaking vs `main` → gagal kecuali label `api-breaking` + rencana versi; (4) regenerate client TS → `git diff --exit-code`; (5) `check-jsonschema --check-metaschema` untuk `contracts/events/**` & `contracts/input/**` + validasi contoh payload; (6) skema event versi terbit immutable; (7) Schemathesis smoke terhadap API ephemeral (tanpa 5xx, response sesuai skema) | Spectral, oasdiff, openapi-typescript, check-jsonschema, Schemathesis | QG-12, QG-13, QG-14 |
+| `tokens` | Validasi DTCG `design-tokens.json` (resolusi alias) → build Style Dictionary → `git diff --exit-code` output ter-commit → kontras: pasangan di `contrast-pairs.json` ≥ 4,5:1 (teks) / 3:1 (UI, teks besar), light & dark → versi paket naik bila token berubah | Style Dictionary, `check-contrast.ts` | QG-15 |
+| `web:build` | `next build` (standalone) + Storybook → axe pada setiap story (0 serious/critical) → Storybook sebagai artifact (`expose_as`, 7 hari) | Next.js, Storybook, axe-core | QG-16 |
+| `build:mr-images` | Build `msp-api` & `msp-web` (BuildKit rootless, cache registry) → push ke `…/mr/<image>:<sha>` (cleanup 7 hari) | BuildKit | — |
+| `e2e:smoke` | Image MR sebagai `services:` (api + migrasi + seed, worker, web, PostGIS, Redis, MinIO, webhook-sink) → Playwright `@smoke` (chromium, `parallel: 2`) + axe. *Critical path*: login (stub) → Offering → ICP → hasil pertama; search + filter + zero-result; profil + evidence drawer; unlock (debit credit); export kecil; webhook test; kill switch AI menampilkan pesan nonaktif. Detail di 05. | Playwright, @axe-core/playwright | QG-16, QG-17 |
+| `er:golden-synthetic` | Golden set **sintetis** di repo → precision/recall dilaporkan di MR | pytest | QG-26 |
+| `model:regression` | Versi naik + versi terbit tidak berubah (`versions.lock`), recompute fixture "golden scores" → diff sebagai komentar MR | pytest, script | QG-23, QG-24 |
+| `ai:eval` | Bila prompt berubah/label `ai-eval`: eval set sintetis (§10.4). Butuh API key LLM → variabel *masked* di-scope environment `ai-eval`, job `when: manual` untuk MR | harness eval | QG-25 |
+| `security:secrets` | gitleaks pada commit MR (`$CI_MERGE_REQUEST_DIFF_BASE_SHA..HEAD`) | gitleaks | QG-18 |
+| `security:sast` | Semgrep CE (ruleset tersimpan di repo: snapshot `p/python`, `p/typescript`, `p/owasp-top-ten` + aturan kustom; `--metrics=off`) + Bandit (`-lll`) | Semgrep, Bandit | QG-19 |
+| `security:deps` | OSV-Scanner (`uv.lock`, `pnpm-lock.yaml`) + license allowlist, pip-audit, `pnpm audit --audit-level high`, Trivy fs (`vuln,secret,misconfig`) | OSV-Scanner, pip-audit, pnpm, Trivy | QG-19, QG-20 |
+| `infra:lint`, `infra:molecule` | ansible-lint, yamllint, `--syntax-check`, Trivy config (Dockerfile, compose); Molecule untuk role kritis (`postgres`, `msp_app`, `traefik`, `firewall`) | ansible-lint, Molecule | QG-21 |
+| `ci:lint` | Validasi `.gitlab-ci.yml` via API CI Lint, image job di-pin digest, tidak ada `curl \| sh`, validasi `renovate.json` | script, check-jsonschema | QG-21 |
+| `docs` | markdownlint-cli2, lychee `--offline`, `check_doc_ids.py` (ID FR-/NFR-/QG- yang dirujuk ada di dokumen pendefinisi; advisory) | markdownlint-cli2, lychee | QG-22 |
 
-### 4.3 Anggaran waktu (p50, job paralel)
+### 4.3 Anggaran waktu (p50, paralel via `needs`)
 
 | Job | Target | Teknik |
 |---|---|---|
-| changes, pr-title | < 0,5 menit | — |
-| backend-lint | 1,5 menit | cache uv (`setup-uv enable-cache`), mypy cache |
-| web-lint, web-tests | 2–3 menit | `pnpm` store cache, Turborepo cache (`.turbo` via `actions/cache`), `--affected` |
-| backend-tests | 6–7 menit | `pytest -n auto`, Hypothesis profil `ci` (contoh lebih sedikit dari nightly), DB template untuk reset cepat |
-| migrations | 2 menit | Hanya bila path migrasi/model berubah |
-| contracts | 3–4 menit | — |
-| tokens | 1 menit | — |
-| web-build (+ Storybook + a11y) | 5–6 menit | cache `.next/cache` |
-| e2e-smoke | 8–9 menit (**jalur kritis**) | buildx cache `type=gha`, 2 shard, hanya chromium, subset `@smoke` ≤ 10 skenario |
-| security | 3 menit | DB Trivy di-cache |
+| `mr:title`, `security:secrets` | < 0,5 menit | — |
+| `backend:lint`, `web:lint`, `web:test` | 1,5–3 menit | Cache uv/pnpm/Turborepo di cache S3 runner (MinIO `ci-01`), `--affected` |
+| `backend:test` | 6–7 menit | `pytest -n auto`, Hypothesis profil `ci`, DB template |
+| `contracts`, `tokens`, `migrations` | 1–4 menit | Hanya bila path berubah |
+| `web:build` | 5–6 menit | Cache `.next/cache` |
+| `build:mr-images` → `e2e:smoke` | 3 + 6 menit (**jalur kritis**) | BuildKit registry cache, 2 shard, ≤ 10 skenario |
+| `security:sast`, `security:deps` | 2–3 menit | DB Trivy/OSV di-cache |
 
-Jalur kritis ≈ e2e-smoke ≈ 9–10 menit. Bila p50 melewati 10 menit dua minggu berturut-turut: pakai larger runner 4-core untuk `e2e-smoke` dan `backend-tests`, atau tambah shard (§16.3).
+Bila p50 > 10 menit dua minggu berturut-turut: tambah concurrency runner, tambah shard, atau pindahkan test ke nightly (§16.3).
 
-### 4.4 Required checks
+### 4.4 Syarat merge
 
-| Check | PR | Merge queue | Keterangan |
-|---|:-:|:-:|---|
-| `ci-ok` | ✓ | ✓ | Mencakup semua job pada §4.2, kecuali CodeQL |
-| `CodeQL` / code scanning rule | ✓ | ✓ | Alert baru severity ≥ High memblokir merge |
-| `pr-title` | ✓ | — | Tidak relevan di merge queue |
-| `ai-eval`, `model-regression` | lewat `ci-ok` | lewat `ci-ok` | Hanya bila path terkait berubah |
+*Pipelines must succeed* mencakup **semua** job yang terpicu, termasuk `mr:gate`. Tidak ada daftar required check terpisah. Job hanya boleh bersifat advisory (`allow_failure: true`) bila tercantum "Advisory" di §8.
 
 ---
 
-## 5. Pipeline main (`main.yml`)
+## 5. Pipeline main
 
-Trigger: `push` ke `main` (setiap squash merge dari merge queue). Juga `push` ke `release/v*` untuk hotfix (§6.6).
+Trigger: push ke `main` (hasil fast-forward merge) dan ke `release/v*` (hotfix, §6.6).
 
 ### 5.1 Build image (sekali per commit)
 
-| Image | Isi | Dipakai oleh service |
+| Image | Isi | Dipakai oleh |
 |---|---|---|
-| `msp-api` | Paket Python `msp` (multi-stage uv, base `python:3.13-slim` pin digest, user non-root) | ECS `api` (uvicorn), `worker` (dramatiq), task one-off `migrate` (alembic), job data (§10) |
-| `msp-web` | Next.js `output: standalone` di `node:24-slim` (pin digest, non-root) | ECS `web` |
+| `msp-api` | Paket Python `msp` (multi-stage uv, `python:3.13-slim` pin digest, user non-root) | api, semua worker pool, dispatcher, scheduler, reconciler, migrasi (one-off), job data/model (§10) |
+| `msp-web` | Next.js `output: standalone` di `node:24-slim` (pin digest, non-root) | web |
 
-Tiga service deployable (api, worker, web) berasal dari **dua image**. API dan worker memakai paket yang sama, sehingga versi keduanya dijamin identik. Migrasi juga berjalan dari image yang sama.
+Seluruh service backend berasal dari satu image, sehingga versi API dan worker dijamin identik.
 
-Langkah per image:
-1. `docker buildx build` → **push ke ECR** dengan tag immutable `sha-<commit>`. Provenance BuildKit `mode=max` ikut tersimpan di image index. Label OCI: `org.opencontainers.image.revision`, `.version`, `.source`.
-2. **Trivy image scan** pada digest yang baru di-push: 0 temuan Critical/High yang punya perbaikan (QG-26). Pengecualian hanya lewat VEX/`.trivyignore` yang memuat alasan dan tanggal kedaluwarsa.
-3. **SBOM** syft (SPDX JSON) → disimpan sebagai artifact workflow dan diunggah ke bucket evidence `msp-shared` (retensi ≥ 1 tahun).
-4. **cosign keyless sign** + `cosign attest --type spdxjson` (SBOM) untuk digest tersebut. **Penandatanganan hanya terjadi setelah gate 2 lolos**, sehingga tanda tangan berfungsi sebagai segel "lolos gate". Image yang gagal scan tetap ada di ECR, tetapi tidak bisa di-deploy karena verifikasi tanda tangan di §5.3 gagal.
+Langkah per image (runner `ci-build`):
+1. BuildKit rootless → **push** `registry/<proyek>/msp-api:sha-<commit>` dengan provenance `mode=max`. Digest dicatat sebagai variabel `dotenv` (`API_IMAGE=…@sha256:…`). Label OCI memuat revisi git. **Versi aplikasi tidak di-bake**, tetapi disuntikkan saat deploy (`MSP_APP_VERSION`), karena tag rilis dibuat setelah build (§6.1).
+2. **Trivy image**: 0 Critical/High yang fixable (QG-27). Pengecualian hanya via VEX/`.trivyignore` bertanggal kedaluwarsa.
+3. **SBOM** syft (SPDX JSON) → artifact (90 hari) + disalin ke bucket evidence `msp-evidence` di `stor-01` (retensi ≥ 1 tahun).
+4. **cosign sign** + `cosign attest --type spdxjson` dengan private key dari SOPS, `--tlog-upload=false`. **Penandatanganan hanya terjadi setelah langkah 2 lolos**, sehingga tanda tangan berfungsi sebagai segel "lolos gate".
 
-**Web dan build-once:** variabel `NEXT_PUBLIC_*` di-inline saat build, sehingga nilai yang bergantung environment (URL API, DSN error tracking, nama environment) **tidak boleh** memakai `NEXT_PUBLIC_*`. Nilai tersebut dibaca saat runtime di server dan dikirim ke browser lewat runtime config. Lint rule kustom melarang `NEXT_PUBLIC_*` selain allowlist.
+**Web & build-once:** nilai yang bergantung environment (URL, DSN GlitchTip, nama env) tidak boleh memakai `NEXT_PUBLIC_*` karena di-inline saat build. Nilai tersebut dibaca server saat runtime dan dikirim lewat runtime config. Lint rule kustom memblokir `NEXT_PUBLIC_*` di luar allowlist.
 
-### 5.2 Gate image
+### 5.2 Deploy ke staging
 
-| Gate | Gagal bila | Efek |
-|---|---|---|
-| QG-26 Trivy image | Critical/High fixable > 0 | Tidak di-sign → tidak bisa deploy. Issue `security` otomatis dibuat. |
-| Ukuran image | `msp-api` > 600 MB atau `msp-web` > 300 MB (advisory) | Peringatan di summary |
+Job `deploy:staging` (runner `deploy`, `resource_group: staging`, `environment: staging`) menjalankan `infra/ansible/playbooks/deploy.yml` terhadap inventory staging dengan mekanisme yang **sama** dengan production (§6.3), tetapi tanpa canary bertahap:
 
-### 5.3 Deploy ke staging
+1. Verifikasi tanda tangan cosign + attestation SBOM dengan `infra/keys/cosign.pub` (QG-28).
+2. Materialisasi secret SOPS → **tmpfs** `/run/msp/<warna>/` (ADR-22).
+3. Pull image by digest. **Migrasi** sebagai container one-off (`alembic upgrade head`, role `msp_owner`, advisory lock). Gagal → deploy berhenti, warna lama tetap melayani.
+4. Start warna baru (worker, api, web) → tunggu healthcheck (`/readyz`: DB, Redis, revisi skema ≥ minimum yang dibutuhkan image).
+5. Drain worker warna lama (SIGTERM graceful) → alihkan 100% traffic Traefik → smoke → hentikan api/web warna lama.
+6. Catat deployment (GitLab environment), anotasi Grafana, release GlitchTip `msp@sha-<short>`.
 
-Memakai reusable workflow `_deploy-ecs.yml` (§17.4) dengan `environment: staging` dan `strategy: rolling`:
-
-1. **Verifikasi** tanda tangan cosign + attestation SBOM untuk kedua digest. Identitas yang diterima: workflow `main.yml` di `refs/heads/main` atau `refs/heads/release/v*` repo ini, issuer `https://token.actions.githubusercontent.com` (QG-27).
-2. **Migrasi DB** sebagai **one-off ECS task** (`msp-migrate`, image `msp-api` digest yang sama, command `alembic upgrade head`, kredensial role `msp_migrator`). Pipeline menunggu task selesai dan memeriksa exit code. Gagal → deploy berhenti, service lama tetap berjalan. Migrasi dijamin *expand-only* oleh QG-10 sehingga aman bagi versi yang masih berjalan.
-3. **Update service** dengan task definition revisi baru yang merujuk digest: urutan **worker → api → web**.
-   - Worker dulu: worker baru menerima payload job versi N-1 dan N. Job tipe baru baru di-enqueue setelah API baru aktif.
-   - API sebelum web: web baru boleh memakai endpoint baru, sementara API baru tetap kompatibel dengan web lama.
-4. Rolling deploy ECS dengan *deployment circuit breaker* (rollback otomatis bila task gagal sehat) dan health check ALB: `/healthz` (liveness) dan `/readyz` (DB, Redis, dan revisi skema ≥ revisi minimum yang dibutuhkan image).
-5. **Deployment marker** dikirim ke observability backend dan error tracking (§16.1). GitHub Deployment dicatat beserta digest.
-
-Concurrency `deploy-staging` (tanpa cancel). Bila beberapa commit antre, yang di-deploy adalah commit terbaru.
-
-### 5.4 Verifikasi staging (post-deploy)
+### 5.3 Verifikasi staging (post-deploy)
 
 | Suite | Isi | Gate |
 |---|---|---|
-| Smoke | Health, login user sintetis, search, profil, export kecil, webhook test | QG-28 |
-| E2E penuh | Playwright seluruh suite (chromium, 4 shard) + axe pada setiap halaman | QG-28, QG-15 |
-| Kontrak | Schemathesis terhadap API staging (`--checks all`, stateful links bila didefinisikan), memakai workspace sintetis khusus | QG-28 |
-| Tenant isolation (deployed) | Subset suite isolasi via HTTP dengan dua workspace sintetis: akses silang → 403/404, tanpa kebocoran di list/search/export/webhook | QG-28, QG-08 |
-| DAST | ZAP baseline **tidak** dijalankan per commit (durasi). Jalan nightly dan untuk kandidat rilis (§7) | QG-29 |
+| Smoke | Health, login user sintetis, search, profil, export kecil, webhook test | QG-29 |
+| E2E penuh | Playwright seluruh suite (chromium, 4 shard) + axe di setiap halaman | QG-29, QG-16 |
+| Kontrak | Schemathesis terhadap API staging (`--checks all`, workspace sintetis khusus) | QG-29 |
+| Isolasi tenant (deployed) | Dua workspace sintetis, akses silang via HTTP → 404/403. Tanpa kebocoran di list/search/export/webhook | QG-29, QG-09 |
+| DAST | ZAP baseline **tidak** dijalankan per commit (durasi). Jalan nightly dan untuk kandidat rilis (§7) | QG-30 |
 
-Semua lulus → job `mark-verified` membuat **commit status `staging-verified`** pada SHA tersebut. Status ini prasyarat promosi (§6.2). E2E memakai workspace sintetis yang dibuat per run (prefix `e2e-<run_id>`) dan dibersihkan job harian, sehingga staging tidak perlu di-reset per run.
+Semua lulus → job `mark:staging-verified` menulis **commit status `staging-verified`** (GitLab commit status API) pada SHA tersebut. Status ini prasyarat `release:cut` dan promosi (§6.2). E2E memakai workspace sintetis per run (`e2e-<pipeline_id>`) yang dibersihkan job harian.
 
-### 5.5 Kebijakan `main` merah
+### 5.4 Kebijakan `main` merah
 
-- Build atau verifikasi staging gagal → notifikasi ke kanal tim + issue otomatis berlabel `main-red` yang di-assign ke penulis commit.
-- Aturan **stop-the-line**: penulis memilih **revert** atau **fix-forward** dalam ≤ 1 jam. Bila tidak ada pemilik, tech lead me-revert.
-- Commit yang gagal verifikasi tidak pernah mendapat `staging-verified`, sehingga tidak bisa dipromosikan.
+Build atau verifikasi gagal → notifikasi kanal tim + issue `main-red` yang di-assign ke author commit. Aturan **stop-the-line**: revert atau fix-forward ≤ 1 jam. Bila tidak ada pemilik, Maintainer me-revert. Commit yang gagal tidak pernah mendapat `staging-verified`.
 
 ---
 
-## 6. Pipeline release (`release.yml`)
+## 6. Pipeline release
 
-### 6.1 Versioning & release-please
+### 6.1 Versioning (semantic-release)
 
-- `release-please.yml` berjalan di setiap push ke `main` dan memelihara **Release PR** berisi bump versi + `CHANGELOG.md` dari Conventional Commits. Manifest memuat dua komponen: `.` (aplikasi, `vX.Y.Z`) dan `packages/design-tokens` (`design-tokens-vX.Y.Z`).
-- release-please memakai **token GitHub App** (bukan `GITHUB_TOKEN`). Event yang dibuat oleh `GITHUB_TOKEN` tidak memicu workflow lain, padahal tag/Release harus memicu `release.yml`.
-- Merge Release PR = commit biasa di `main` → `main.yml` membangun dan memverifikasi image untuk commit tersebut di staging → release-please membuat tag `vX.Y.Z` + GitHub Release → `release.yml` terpicu oleh `release: published`.
-- Versi aplikasi dibaca dari file versi saat build (label image, `service.version` di OpenTelemetry, header `X-MSP-Version`).
+- Job **`release:cut`** (manual, di pipeline `main`, `needs: mark:staging-verified`) menjalankan semantic-release: menganalisis commit sejak tag terakhir → menentukan versi (patch/minor/major) → membuat tag `vX.Y.Z` + **GitLab Release** dengan catatan rilis. Plugin: `commit-analyzer` (preset conventionalcommits), `release-notes-generator`, `@semantic-release/gitlab`. **Tanpa** `@semantic-release/git`: tidak ada commit balik, sehingga tag menunjuk commit yang sudah dibangun dan `staging-verified` (build once).
+- Token: project access token bot (role Maintainer, scope `api` + `write_repository`), masked + protected, di-scope ke environment `release`. Token berkedaluwarsa ≤ 365 hari (§12.4).
+- Changelog tinggal di GitLab Releases. Ringkasan untuk customer (id-ID) ditulis product dari Release tersebut.
+- `design-tokens-vX.Y.Z`: versi di `packages/design-tokens/package.json` dinaikkan di MR (QG-15). `release:cut` membuat tag bila versi itu belum ber-tag.
 
-### 6.2 Readiness (sebelum approval)
+### 6.2 Pipeline tag `vX.Y.Z`: readiness
 
-| Cek | Berlaku untuk | Sumber |
+| Cek (job `release:resolve`, `release:readiness`) | Berlaku | Gate |
 |---|---|---|
-| Commit tag memiliki status `staging-verified` (menunggu ≤ 45 menit bila masih berjalan) | Semua | QG-28 |
-| Digest `msp-api` & `msp-web` untuk commit tag ada, tertandatangani, dan punya SBOM | Semua | QG-27 |
-| Tidak ada alert Critical/High terbuka (code scanning, dependency, image scan digest ini) | Semua | QG-18, QG-26, NFR-SEC-06 |
-| ZAP baseline untuk commit ini (atau nightly ≤ 24 jam pada commit yang sama atau lebih baru di staging) tanpa High | Minor & major | QG-29 |
-| Hasil k6 kandidat rilis memenuhi threshold | Minor & major | QG-30 |
-| ER golden set penuh (nightly terakhir) lulus | Minor & major | QG-25 |
-| Drill restore terakhir lulus dan berumur ≤ 35 hari | Minor & major | QG-34 |
-| Issue **Release Readiness** untuk versi ini tertutup dengan bukti RG-1 s.d. RG-7 tertaut | Major dan `v1.0.0` (MVP 1) | QG-31 |
-| Bukan masa freeze (§6.5) atau error budget bulan berjalan belum terpakai > 75% | Semua kecuali hotfix | NFR-AVAIL-01 |
+| Commit tag memiliki status `staging-verified` (menunggu ≤ 45 menit) | Semua | QG-29 |
+| Digest `msp-api` & `msp-web` untuk commit tag (tag `sha-<commit>`) ada, tertandatangani, punya SBOM | Semua | QG-28 |
+| Tidak ada temuan Critical/High terbuka: rescan Trivy kedua digest + laporan SAST/deps terakhir `main` | Semua | QG-19, QG-27, NFR-SEC-06 |
+| ZAP baseline (commit ini atau nightly ≤ 24 jam pada commit yang sama atau lebih baru) tanpa High | Minor & major | QG-30 |
+| Hasil k6 kandidat rilis memenuhi threshold | Minor & major | QG-31 |
+| ER golden set penuh (nightly terakhir) lulus | Minor & major | QG-26 |
+| Drill restore terakhir lulus dan berumur ≤ 35 hari | Minor & major | QG-35 |
+| Issue **Release Readiness** versi ini tertutup dengan bukti RG-1 s.d. RG-7 | Major dan `v1.0.0` | QG-32 |
+| Bukan masa freeze (§6.5) dan error budget bulan berjalan ≤ 75% | Semua kecuali hotfix | NFR-AVAIL-01 |
 
-Readiness lolos → job deploy menunggu **approval Environment `production`**: required reviewers (tech lead atau on-call senior, bukan pemicu rilis), branch/tag rule hanya `v*`.
+Readiness lolos → job **`deploy:production`** (manual, `allow_failure: false`, `resource_group: production`, runner `deploy`) siap dijalankan oleh **Maintainer**. Saat tim ≥ 2 Maintainer, script *four-eyes* menolak bila pemicu deploy sama dengan pemicu `release:cut`.
 
-### 6.3 Deploy production
+### 6.3 Deploy production: blue/green + canary di Traefik
 
-1. Verifikasi tanda tangan & attestation (QG-27). Digest yang sama dengan staging. Tidak ada build.
-2. Bila rilis memuat migrasi berlabel `db-contract`: buat snapshot RDS manual terlebih dahulu sebagai jaring pengaman tambahan selain PITR.
-3. **Migrasi** sebagai one-off ECS task (sama seperti staging).
-4. **Worker**: rolling + circuit breaker + alarm (tanpa traffic HTTP).
-5. **API & web**: strategi deployment ECS bawaan **canary** (bila strategi canary tidak tersedia di akun, pakai blue/green dengan bake time):
+Dua project Compose per host: `msp-blue` dan `msp-green`. Masing-masing berisi web, api, dan semua worker pool. Service api/web setiap warna diberi label Docker (`api-blue@docker`, `api-green@docker`, dst.). Router dan **weighted service** didefinisikan di file provider Traefik yang dirender Ansible (§17.3).
 
 ```
-  traffic ──► ALB ──┬── 90% ── blue  (versi lama)
-                    └── 10% ── green (versi baru)   canary 10 menit
-                                 │ alarm OK
-                                 ▼
-                    100% ── green                   bake 20 menit (blue tetap siaga)
-                                 │ alarm OK
-                                 ▼
-                    blue dihentikan → deploy selesai
-             alarm ALARM kapan pun ──► traffic kembali ke blue otomatis (rollback)
+ langkah                       traffic api/web            worker
+ 0. awal                       blue 100%                  blue
+ 1. migrasi (expand-only)      blue 100%                  blue
+ 2. start green + healthcheck  blue 100%                  blue + green (keduanya konsumsi)
+ 3. drain worker blue (SIGTERM, selesaikan pesan in-flight)          green
+ 4. canary                     blue 90% / green 10%  (10 menit, dipantau Prometheus)
+ 5. promote                    green 100%            (bake 20 menit, blue api/web tetap hidup)
+ 6. selesai                    green 100%; file Traefik dirender ulang tanpa blue; blue dihentikan
+ gagal di langkah 2–5 → rescue: traffic 100% ke blue, start ulang worker blue, hentikan green
 ```
 
-**Alarm rollback otomatis (QG-32)**, dihitung per target group green bila memungkinkan:
+- **Urutan worker lebih dulu.** Worker baru menerima payload job versi N-1 dan N. Tipe job/aktor baru hanya di-enqueue setelah worker baru aktif, atau di balik flag. Singleton (scheduler, dispatcher, reconciler) aman berjalan di dua warna karena memakai leader lock/`SKIP LOCKED` (04 §2.2, ADR-06, ADR-07).
+- **Drain:** `stop_grace_period` per pool (mis. 15 menit untuk `pipeline`). Job panjang wajib resumable (state di Postgres, ADR-06). Pesan yang belum di-ack dikirim ulang.
+- **Referensi warna:** file Traefik tidak boleh merujuk service warna yang sudah dihentikan. Karena itu file dirender ulang sebelum warna lama dimatikan.
 
-| Alarm | Threshold | Dasar |
+**Rollback otomatis (QG-33).** Playbook memanggil `scripts/deploy/watch_canary.py`, yang mengevaluasi query Prometheus setiap 30 detik selama canary dan bake. Pelanggaran → blok `rescue` Ansible.
+
+| Sinyal | Threshold | Dasar |
 |---|---|---|
-| Rasio HTTP 5xx | > 2% selama 3 menit (baseline normal < 0,5%) | NFR-AVAIL-01 |
-| p95 latency `GET /v1/prospects` | > 800 ms selama 5 menit | NFR-PERF-01 |
-| p95 latency `GET /v1/prospects/{id}` | > 500 ms selama 5 menit | NFR-PERF-02 |
-| Target tidak sehat | > 0 selama 3 menit, atau circuit breaker terpicu | Health check |
+| Rasio 5xx service warna baru (metrik Traefik) | > 2% selama 3 menit (normal < 0,5%) | NFR-AVAIL-01 |
+| p95 `GET /v1/prospects` (histogram OTel, label `color`) | > 800 ms selama 5 menit | NFR-PERF-01 |
+| p95 `GET /v1/prospects/{id}` | > 500 ms selama 5 menit | NFR-PERF-02 |
+| Server Traefik tidak sehat / container restart loop | > 0 selama 3 menit | Healthcheck |
 | Worker: rasio job gagal | > 5% selama 10 menit | RG-5 |
-| Worker: inflow DLQ | > 20 pesan / 5 menit (awal, dikalibrasi) | RG-5 |
+| Inflow DLQ | > 20 pesan / 5 menit (awal, dikalibrasi) | RG-5 |
 
-Alarm memakai **CloudWatch** (terintegrasi native dengan ECS), terlepas dari vendor observability yang dipilih (Q-CI-03). Metrik aplikasi diekspor via OpenTelemetry ke CloudWatch.
+**Traffic beta rendah:** 10% traffic beta bisa terlalu sedikit untuk sinyal statistik. Selama canary dan bake, job `synthetic-load` menjalankan loop smoke read-only dari workspace sintetis `msp-synthetic-monitor` (tanpa credit, dikecualikan dari metrik produk dan billing), dengan header yang dipaksa ke warna baru.
 
-**Traffic beta rendah:** 10% traffic beta bisa terlalu sedikit untuk sinyal statistik. Selama canary dan bake, job `synthetic-load` menjalankan loop smoke read-only dari workspace sintetis `msp-synthetic-monitor` (tidak memakai credit, dikecualikan dari metrik produk dan billing) agar alarm punya data.
+**Multi-host (`app-02`):** playbook berjalan `serial: 1` per host di belakang VIP (keepalived/VRRP atau load balancer provider). Detail menunggu Q-CI-05.
 
 ### 6.4 Verifikasi pasca-deploy
 
-Otomatis: smoke production (read-only, workspace sintetis) → commit status `production-deployed` → tag ECR `vX.Y.Z` ditambahkan ke digest yang sama (kemudahan, bukan untuk deploy) → finalisasi release di error tracking → notifikasi. Checklist manual ada di §14.6.
+Otomatis: smoke production (read-only, workspace sintetis) → commit status `production-deployed` → tag registry `vX.Y.Z` ditambahkan ke digest yang sama (kemudahan, bukan untuk deploy) → release GlitchTip `msp@vX.Y.Z` → anotasi Grafana → notifikasi. Checklist manual ada di §14.6.
 
 ### 6.5 Jendela deploy & freeze
 
-- Production: Senin–Kamis 10:00–15:00 WIB. Jumat ≥ 15:00, akhir pekan, dan hari libur nasional (termasuk periode Lebaran) hanya untuk hotfix.
-- Freeze rilis non-fix bila error budget bulanan (99,5% ≈ 3,6 jam/bulan) sudah terpakai > 75%.
+Production: Senin–Kamis 10:00–15:00 WIB. Jumat ≥ 15:00, akhir pekan, dan libur nasional (termasuk periode Lebaran) hanya untuk hotfix. Rilis non-fix dibekukan bila error budget bulanan (99,5% ≈ 3,6 jam) terpakai > 75%.
 
 ### 6.6 Hotfix
 
-1. **Default: fix-forward dari `main`.** Karena `main` selalu dapat dirilis (fitur belum siap ada di balik flag), hotfix = PR `fix/…` biasa → merge → rilis patch.
-2. Bila `main` memuat perubahan yang tidak boleh dirilis: tech lead membuat `release/vX.Y` dari tag terakhir → cherry-pick fix → `main.yml` membangun dan memverifikasi di staging (staging sementara menjalankan versi hotfix) → release-please (konfigurasi release branch) membuat `vX.Y.(Z+1)` → `release.yml`. Fix yang sama wajib ada di `main` (PR terpisah) sebelum issue ditutup.
+1. **Default: fix-forward dari `main`.** `main` selalu dapat dirilis karena fitur belum siap ada di balik flag. Hotfix = MR `fix/…` → merge → staging → `release:cut` (patch) → deploy.
+2. Bila `main` memuat perubahan yang tidak boleh dirilis: Maintainer membuat `release/vX.Y` dari tag terakhir → cherry-pick → pipeline branch membangun dan memverifikasi di staging (staging sementara menjalankan versi hotfix) → `release:cut` pada branch tersebut (konfigurasi `branches` semantic-release untuk maintenance branch) → tag `vX.Y.(Z+1)`. Fix yang sama wajib masuk `main` lewat MR terpisah.
 
 ---
 
-## 7. Nightly & scheduled
+## 7. Scheduled pipelines
 
-| Workflow / job | Jadwal (WIB) | Cron (UTC) | Isi | Lokasi eksekusi | Gate / output |
-|---|---|---|---|---|---|
-| `nightly` · regresi penuh | Setiap hari 01:00 | `0 18 * * *` | Seluruh pytest (termasuk `slow`, Hypothesis profil `nightly`), Vitest penuh, Playwright penuh di chromium + firefox + webkit terhadap staging, viewport 360 px untuk halaman responsif (NFR-COMP-01) | Runner GitHub + staging | Issue `nightly-red` |
-| `nightly` · k6 | Setiap hari 02:00 | `0 19 * * *` | Skenario NFR-PERF-01/02/04 pada dataset ukuran NFR-SCAL-01 (atau proporsional, dicatat di laporan) dengan 50 VU | **ECS task di VPC staging** (bukan runner GitHub, agar latency trans-region tidak ikut terukur) | Advisory nightly. Blocking untuk kandidat rilis (QG-30) |
-| `nightly` · ZAP baseline | Setiap hari 03:00 | `0 20 * * *` | `zap-baseline` terhadap web + API staging. Mingguan: ZAP API scan berbasis OpenAPI dengan user sintetis | Runner GitHub → staging | QG-29 |
-| `nightly` · data quality | Setiap hari 03:30 | `30 20 * * *` | ER golden set penuh (precision/recall), regresi skor terhadap baseline versi aktif, reproducibility geo & skor (recompute sampel → hash identik), suite edge case EC-xx | ECS task di staging. CI hanya menerima ringkasan agregat | QG-25, NFR-DATA-01 |
-| `nightly` · rekonsiliasi | Setiap hari 04:00 | `0 21 * * *` | Saldo credit = Σ ledger, usage event vs ledger (staging). Job yang sama dijadwalkan di production oleh aplikasi, dengan alert | ECS task | RG-4 |
-| `nightly` · rescan image | Setiap hari 04:30 | `30 21 * * *` | Trivy pada digest yang **sedang berjalan** di staging & production (CVE baru pada image lama) | Runner GitHub | Issue `security` bila Critical/High |
-| `nightly` · Lighthouse CI | Setiap hari 05:00 | `0 22 * * *` | Halaman kunci staging. Budget LCP/INP sebagai proxy NFR-PERF-03 | Runner GitHub | Advisory |
-| `infra-drift` | Setiap hari 06:00 | `0 23 * * *` | `terraform plan -detailed-exitcode` per env (role read-only) | Runner GitHub | Exit 2 → issue `infra-drift` |
-| `renovate` | Setiap jam kerja, Sen–Jum | `0 2-10 * * 1-5` | Renovate self-hosted (§15.4) | Runner GitHub | PR dependency |
-| `codeql` (terjadwal) | Senin 02:00 | `0 19 * * 0` | Analisis penuh dengan query terbaru | Runner GitHub | Alert code scanning |
-| `link-check-external` | Senin 05:00 | `0 22 * * 0` | lychee dengan link eksternal di `docs/` | Runner GitHub | Advisory |
-| `flag-hygiene` | Senin 08:00 | `0 1 * * 1` | Laporan flag kedaluwarsa atau 100% aktif > 30 hari (§13.3) | Runner GitHub | Issue per flag |
-| `restore-drill` | Bulanan, Selasa pertama 09:00 | `0 2 1-7 * 2` | Restore PITR RDS production ke instance terisolasi di akun production → verifikasi → hancurkan (§7.1) | Akun production | QG-34 |
-| `soak-webhook` | Manual / kandidat MVP 1 | `workflow_dispatch` | 24 jam pengiriman webhook ke sink (termasuk endpoint flaky buatan) di staging | ECS task | RG-3 (≥ 99%) |
-| `alert-drill` | Manual, sebelum MVP 1 dan setiap kuartal | `workflow_dispatch` | Injeksi kegagalan via flag `chaos.*` di staging: pipeline failure > 5%, backlog > 1 jam, AI failure > 5%, webhook failure > 5% → verifikasi alert terpicu | Staging | RG-5 |
+Setiap schedule GitLab membawa variabel `SCHEDULE` yang menentukan job yang berjalan (`rules: if: $SCHEDULE == "nightly"`). Schedule berjalan di `main` (terlindungi), sehingga job deploy-side bisa memakai runner `deploy`.
 
-Catatan cron: GitHub menjalankan `schedule` dengan best effort dan bisa terlambat saat beban tinggi. Job yang waktunya kritis (drill) juga bisa dipicu manual.
+| `SCHEDULE` · job | Jadwal (WIB) | Isi | Lokasi eksekusi | Gate / output |
+|---|---|---|---|---|
+| `nightly` · regresi penuh | Harian 01:00 | Seluruh pytest (termasuk `slow`, Hypothesis profil `nightly`), Vitest penuh, Playwright chromium + firefox + webkit terhadap staging, viewport 360 px (NFR-COMP-01) | `ci-01` + staging | Issue `nightly-red` |
+| `nightly` · k6 | Harian 02:00 | NFR-PERF-01/02/04 pada dataset sintetis 5 juta + 200 workspace × 3 ICP (04 §17), 50 VU, lewat Traefik staging | Container k6 di `stg-01` (dipicu via runner `deploy`) | Advisory nightly. Blocking untuk kandidat rilis (QG-31) |
+| `nightly` · ZAP | Harian 03:00 | `zap-baseline` web + API staging. Mingguan: ZAP API scan berbasis OpenAPI | `ci-01` → staging via WireGuard egress | QG-30 |
+| `nightly` · data quality | Harian 03:30 | ER golden set penuh, regresi skor vs baseline versi aktif, reproducibility (recompute sampel → hash identik), suite edge case EC-xx | Container one-off di `stg-01`. CI hanya menerima ringkasan agregat | QG-26, NFR-DATA-01 |
+| `nightly` · rekonsiliasi | Harian 04:00 | Saldo credit = Σ ledger, usage event vs ledger (staging). Di production, job yang sama dijadwalkan aplikasi dan dipantau alert | `stg-01` | RG-4 |
+| `nightly` · rescan image | Harian 04:30 | Trivy pada digest yang **sedang berjalan** di staging & production | `ci-01` | Issue `security` |
+| `nightly` · Lighthouse | Harian 05:00 | Halaman kunci staging, budget LCP/INP | `ci-01` | Advisory (NFR-PERF-03) |
+| `drift` | Harian 06:00 | `ansible-playbook site.yml --check --diff` untuk staging & production + cek setelan GitLab | Runner `deploy` | Perubahan > 0 → issue `infra-drift` |
+| `backup-check` | Harian 07:00 | `pgbackrest info`/`check` kedua repo, umur backup terakhir, lag replikasi MinIO off-site, umur backup GitLab | Runner `deploy` | Issue + alert (juga dipantau Prometheus) |
+| `renovate` | Tiap jam kerja, Sen–Jum | Renovate self-hosted (§15.4) | `ci-01` | MR dependency |
+| `weekly` · SAST penuh + link eksternal + flag hygiene | Senin 02:00 | Semgrep seluruh repo dengan ruleset terbaru, lychee eksternal, laporan flag kedaluwarsa (§13.3) | `ci-01` | Issue |
+| `monthly` · restore drill | Selasa pertama, 09:00 | §7.1 | `dr-01` via runner `deploy` | QG-35 |
+| `soak-webhook` (manual) | Kandidat MVP 1 | 24 jam pengiriman webhook (termasuk endpoint flaky buatan) | `stg-01` | RG-3 (≥ 99%) |
+| `alert-drill` (manual) | Sebelum MVP 1, lalu tiap kuartal | Injeksi kegagalan via flag `chaos.*` di staging: pipeline failure > 5%, backlog > 1 jam, AI failure > 5%, webhook failure > 5% → verifikasi alert terpicu dan diterima on-call | `stg-01` | RG-5 |
 
 ### 7.1 Drill restore (bulanan)
 
-1. Catat `T_target` = waktu sekarang − 5 menit. Lakukan restore PITR RDS production ke `msp-restore-drill-<tanggal>` (subnet terisolasi, tanpa akses aplikasi).
-2. Ukur **RTO**: waktu dari mulai restore sampai instance *available* dan query verifikasi lulus. Target ≤ 4 jam.
-3. Ukur **RPO**: selisih `T_target` dengan timestamp transaksi terakhir yang ada (mis. `max(created_at)` di `audit_log` dan `usage_event`). Target ≤ 15 menit.
-4. Verifikasi integritas: jumlah baris tabel kunci dibandingkan dengan production (toleransi sesuai jeda), `alembic current` = head production, dan RLS policy ada.
-5. Hancurkan instance. Laporan (tanpa data, hanya metrik) disimpan di bucket evidence. Gagal → incident SEV3 dan QG-34 memblokir rilis minor/major berikutnya.
+1. Siapkan `dr-01` (server cadangan atau server sewa per jam di zona prod, disk LUKS). Catat `T_target` = sekarang − 5 menit.
+2. `pgbackrest restore --type=time --target=<T_target>` dari **repo off-site** (sekaligus menguji jalur DR lokasi lain).
+3. **RTO** = mulai restore → PostgreSQL menerima koneksi dan query verifikasi lulus. Target ≤ 4 jam.
+4. **RPO** = selisih `T_target` dengan transaksi terakhir yang ada (`max(created_at)` di `platform.audit_log` dan `usage.usage_event`). Target ≤ 15 menit.
+5. Verifikasi integritas: jumlah baris tabel kunci vs production (toleransi jeda), `alembic current` = head production, RLS policy ada, sampel objek MinIO off-site bisa dibaca. Restore backup GitLab diuji tiap kuartal.
+6. Hapus data dengan aman (`blkdiscard`/hapus volume LUKS). Laporan berisi metrik saja (tanpa data) disimpan di `msp-evidence`. Gagal → incident SEV3, dan QG-35 memblokir rilis minor/major berikutnya.
 
 ---
 
@@ -557,63 +612,66 @@ Catatan cron: GitHub menjalankan `schedule` dengan best effort dan bisa terlamba
 
 ### 8.1 Daftar QG
 
-Tahap: **PR** = `pr.yml` pada PR dan merge queue · **main** = `main.yml` · **rel** = `release.yml` · **night** = terjadwal · **data** = pipeline rilis data/model. *Blocking* = gagal → merge/deploy/aktivasi terhenti.
+Tahap: **MR** = pipeline merge request · **main** = pipeline `main` · **rel** = pipeline tag `v*` · **sch** = scheduled · **data** = pipeline tag rilis data/model · **infra** = pipeline tag `infra-*`. *Blocking* = gagal → merge/deploy/aktivasi berhenti.
 
 | ID | Gate | Tahap | Threshold | Blocking | Sumber |
 |---|---|---|---|---|---|
-| QG-01 | Judul PR mengikuti Conventional Commits | PR | Lolos validasi type/scope | Ya | §2.2 |
-| QG-02 | Lint & format bersih | PR | ruff, ESLint, Prettier: 0 error | Ya | DoD, NFR-MAINT-01 |
-| QG-03 | Type check bersih | PR | mypy (strict untuk `msp`), `tsc --noEmit`: 0 error | Ya | NFR-MAINT-01 |
-| QG-04 | Unit & integration test lulus | PR | 100% lulus. Test yang dikarantina (§16.3) tidak dihitung, maksimal 14 hari | Ya | DoD §12.2 |
-| QG-05 | Coverage modul kritis | PR | ≥ 85% line untuk normalisasi, ER, scoring | Ya | NFR-MAINT-01 |
-| QG-06 | Coverage backend keseluruhan | PR | ≥ 75% line | Ya | NFR-MAINT-01 |
-| QG-07 | Coverage frontend | PR | ≥ 70% line untuk `packages/ui` dan logika `apps/web` (hooks, lib, formatter). Halaman dicakup E2E. | Advisory 4 minggu pertama, lalu Ya | Proposed (dokumen ini) |
-| QG-08 | Suite isolasi tenant | PR, main, night, rel | 100% lulus, termasuk koneksi role aplikasi tanpa `BYPASSRLS` | Ya, **tidak bisa di-waive** | NFR-SEC-03, FR-AUD-006, RG-7 |
-| QG-09 | Test privasi | PR | Redaksi PII di log dan payload prompt LLM: 100% lulus | Ya | NFR-PRIV-01, NFR-PRIV-04, FR-AI-005 |
-| QG-10 | Keamanan migrasi | PR | Satu head; upgrade dari kosong sukses; `alembic check` bersih; squawk 0 error; RLS lengkap untuk tabel tenant; operasi contract hanya dengan label `db-contract` | Ya | §9, NFR-SEC-03 |
-| QG-11 | Lint OpenAPI | PR | Spectral: 0 error (warning dilaporkan) | Ya | DoD §12.2 |
-| QG-12 | Tidak ada breaking change OpenAPI tanpa rencana | PR | oasdiff level ERR = 0, **kecuali** label `api-breaking` + bagian "Rencana versi API" terisi | Ya | DoD §12.2 |
-| QG-13 | Sinkronisasi kontrak | PR | Spec ter-commit = spec aplikasi; client TS ter-regenerate; contoh payload valid; skema event versi terbit tidak berubah; Schemathesis smoke tanpa 5xx | Ya | DoD §12.2 |
-| QG-14 | Design tokens | PR | DTCG valid, alias terselesaikan, output build ter-commit up to date, semua pasangan kontras ≥ WCAG AA | Ya | NFR-A11Y-01 |
-| QG-15 | Aksesibilitas | PR, main | axe: 0 pelanggaran **serious/critical** pada story komponen dan halaman E2E | Ya | DoD §12.2, NFR-A11Y-01 |
-| QG-16 | E2E smoke | PR, main | 100% skenario `@smoke` lulus (retry 1× diizinkan; lulus setelah retry dicatat sebagai flaky) | Ya | DoD, RG-3 |
-| QG-17 | Tidak ada secret | PR (+ push protection) | gitleaks: 0 temuan | Ya, **tidak bisa di-waive** | NFR-SEC-04 |
-| QG-18 | Tidak ada kerentanan Critical/High baru | PR, rel | CodeQL alert ≥ High = 0; dependency review severity ≥ high = 0; Trivy fs fixable Critical/High = 0 | Ya | NFR-SEC-06 |
-| QG-19 | License policy | PR | Dependency baru hanya dari allow-list (MIT, Apache-2.0, BSD-2/3-Clause, ISC, MPL-2.0, PSF-2.0, 0BSD, Unlicense, CC0-1.0). AGPL/SSPL/GPL ditolak. LGPL perlu review. | Ya | Kebijakan legal (Proposed) |
-| QG-20 | Lint workflow & IaC | PR | actionlint + zizmor bersih; semua action di-pin SHA; `terraform fmt/validate`, tflint, Trivy config: 0 High | Ya | §11, §15 |
-| QG-21 | Dokumentasi | PR | markdownlint 0 error; link internal valid | Ya (path `docs/**`) | — |
-| QG-22 | Versi model/geo/prompt immutable | PR | Konfigurasi versi terbit tidak berubah (`versions.lock`); perubahan konfigurasi wajib menaikkan versi | Ya | NFR-DATA-01, FR-INTL-009 |
-| QG-23 | Regresi skor/geo ditinjau | PR (fixture), data (sampel staging) | Laporan diff terlampir; disetujui data-intel + product sebelum aktivasi; determinisme: recompute 2× → hash identik | Ya (aktivasi) | FR-INTL-009, NFR-DATA-01 |
-| QG-24 | AI eval | PR (bila prompt berubah), data (aktivasi) | Grounding ≥ 98%; kebocoran PII = 0; validitas format 100%; error/refusal ≤ 2% | Ya | FR-AI-001, FR-AI-004, FR-AI-005 |
-| QG-25 | ER golden set | PR (sintetis, bila ER berubah), night (penuh), rel | Precision ≥ 98%, recall ≥ 90% | Ya (PR: sintetis; rel: penuh) | FR-DATA-003, RG-6 |
-| QG-26 | Scan image | main | Trivy: 0 Critical/High yang fixable | Ya (image tidak di-sign) | NFR-SEC-06 |
-| QG-27 | Integritas artefak | deploy (staging, prod) | Tanda tangan cosign + attestation SBOM valid untuk identitas workflow yang diharapkan | Ya | §15 |
-| QG-28 | Verifikasi staging | main | Smoke, E2E penuh, Schemathesis, isolasi tenant (deployed): 100% lulus → `staging-verified` | Ya (untuk promosi) | DoD, RG-3 |
-| QG-29 | DAST baseline | night, rel | ZAP: 0 temuan High; Medium ditriase ≤ 14 hari | Ya (rilis) | NFR-SEC-06, RG-7 |
-| QG-30 | Performa kandidat rilis | rel (minor/major), night (advisory) | Search p95 ≤ 800 ms & p99 ≤ 2 s; profil p95 ≤ 500 ms; 50 VU; error rate < 1%; export 10.000 baris ≤ 2 menit | Ya (minor/major) | NFR-PERF-01, -02, -04 |
-| QG-31 | Bukti release gate | rel (major, `v1.0.0`) | Issue Release Readiness memuat bukti RG-1 s.d. RG-7 dan ditutup oleh product + tech lead | Ya | PRD §12.1 |
-| QG-32 | Kesehatan canary/bake | rel | Tidak ada alarm §6.3 selama canary + bake | Ya (rollback otomatis) | NFR-AVAIL-01, NFR-PERF-01 |
-| QG-33 | Validasi snapshot dataset | data | Threshold §10.2 | Ya (publish) | FR-DATA-001, NFR-DATA-01 |
-| QG-34 | Drill restore | night (bulanan) | RPO ≤ 15 menit, RTO ≤ 4 jam, drill terakhir ≤ 35 hari | Ya (rilis minor/major berikutnya) | NFR-AVAIL-02 |
-| QG-35 | Perubahan infrastruktur | infra | Plan sukses dan dikomentari di PR; apply production hanya dari plan yang disetujui | Ya | §11 |
+| QG-01 | Judul MR Conventional Commits | MR | Lolos commitlint | Ya | §2.2 |
+| QG-02 | MR gate | MR | ≥ 1 approval owner (2 untuk path berisiko saat tim ≥ 4), approver ≠ author, approval setelah commit terakhir, thread resolved, label wajib | Ya | §2.3 (pengganti approval rules) |
+| QG-03 | Lint & format | MR | ruff, ESLint, Prettier, import-linter: 0 error | Ya | DoD, NFR-MAINT-01, ADR-01 |
+| QG-04 | Type check | MR | mypy (strict untuk `msp`), `tsc --noEmit`: 0 error | Ya | NFR-MAINT-01 |
+| QG-05 | Unit & integration test | MR | 100% lulus. Test karantina (§16.3) tidak dihitung, maks 14 hari | Ya | DoD §12.2 |
+| QG-06 | Coverage modul kritis | MR | ≥ 85% line untuk normalisasi, ER, scoring | Ya | NFR-MAINT-01 |
+| QG-07 | Coverage backend | MR | ≥ 75% line | Ya | NFR-MAINT-01 |
+| QG-08 | Coverage frontend | MR | ≥ 70% line `packages/ui` + logika `apps/web` (hooks, lib, formatter). Halaman dicakup E2E | Advisory 4 minggu, lalu Ya | Proposed |
+| QG-09 | Isolasi tenant | MR, main, sch, rel | 100% lulus, role `msp_app` `NOBYPASSRLS` | Ya, **tidak bisa di-waive** | NFR-SEC-03, FR-AUD-006, RG-7 |
+| QG-10 | Test privasi | MR | Redaksi PII di log dan payload prompt LLM: 100% lulus | Ya | NFR-PRIV-01, NFR-PRIV-04, FR-AI-005 |
+| QG-11 | Keamanan migrasi | MR | Satu head; upgrade dari kosong; `alembic check` bersih; squawk 0 error; RLS lengkap; contract hanya dengan `db-contract` | Ya | §9, NFR-SEC-03 |
+| QG-12 | Lint OpenAPI | MR | Spectral: 0 error | Ya | DoD §12.2 |
+| QG-13 | Breaking change OpenAPI | MR | oasdiff ERR = 0, **kecuali** label `api-breaking` + rencana versi | Ya | DoD §12.2 |
+| QG-14 | Sinkronisasi kontrak | MR | Spec generate = spec kontrak; client TS ter-regenerate; contoh payload valid; skema event terbit immutable; Schemathesis smoke tanpa 5xx | Ya | ADR-08, DoD |
+| QG-15 | Design tokens | MR | DTCG valid, output up to date, kontras ≥ WCAG AA, versi paket naik bila token berubah | Ya | NFR-A11Y-01 |
+| QG-16 | Aksesibilitas | MR, main | axe: 0 pelanggaran serious/critical (story & halaman E2E) | Ya | DoD §12.2, NFR-A11Y-01 |
+| QG-17 | E2E smoke | MR, main | 100% `@smoke` lulus (retry 1×; lulus setelah retry = flaky tercatat) | Ya | DoD, RG-3 |
+| QG-18 | Tidak ada secret | MR (+ pre-receive hook) | gitleaks: 0 temuan | Ya, **tidak bisa di-waive** | NFR-SEC-04 |
+| QG-19 | Tidak ada kerentanan Critical/High | MR, rel | Semgrep severity ERROR = 0; Bandit high = 0; OSV/pip-audit/pnpm audit/Trivy fs fixable Critical/High = 0 | Ya | NFR-SEC-06 |
+| QG-20 | License policy | MR | Allowlist: MIT, Apache-2.0, BSD-2/3-Clause, ISC, MPL-2.0, PSF-2.0, 0BSD, Unlicense, CC0-1.0. AGPL/SSPL/GPL ditolak, LGPL perlu review | Ya | Kebijakan legal (Proposed) |
+| QG-21 | Lint CI & IaC | MR | CI Lint valid, image di-pin digest; ansible-lint/yamllint bersih; Molecule lulus; Trivy config 0 High | Ya | §11, §15 |
+| QG-22 | Dokumentasi | MR | markdownlint 0 error, link internal valid | Ya (path `docs/**`) | — |
+| QG-23 | Versi model/geo/prompt immutable | MR | Konfigurasi versi terbit tidak berubah (`versions.lock`, sha256 di `intel.score_model`); perubahan wajib menaikkan versi | Ya | NFR-DATA-01, FR-INTL-009 |
+| QG-24 | Regresi skor/geo ditinjau | MR (fixture), data (sampel staging) | Laporan diff terlampir; disetujui data-intel + product sebelum aktivasi; recompute 2× → hash identik | Ya (aktivasi) | FR-INTL-009, NFR-DATA-01 |
+| QG-25 | AI eval | MR (prompt berubah), data (aktivasi) | Grounding ≥ 98%; kebocoran PII = 0; format valid 100%; error/refusal ≤ 2% | Ya | FR-AI-001, -004, -005 |
+| QG-26 | ER golden set | MR (sintetis), sch (penuh), rel | Precision ≥ 98%, recall ≥ 90% | Ya (MR: sintetis; rel: penuh) | FR-DATA-003, RG-6 |
+| QG-27 | Scan image | main, rel | Trivy: 0 Critical/High fixable | Ya (image tidak di-sign) | NFR-SEC-06 |
+| QG-28 | Integritas artefak | deploy (staging, prod) | `cosign verify` + `verify-attestation` dengan `cosign.pub` | Ya | §15 |
+| QG-29 | Verifikasi staging | main | Smoke, E2E penuh, Schemathesis, isolasi tenant (deployed) 100% → `staging-verified` | Ya (untuk rilis) | DoD, RG-3 |
+| QG-30 | DAST baseline | sch, rel | ZAP: 0 High; Medium ditriase ≤ 14 hari | Ya (rilis) | NFR-SEC-06, RG-7 |
+| QG-31 | Performa kandidat rilis | rel (minor/major), sch (advisory) | Search p95 ≤ 800 ms & p99 ≤ 2 s; profil p95 ≤ 500 ms; 50 VU; error < 1%; export 10.000 baris ≤ 2 menit | Ya (minor/major) | NFR-PERF-01, -02, -04 |
+| QG-32 | Bukti release gate | rel (major, `v1.0.0`) | Issue Release Readiness memuat bukti RG-1 s.d. RG-7, ditutup product + tech lead | Ya | PRD §12.1 |
+| QG-33 | Kesehatan canary/bake | rel | Tidak ada pelanggaran sinyal §6.3 | Ya (rollback otomatis) | NFR-AVAIL-01, NFR-PERF-01/02 |
+| QG-34 | Validasi snapshot dataset | data | Threshold §10.2 | Ya (publish) | FR-DATA-001, NFR-DATA-01 |
+| QG-35 | Drill restore | sch (bulanan) | RPO ≤ 15 menit, RTO ≤ 4 jam, drill terakhir ≤ 35 hari | Ya (rilis minor/major berikutnya) | NFR-AVAIL-02 |
+| QG-36 | Perubahan infrastruktur | infra | `--check --diff` staging & production terlampir di MR; apply production hanya dari tag `infra-*` | Ya | §11 |
+
+**Catatan performa staging:** `stg-01` adalah all-in-one dan lebih kecil dari production. QG-31 yang lulus di staging dianggap konservatif untuk production. Sebelum paid GA, k6 dijalankan sekali di hardware production (pre-launch, data sintetis) untuk memvalidasi angka absolut NFR-PERF.
 
 ### 8.2 Release gate MVP 1 → bukti dari pipeline
 
 | RG | Bukti | Diproduksi oleh |
 |---|---|---|
-| RG-1 Relevansi | Laporan usability (manual) + median time-to-first-result dari event analytics | Product/Design, dilampirkan ke issue Release Readiness |
-| RG-2 Kepercayaan | Laporan usability + evidence coverage ≥ 95% (ekspor dashboard Data Health) | Product + job data quality |
-| RG-3 Aksi | E2E select → export dan select → webhook (QG-28) + laporan `soak-webhook` 24 jam ≥ 99% | `main.yml`, `soak-webhook` |
-| RG-4 Usage | Suite billing/idempotensi (QG-04) + laporan rekonsiliasi nightly 100% | `pr.yml`, `nightly` |
-| RG-5 Operasional | Laporan `alert-drill`: empat alert terpicu dan diterima on-call | `alert-drill` |
-| RG-6 Kualitas data | QG-25 penuh + suite edge case (≥ 10 EC lulus, daftar di 05) | `nightly` data quality |
-| RG-7 Keamanan | QG-08 + 0 Critical/High (QG-18/26/29) + suite SSRF webhook lulus | `pr.yml`, `main.yml`, `nightly` |
+| RG-1 Relevansi | Laporan usability + median time-to-first-result | Product/Design → issue Release Readiness |
+| RG-2 Kepercayaan | Laporan usability + evidence coverage ≥ 95% (dashboard Data Health) | Product + job data quality |
+| RG-3 Aksi | E2E export & webhook (QG-29) + laporan `soak-webhook` ≥ 99% | Pipeline `main`, `soak-webhook` |
+| RG-4 Usage | Suite billing/idempotensi (QG-05) + rekonsiliasi nightly 100% | MR, `nightly` |
+| RG-5 Operasional | Laporan `alert-drill`: empat alert terpicu dan diterima | `alert-drill` |
+| RG-6 Kualitas data | QG-26 penuh + ≥ 10 edge case lulus (05) | `nightly` |
+| RG-7 Keamanan | QG-09 + 0 Critical/High (QG-19/27/30) + suite SSRF webhook (ADR-20) | MR, `main`, `nightly` |
 
 ### 8.3 Kebijakan waiver
 
-- Gate blocking hanya dapat di-waive oleh tech lead (ditambah pemilik security untuk gate keamanan), lewat issue berlabel `qg-waiver` yang mencantumkan alasan, mitigasi, dan **tanggal kedaluwarsa ≤ 14 hari**.
-- **QG-08 dan QG-17 tidak pernah di-waive.** Temuan secret ditangani dengan rotasi, bukan pengecualian.
-- Pengecualian kerentanan memakai VEX/`.trivyignore` dengan tanggal kedaluwarsa. Pengecualian kedaluwarsa otomatis membuat gate gagal lagi.
+- Gate blocking hanya dapat di-waive tech lead (ditambah owner security untuk gate keamanan) lewat issue `qg-waiver` yang memuat alasan, mitigasi, dan **kedaluwarsa ≤ 14 hari**. Waiver diterapkan sebagai variabel/allowlist yang dirujuk dari issue.
+- **QG-09 dan QG-18 tidak pernah di-waive.** Temuan secret ditangani dengan rotasi.
+- Pengecualian kerentanan memakai VEX/`.trivyignore`/`osv-scanner.toml` bertanggal kedaluwarsa. Pengecualian kedaluwarsa otomatis membuat gate gagal lagi.
 
 ---
 
@@ -621,248 +679,301 @@ Tahap: **PR** = `pr.yml` pada PR dan merge queue · **main** = `main.yml` · **r
 
 ### 9.1 Prinsip
 
-1. **Setiap migrasi kompatibel dengan versi aplikasi yang sedang berjalan (N-1).** Migrasi berjalan *sebelum* rolling deploy, dan rollback aplikasi kembali ke image N-1 di atas skema baru.
+1. **Setiap migrasi kompatibel dengan versi aplikasi yang sedang berjalan (N-1).** Migrasi berjalan sebelum warna baru di-start, dan rollback mengembalikan traffic ke warna lama di atas skema baru.
 2. **Expand → migrate → contract** untuk perubahan yang tidak kompatibel, tersebar di beberapa rilis.
-3. **Rollback skema = forward fix.** Fungsi `downgrade()` boleh ditulis untuk kenyamanan lokal, tetapi tidak pernah dijalankan di staging/production. PITR adalah upaya terakhir (§14.3).
-4. Migrasi pendek: target < 5 menit di production. Pekerjaan berat (backfill, rebuild) berjalan sebagai **background job**, bukan di migrasi.
+3. **Rollback skema = forward fix.** `downgrade()` boleh ditulis untuk kenyamanan lokal, tetapi tidak dijalankan di staging/production. PITR adalah upaya terakhir (§14.3).
+4. Migrasi pendek (target < 5 menit di production). Backfill dan rebuild berjalan sebagai **background job**.
 
-### 9.2 Contoh: rename kolom `contact_point.verified_at` → `last_verified_at`
+### 9.2 Contoh: rename `identity.contact_point.verified_at` → `last_verified_at`
 
 | Rilis | Fase | Migrasi | Kode aplikasi |
 |---|---|---|---|
-| N | **Expand** | `ADD COLUMN last_verified_at timestamptz NULL` (tanpa default, tanpa lock panjang) | Tulis ke **kedua** kolom (dual-write). Baca dari `verified_at`. Enqueue job backfill `backfill_last_verified_at` (batch 5.000 baris, idempotent, dapat dilanjutkan, di-throttle). |
-| N+1 | **Migrate** | (opsional) `CREATE INDEX CONCURRENTLY` pada kolom baru. Bila perlu NOT NULL: `ADD CONSTRAINT … CHECK (last_verified_at IS NOT NULL) NOT VALID` → `VALIDATE CONSTRAINT` | Baca dari `last_verified_at`. Tetap dual-write (rollback ke N tetap aman). Rilis baru boleh dipromosikan setelah verifikasi backfill: `count(*) WHERE last_verified_at IS NULL AND verified_at IS NOT NULL = 0`. |
-| N+2 | **Contract** (label `db-contract`) | `DROP COLUMN verified_at`. Migrasi berada di rilis setelah N+1 berjalan stabil di production, dan N bukan lagi target rollback. | Berhenti menulis `verified_at`. ORM tidak lagi memetakan kolom lama. **Kode rilis N+1 sudah tidak membaca kolom ini.** |
+| N | **Expand** | `ADD COLUMN last_verified_at timestamptz NULL` | **Dual-write** ke kedua kolom, baca `verified_at`. Enqueue job `backfill_last_verified_at` (batch 5.000, idempotent, resumable, di-throttle, progres di ops console) |
+| N+1 | **Migrate** | (opsional) `CREATE INDEX CONCURRENTLY`. Bila perlu NOT NULL: `CHECK (… IS NOT NULL) NOT VALID` → `VALIDATE CONSTRAINT` | Baca `last_verified_at`, tetap dual-write (rollback ke N aman). Promosi setelah `count(*) WHERE last_verified_at IS NULL AND verified_at IS NOT NULL = 0` |
+| N+2 | **Contract** (label `db-contract`) | `DROP COLUMN verified_at`, setelah N+1 stabil di production dan N bukan lagi target rollback | Berhenti menulis `verified_at`. ORM tidak memetakan kolom lama. Kode N+1 sudah tidak membacanya. |
 
-Rename tabel, perubahan tipe, dan split kolom mengikuti pola yang sama. Pada fase transisi, view kompatibilitas boleh dipakai.
+Rename tabel, perubahan tipe, dan split kolom mengikuti pola yang sama. View kompatibilitas boleh dipakai selama transisi.
 
 ### 9.3 Aturan
 
 | # | Aturan | Ditegakkan oleh |
 |---|---|---|
-| M-1 | Tidak ada perubahan destruktif (DROP, RENAME, penyempitan tipe, NOT NULL tanpa jalur aman) di rilis yang sama dengan kode yang berhenti bergantung padanya. | `check_migration_phase.py` + label `db-contract` (QG-10) |
-| M-2 | Index pada tabel yang sudah berisi data: `CREATE INDEX CONCURRENTLY` di dalam `autocommit_block()` Alembic. | squawk (`require-concurrent-index-creation`) |
-| M-3 | Foreign key dan CHECK baru: `NOT VALID`, lalu `VALIDATE CONSTRAINT` di migrasi terpisah. | squawk |
-| M-4 | `SET lock_timeout = '5s'` dan `statement_timeout` default di `env.py`. Override per migrasi harus dijustifikasi. Gagal karena lock → retry pipeline, bukan menunggu tanpa batas. | `env.py`, review |
-| M-5 | Backfill data = background job Dramatiq yang batched, idempotent, resumable, dan terpantau (progres di ops console). Pengecualian: tabel referensi kecil (< 10.000 baris). | Review |
-| M-6 | Tabel tenant-layer baru: `ENABLE` + `FORCE ROW LEVEL SECURITY` + policy `USING`/`WITH CHECK` berbasis `workspace_id` **di migrasi yang sama** dengan `CREATE TABLE`. | `check_rls.py` (QG-10) |
-| M-7 | Role terpisah: `msp_migrator` (pemilik DDL), `msp_app` (DML, `NOBYPASSRLS`, bukan owner tabel), `msp_readonly` (analitik ops). Aplikasi tidak pernah berjalan sebagai owner. | Terraform + test isolasi |
-| M-8 | Migrasi memegang advisory lock Postgres, sehingga dua runner tidak bisa berjalan bersamaan. | `env.py` |
-| M-9 | Satu head Alembic. Konflik dua PR diselesaikan dengan rebase dan perbaikan `down_revision`, bukan merge revision. | QG-10 |
-| M-10 | Tidak ada data pribadi nyata di migrasi atau seed. | Review + gitleaks |
+| M-1 | Tidak ada perubahan destruktif (DROP, RENAME, penyempitan tipe, NOT NULL tanpa jalur aman) di rilis yang sama dengan kode yang berhenti bergantung padanya | `check_migration_phase.py` + `db-contract` (QG-11) |
+| M-2 | Index pada tabel berisi: `CREATE INDEX CONCURRENTLY` di `autocommit_block()` Alembic | squawk |
+| M-3 | FK/CHECK baru: `NOT VALID`, lalu `VALIDATE CONSTRAINT` di migrasi terpisah | squawk |
+| M-4 | `SET lock_timeout = '5s'` dan `statement_timeout` default di `env.py`. Override wajib dijustifikasi. Gagal karena lock → ulangi deploy | `env.py`, review |
+| M-5 | Backfill = background job Dramatiq (batched, idempotent, resumable, terpantau). Pengecualian: tabel referensi < 10.000 baris | Review |
+| M-6 | Tabel tenant baru: `ENABLE` + `FORCE ROW LEVEL SECURITY` + policy berbasis `workspace_id` **di migrasi yang sama** dengan `CREATE TABLE`; index diawali `workspace_id` (04 §5.1) | `check_rls.py` (QG-11) |
+| M-7 | Role per 04 §5.8: `msp_owner` (DDL, hanya untuk migrasi), `msp_app` (`NOBYPASSRLS`), `msp_pipeline`, `msp_ops`, `msp_readonly_replica`. Grant eksplisit di migrasi. Runtime tidak pernah memakai `msp_owner`. | Ansible + test isolasi |
+| M-8 | Migrasi memegang advisory lock, sehingga dua runner tidak bisa berjalan bersamaan | `env.py` |
+| M-9 | Satu head Alembic. Konflik diselesaikan dengan rebase dan perbaikan `down_revision` | QG-11 |
+| M-10 | Tabel terpartisi (mis. `intel.score`, `ingest.observation`): operasi partisi (attach/detach) mengikuti prosedur 04 §5 dan memakai `CONCURRENTLY` bila tersedia | Review |
+| M-11 | Tidak ada data pribadi nyata di migrasi atau seed | Review + gitleaks |
 
 ### 9.4 Checklist review migrasi
 
-- [ ] Fase dicatat (`expand` / `contract`) di docstring revision
-- [ ] Kompatibel dengan kode rilis sebelumnya (baca dan tulis)
-- [ ] Estimasi baris terdampak di production dan durasi lock dicantumkan di deskripsi PR
+- [ ] Fase (`expand`/`contract`) dicatat di docstring revision
+- [ ] Kompatibel dengan kode rilis sebelumnya (baca & tulis)
+- [ ] Estimasi baris terdampak dan durasi lock dicantumkan di MR
 - [ ] Index `CONCURRENTLY`, constraint `NOT VALID` + `VALIDATE`
 - [ ] Tidak ada backfill besar di dalam migrasi
-- [ ] RLS + policy untuk tabel tenant
-- [ ] Grant untuk `msp_app` / `msp_readonly` eksplisit
-- [ ] Migrasi contract: rilis yang berhenti memakai kolom sudah berjalan di production ≥ 1 rilis
+- [ ] RLS + policy + grant untuk tabel tenant
+- [ ] Contract: rilis yang berhenti memakai objek sudah berjalan di production ≥ 1 rilis
 
 ### 9.5 Eksekusi per environment
 
 | Env | Cara | Kredensial |
 |---|---|---|
-| local | Service `migrate` di compose, atau `uv run alembic upgrade head` | `.env` |
-| CI | Step `alembic upgrade head` sebelum integration test. Job `migrations` dari DB kosong. | Service container |
-| staging | One-off ECS task `msp-migrate` (digest yang sama) di `_deploy-ecs.yml`, sebelum update service | Secrets Manager → `msp_migrator` |
-| production | Sama dengan staging, setelah approval Environment `production`. Snapshot manual RDS untuk rilis `db-contract`. | Secrets Manager → `msp_migrator` |
+| local | Service `migrate` di compose | `.env` |
+| CI | `alembic upgrade head` sebelum integration test. Job `migrations` dari DB kosong. API service di E2E menjalankan migrasi saat start. | Service container |
+| staging / production | Container one-off `msp-api@<digest> alembic upgrade head` di app host (playbook `deploy.yml`), langsung ke `db-01` (bukan lewat PgBouncer transaction mode), sebelum warna baru di-start | `msp_owner` dari SOPS → tmpfs |
+| production + `db-contract` | Sama, didahului `pgbackrest backup --type=incr` sebagai titik pemulihan tambahan | — |
 
 ### 9.6 PostGIS & ekstensi
 
-- `postgis`, `pg_trgm`, dan `unaccent` dibuat di **migrasi pertama** (`CREATE EXTENSION IF NOT EXISTS`). Di RDS, `msp_migrator` anggota `rds_superuser`, khusus untuk keperluan ini.
-- Versi PostgreSQL/PostGIS di image local/CI di-pin agar sama dengan versi RDS (parity check, §3.1).
-- Upgrade minor PostGIS (`ALTER EXTENSION postgis UPDATE`) dan upgrade engine RDS adalah **perubahan terencana**: diuji dulu di staging. Upgrade major memakai RDS Blue/Green Deployments, lewat change request di Terraform (§11) dan jendela maintenance yang diumumkan.
+- PostGIS **bukan** trusted extension, sehingga `CREATE EXTENSION postgis` butuh superuser. Di staging/production, Ansible (role `postgres`, user `postgres`) membuat `postgis`, `pg_trgm`, `unaccent` saat provisioning DB. Migrasi pertama tetap memuat `CREATE EXTENSION IF NOT EXISTS` agar local/CI (superuser) setara. Di server, perintah ini menjadi no-op.
+- Versi paket PGDG (`postgresql-16`, `postgresql-16-postgis-3`) di-pin di Ansible dan disamakan dengan image CI (parity, §3.1).
+- Upgrade minor PostGIS (`ALTER EXTENSION postgis UPDATE`) dan minor PostgreSQL: playbook `db-upgrade.yml`, diuji di staging, dilakukan di jendela maintenance (replica dulu, lalu switchover terencana). Upgrade major memakai `pg_upgrade --link` pada replica baru atau logical replication, lewat MR `infra/**` + rencana tertulis.
 
 ---
 
 ## 10. Rilis data & model
 
-Rilis data/model terpisah dari rilis kode: kode yang mendukung versi baru di-deploy dulu (versi terdaftar, belum aktif), lalu **aktivasi** dilakukan lewat pipeline dengan gate dan approval. Semua langkah berat berjalan sebagai ECS task di akun yang sesuai (P-7). Workflow GitHub hanya mengorkestrasi dan menyimpan laporan agregat.
+Kode yang mendukung versi baru di-deploy dulu (versi terdaftar, belum aktif). **Aktivasi** dilakukan lewat pipeline tag terlindungi yang namanya sama dengan versinya. Langkah berat berjalan sebagai container one-off (`msp-api@<digest> python -m msp.ops.cli …`) di host environment terkait, dipicu runner `deploy`. Aktor audit = user GitLab yang menjalankan job manual (FR-AUD-001).
 
 ### 10.1 Registry versi & reproducibility (NFR-DATA-01)
 
-| Artefak | Format versi | Disimpan di | Immutable |
+| Artefak | Versi | Disimpan di | Immutable |
 |---|---|---|---|
-| Snapshot dataset | `ds-YYYY.MM.n` | Manifest + file mentah di S3 (versioning, checksum), metadata di DB | Ya (FR-DATA-001) |
-| Model skor | `priority-X.Y.Z` | File konfigurasi di repo + `versions.lock` (hash), baris registry di DB | Ya setelah dirilis |
-| Metrik geo | `geo-X.Y.Z` | Sama | Ya |
-| Prompt AI | `brief-X.Y.Z` | Template + parameter model di repo + `versions.lock` | Ya |
+| Snapshot dataset | `ds-YYYY.MM.n` | File mentah + manifest di MinIO `msp-snapshots` (WORM, 04 §2.2), metadata di `ingest.dataset_snapshot` | Ya (FR-DATA-001) |
+| Model skor | `priority-X.Y.Z` | `apps/api/msp/intelligence/internal/scoring/models/*.yaml` + sha256 di `intel.score_model` + `versions.lock` | Ya setelah aktif |
+| Metrik geo | `geo-X.Y.Z` | Konfigurasi di repo + `versions.lock` | Ya |
+| Prompt AI | `brief-X.Y.Z` | Prompt registry modul `ai` + `versions.lock` | Ya |
 
-Setiap skor dan metrik area menyimpan `snapshot_version` + `model_version`/`geo_version`. Nightly memverifikasi bahwa recompute sampel dengan pasangan versi yang sama menghasilkan hash identik. Laporan rilis (validasi, regresi, eval) disimpan di bucket evidence minimal selama versi tersebut masih direferensikan oleh data aktif, ditambah 1 tahun.
+Setiap skor dan metrik area menyimpan `snapshot_version` + `model_version`/`geo_version` (04 §7.8, §9.1). Nightly memverifikasi recompute sampel menghasilkan hash identik. Laporan rilis disimpan di `msp-evidence` selama versi masih direferensikan data aktif + 1 tahun.
 
-Status versi: `draft` → `staged` (tervalidasi di staging) → `active` (production) → `retired`. Hanya satu versi `active` per jenis (per preset Offering untuk skor).
+Status versi: `draft` → `staged` (tervalidasi di staging) → `active` (production) → `retired`.
 
-### 10.2 Snapshot dataset (`ds-YYYY.MM.n`) — `data-release.yml`
+### 10.2 Snapshot dataset (`ds-YYYY.MM.n`)
 
 ```
-ops upload file mentah + manifest ──► [1] register (prod, landing bucket, checksum)
-        ──► [2] validasi import mode staged (prod, belum dipublikasikan) ──► laporan validasi
-        ──► [3] rehearsal di staging (subset/sampel sesuai lisensi): pipeline penuh
-        ──► [4] gate QG-33 ──► [5] approval Environment data-production ──► [6] publish
-        ──► [7] recompute skor stale (FR-INTL-011) ──► [8] verifikasi pasca-publish
+ops unggah file mentah + manifest ke MinIO prod (landing) → buka MR manifest (`data/snapshots/ds-….yaml`)
+ → merge → Maintainer membuat tag ds-YYYY.MM.n → pipeline tag:
+   [1] register + checksum  [2] validasi (prod, status VALIDATING)  [3] rehearsal staging (sampel)
+   [4] gate QG-34  [5] job manual `publish` (Maintainer)  [6] recompute skor stale  [7] verifikasi
 ```
 
 | Langkah | Detail |
 |---|---|
 | 1. Register | Manifest: sumber, `captured_at`, periode referensi, tag lisensi (BR-PRIV-04), checksum per file. Checksum tidak cocok → berhenti. |
-| 2. Validasi | Import ke status *staged*: parsing Input Contract, laporan jumlah baris, reject per alasan, fill-rate per field, delta terhadap snapshot aktif (FR-DATA-001). Data tetap di akun production. |
-| 3. Rehearsal staging | Sampel terstratifikasi (wilayah × kategori) disalin ke staging bila lisensi mengizinkan (Q-05). Pipeline normalisasi → ER → verifikasi → skor → geo dijalankan. Diukur: ER golden metrics, distribusi skor vs snapshot sebelumnya, durasi (diekstrapolasi ke NFR-PERF-07). |
-| 4. Gate QG-33 | Lihat tabel threshold di bawah. |
-| 5. Approval | Environment `data-production`: data owner + engineer on-call. |
-| 6. Publish | Pipeline production pada snapshot staged → setelah selesai, pointer snapshot aktif diganti secara atomik. |
-| 7. Recompute | Skor yang lebih tua dari input ditandai stale dan di-recompute (FR-INTL-011). Progres dipantau. |
-| 8. Verifikasi | Dashboard Data Health per snapshot (FR-OPS-001): rasio verifikasi, stale, kandidat duplikat, evidence coverage ≥ 95%. |
+| 2. Validasi | Lifecycle 04 §4.2 (`VALIDATING`): parsing Input Contract, laporan validasi (jumlah baris, reject per alasan, fill-rate per field, delta vs snapshot aktif). Data tetap di zona production. |
+| 3. Rehearsal staging | Sampel terstratifikasi (wilayah × kategori) bila lisensi mengizinkan (Q-05). Pipeline normalize → resolve → verify → skor → geo. Diukur: ER golden metrics, distribusi skor vs snapshot sebelumnya, durasi (ekstrapolasi ke NFR-PERF-07). |
+| 4. Gate QG-34 | Threshold di bawah. Laporan dilampirkan ke pipeline dan disimpan di `msp-evidence`. |
+| 5. Publish | Job manual (Maintainer) → `msp.ops.cli snapshot publish` (setara `/v1/ops/snapshots/{id}/publish`, 04 §11) → pointer snapshot aktif diganti atomik. |
+| 6. Recompute | Skor yang lebih tua dari input ditandai stale dan di-recompute (FR-INTL-011, 04 §7.9). |
+| 7. Verifikasi | Dashboard Data Health per snapshot (FR-OPS-001): evidence coverage ≥ 95%, rasio verifikasi, stale, kandidat duplikat. |
 
-**Threshold QG-33 (default awal, dikalibrasi setelah Q-01/Q-02):**
+**Threshold QG-34 (default awal, dikalibrasi setelah Q-01/Q-02):**
 
 | Cek | Threshold |
 |---|---|
-| Baris yang tidak bisa diproses tanpa alasan reject | 0 (setiap reject wajib punya alasan) |
-| Reject rate total | ≤ 5% (2–5% → wajib catatan di approval) |
-| Fill-rate `source_record_id` / nama | 100% / ≥ 99% |
-| Fill-rate kategori sumber | ≥ 95% |
+| Baris reject tanpa alasan | 0 |
+| Reject rate total | ≤ 5% (2–5% → wajib catatan di deskripsi tag) |
+| Fill-rate `source_record_id` / nama / kategori sumber | 100% / ≥ 99% / ≥ 95% |
 | Alamat atau koordinat | ≥ 95% |
-| `source_record_id` duplikat dalam snapshot | 0 |
+| `source_record_id` duplikat | 0 |
 | Penurunan fill-rate field apa pun vs snapshot aktif | ≤ 10 poin persentase (lebih → wajib catatan) |
-| Perubahan jumlah record vs snapshot aktif | −10% s.d. +30% (di luar rentang → wajib catatan) |
-| Establishment ber-koordinat yang terpetakan ke kelurahan | ≥ 90% (FR-DATA-009) |
+| Perubahan jumlah record vs snapshot aktif | −10% s.d. +30% (di luar → wajib catatan) |
+| Establishment ber-koordinat terpetakan ke kelurahan | ≥ 90% (FR-DATA-009) |
 | Tag lisensi | Ada |
 | ER golden set pada rehearsal | Precision ≥ 98%, recall ≥ 90% |
 
-**Rollback:** snapshot immutable dan ID entity stabil (FR-DATA-007), sehingga rollback = **publish ulang snapshot sebelumnya** (pointer aktif dikembalikan) + recompute. Data tenant yang merujuk entity tetap valid. Mekanisme detail ada di 04 §Dataset Snapshot.
+**Rollback:** snapshot immutable dan ID entity stabil (FR-DATA-007). Rollback = publish ulang snapshot sebelumnya + recompute. Mekanismenya ada di 04 §4.2.
 
-### 10.3 Model skor (`priority-X.Y.Z`) dan geo (`geo-X.Y.Z`) — `model-release.yml`
+### 10.3 Model skor (`priority-X.Y.Z`) dan geo (`geo-X.Y.Z`)
 
 | Langkah | Detail | Gate |
 |---|---|---|
-| 1. PR konfigurasi | Bobot/aturan/preset baru → **versi baru** (versi lama tidak boleh diubah). Unit test + recompute fixture "golden scores" → diff di komentar PR. | QG-22, QG-04 |
-| 2. Merge & deploy | Versi terdaftar sebagai `draft` di staging dan production. Belum aktif. | Pipeline biasa |
-| 3. Recompute offline (staging) | ECS task menghitung versi lama dan baru pada sampel staging (beberapa ICP/Offering preset representatif). | — |
-| 4. Laporan regresi | Artefak: distribusi skor per band, matriks transisi band (HOT/WARM/COLD/UNSCORED), pergeseran rata-rata per faktor, overlap top-50 per ICP sampel, perubahan coverage. Geo: distribusi metrik area, jumlah area coverage LOW, perubahan peringkat territory. Determinisme: hitung 2× → hash identik. | QG-23 |
-| 5. Approval | Environment `model-production`: data-intel + product. Bila transisi band > 15% sampel atau overlap top-50 < 70%, product wajib menulis justifikasi. | QG-23 |
-| 6. Aktivasi | Versi → `active` di production → job recompute bertahap (batched, progres, target NFR-PERF-05 untuk scope ICP). Skor versi lama tetap tersimpan sampai versi baru stabil (bake 7 hari). | — |
-| 7. Pantau | Dashboard Intelligence Health (FR-OPS-003): distribusi skor per versi, feedback "terlalu tinggi/rendah" (FR-INTL-010). | — |
+| 1. MR konfigurasi | Versi baru (versi lama tidak boleh berubah). Unit test + fixture "golden scores" → diff di komentar MR | QG-23, QG-05 |
+| 2. Merge & deploy | Versi terdaftar `draft` di staging & production | Pipeline biasa |
+| 3. Tag versi | Maintainer membuat tag `priority-X.Y.Z` → pipeline aktivasi | — |
+| 4. Recompute offline (staging) | Container one-off menghitung versi lama & baru pada sampel staging (ICP/preset Offering representatif) | — |
+| 5. Laporan regresi | Distribusi skor per band, matriks transisi band (HOT/WARM/COLD/UNSCORED), pergeseran per faktor, overlap top-50 per ICP sampel, perubahan coverage. Geo: distribusi metrik area, jumlah area coverage LOW, perubahan peringkat territory. Determinisme: hitung 2× → hash identik | QG-24 |
+| 6. Approval | Job manual `activate` (Maintainer), setelah approval data-intel + product tercatat di issue rilis model. Bila transisi band > 15% sampel atau overlap top-50 < 70%, product wajib menulis justifikasi. | QG-24 |
+| 7. Aktivasi | `msp.ops.cli score-model activate` → versi `active` → recompute bertahap (epoch baru diaktifkan atomik, ADR-16; NFR-PERF-05). Epoch versi lama disimpan selama bake 7 hari. | — |
+| 8. Pantau | Intelligence Health (FR-OPS-003): distribusi per versi, feedback skor (FR-INTL-010) | — |
 
-**Rollback:** aktifkan kembali versi sebelumnya. Skornya masih tersimpan selama bake, sehingga tidak perlu recompute. Setelah bake, versi sebelumnya tetap dapat direproduksi dari snapshot + versi (FR-INTL-009).
+**Rollback:** aktifkan kembali epoch versi sebelumnya (masih tersimpan selama bake). Setelah bake, versi lama tetap dapat direproduksi dari snapshot + versi.
 
 ### 10.4 Prompt AI (`brief-X.Y.Z`)
 
 | Langkah | Detail | Gate |
 |---|---|---|
-| 1. PR prompt | Template/parameter baru → versi baru. Penggantian model provider (D-15) diperlakukan sebagai bump minor `brief-*` + label `ai-eval`. | QG-22 |
-| 2. Eval PR | Eval set **sintetis** di repo (≥ 200 profil company-level, termasuk data jarang/Unknown, multi-cabang, evidence bertentangan, dan person yang hanya diwakili role). Metrik: grounding (validator sitasi FR-AI-004) ≥ 98%, kebocoran nilai contact point pribadi ke prompt = 0, validitas format 100%, error/refusal ≤ 2%, plus latency p95 dan biaya per brief (indikatif, NFR-PERF-06, NFR-COST-01). | QG-24 |
-| 3. Eval aktivasi | Set eval diperluas di staging (company-level, sesuai D-14) dijalankan ulang terhadap versi kandidat. | QG-24 |
-| 4. Aktivasi bertahap | Flag `rel.ai.brief-<versi>`: workspace internal → cohort beta → 100%. Cache brief berbasis hash input **termasuk** versi prompt (FR-AI-003). | — |
-| 5. Pantau | Tingkat kegagalan AI, feedback 👍/👎 (FR-AI-007), biaya per brief. Alert AI failure > 5% (RG-5). | — |
+| 1. MR prompt | Versi baru. Ganti provider/model (D-15) = bump minor + label `ai-eval` | QG-23 |
+| 2. Eval MR | Eval set **sintetis** di repo (≥ 200 profil company-level: data jarang/Unknown, multi-cabang, evidence bertentangan, person hanya sebagai role). Metrik: grounding (validator sitasi FR-AI-004) ≥ 98%; nilai contact point pribadi di prompt = 0; format valid 100%; error/refusal ≤ 2%; latency p95 dan biaya per brief dilaporkan (NFR-PERF-06, NFR-COST-01) | QG-25 |
+| 3. Tag `brief-X.Y.Z` | Eval diulang di staging dengan set diperluas (company-level, D-14) | QG-25 |
+| 4. Aktivasi bertahap | Flag `rel.ai.brief-<versi>`: workspace internal → cohort beta → 100%. Cache brief berbasis hash input **termasuk** versi prompt (FR-AI-003) | — |
+| 5. Pantau | Kegagalan AI, feedback 👍/👎 (FR-AI-007), biaya per brief. Alert AI failure > 5% (RG-5) | — |
 
-**Rollback:** aktifkan kembali versi prompt sebelumnya (flag/registry). Kill switch `ks.ai` (FR-AI-006) sebagai upaya terakhir.
+**Rollback:** aktifkan kembali versi prompt sebelumnya. Kill switch AI (FR-AI-006) sebagai upaya terakhir.
 
 ---
 
-## 11. Infrastructure as Code
+## 11. Infrastructure as Code (Ansible)
 
 ### 11.1 Layout
 
 ```
-infra/terraform/
-├─ modules/
-│  ├─ network/            VPC, subnet privat/publik, NAT, VPC endpoints (ECR, S3, Secrets Manager, Logs)
-│  ├─ ecs-cluster/
-│  ├─ ecs-service/        service + baseline task def + ALB target group + autoscaling + alarm rollback
-│  ├─ rds-postgres/       Multi-AZ (prod), PITR, parameter group, enkripsi KMS
-│  ├─ elasticache-redis/
-│  ├─ s3-bucket/          enkripsi, versioning, block public access, lifecycle
-│  ├─ ecr/                tag immutable, scan on push, kebijakan pull lintas akun
-│  ├─ github-oidc/        OIDC provider + role per tujuan (§12.1)
-│  ├─ secrets/            Secrets Manager + rotasi
-│  └─ observability/      log group, dashboard SLO, alarm, SNS → on-call
-├─ envs/
-│  ├─ shared/             ECR, bucket evidence, role push image   (tambahan: akun msp-shared)
-│  ├─ staging/
-│  └─ production/
-└─ .tflint.hcl
-infra/deploy/taskdefs/     template task definition (api, worker, web, migrate) yang dirender CI
+infra/
+├─ ansible/
+│  ├─ ansible.cfg              host key checking aktif; known_hosts di repo
+│  ├─ requirements.yml         collection di-pin: community.docker, community.postgresql,
+│  │                           community.sops, community.general, ansible.posix
+│  ├─ inventories/
+│  │  ├─ staging/     hosts.yml, group_vars/{all,app,db,stor}/vars.yml, secrets/*.sops.yaml
+│  │  └─ production/  hosts.yml, group_vars/..., secrets/*.sops.yaml
+│  ├─ roles/
+│  │  ├─ base            hardening (SSH key-only, sysctl, auditd, chrony), unattended-upgrades (security)
+│  │  ├─ users           akun admin bernama, sudo tercatat, tanpa login root
+│  │  ├─ firewall        nftables per zona (§3.5)
+│  │  ├─ wireguard       peer admin + runner deploy
+│  │  ├─ fail2ban
+│  │  ├─ luks_unlock     Clevis + Tang (ops-01), fallback dropbear-initramfs
+│  │  ├─ docker          Docker Engine + compose plugin, log driver, daemon.json
+│  │  ├─ traefik         static config, ACME, file provider, middlewares
+│  │  ├─ msp_app         template compose blue/green, tmpfs secret, scripts deploy
+│  │  ├─ postgres        PG16 + PostGIS (PGDG), tuning, role DB, ekstensi, replication, PgBouncer
+│  │  ├─ pgbackrest      repo lokal (stor-01) + off-site, cipher, jadwal systemd timer
+│  │  ├─ redis           AOF everysec, maxmemory policy
+│  │  ├─ minio           single-node multi-drive, SSE, bucket, lifecycle, replikasi off-site
+│  │  ├─ monitoring_agent  node/postgres/redis exporter, Grafana Alloy, otel-collector
+│  │  ├─ monitoring_stack  Prometheus, Alertmanager, Grafana, Loki, Tempo, GlitchTip, blackbox
+│  │  ├─ gitlab          Omnibus, server hooks, backup
+│  │  └─ gitlab_runner   runner ci-docker, ci-build, deploy
+│  ├─ playbooks/
+│  │  ├─ site.yml          konvergensi penuh (dipakai juga untuk drift --check)
+│  │  ├─ deploy.yml        rilis aplikasi blue/green (§17.2)
+│  │  ├─ rollback.yml      kembali ke warna/digest sebelumnya (§14.1)
+│  │  ├─ data-job.yml      container one-off untuk rilis data/model (§10)
+│  │  ├─ rehydrate.yml     isi ulang secret tmpfs setelah reboot (§12.3)
+│  │  ├─ db-failover.yml   promote db-02, arahkan PgBouncer/app, bangun ulang standby
+│  │  ├─ db-upgrade.yml
+│  │  ├─ restore-drill.yml
+│  │  └─ rotate-secrets.yml
+│  └─ molecule/            skenario role kritis
+├─ docker/                 compose lokal & CI
+└─ keys/                   cosign.pub, kunci publik age per environment
 ```
 
-- Terraform memiliki cluster, service, ALB, IAM, dan baseline task definition. Revisi task definition per deploy dibuat oleh CI, sehingga `aws_ecs_service` memakai `lifecycle { ignore_changes = [task_definition] }` (juga `desired_count` bila autoscaling). Drift detection tidak menganggap deploy aplikasi sebagai drift.
-- `required_version` dan versi provider di-pin. `.terraform.lock.hcl` di-commit dengan hash multi-platform.
+### 11.2 Pipeline infra
 
-### 11.2 Workflow `infra.yml`
-
-| Event | Langkah | Role OIDC |
+| Event | Langkah | Runner |
 |---|---|---|
-| PR menyentuh `infra/terraform/**` | `fmt -check`, `validate`, tflint, Trivy config (QG-20) → `plan` untuk env yang terdampak → **komentar sticky di PR** (ringkasan resource add/change/destroy + plan lengkap sebagai artifact; nilai sensitif tetap ter-mask) | `gha-tf-plan-<env>` (read-only + baca state) |
-| Merge ke `main` | `plan -out` staging → apply otomatis (Environment `staging-infra`) → `plan -out` production → **approval** Environment `production-infra` → `apply` **file plan yang sama** | `gha-tf-apply-<env>` |
-| Terjadwal | Drift detection (§7) | `gha-tf-plan-<env>` |
+| MR menyentuh `infra/**` | ansible-lint, yamllint, `--syntax-check`, Molecule, Trivy config (QG-21). Tanpa akses ke server (MR tidak menerima variabel protected) | `ci-docker` |
+| Merge ke `main` | `site.yml --check --diff` terhadap staging & production → diff sebagai artifact dan komentar MR (via API) → `site.yml` **apply ke staging** (otomatis) | `deploy` |
+| Tag `infra-YYYY.MM.DD.n` (Maintainer) | `--check --diff` production diulang → job manual **apply production** (`serial: 1`, host demi host) | `deploy` |
+| Scheduled `drift` | `--check --diff` harian | `deploy` |
 
-Plan yang memuat `destroy` pada resource stateful (RDS, S3 data, KMS key) gagal, kecuali PR berlabel `infra-destroy` dan resource tersebut tidak memiliki `prevent_destroy`.
+`--check` tidak sempurna: modul `command`/`shell` dilewati. Karena itu task wajib idempoten dengan `changed_when`/`creates` yang benar, dan task non-idempoten diberi tag `never_check`. Diff yang mengandung secret disembunyikan dengan `no_log`/`diff: false`.
 
-### 11.3 Remote state
+### 11.3 Penerapan perubahan
 
-- Backend S3 per akun (`msp-tfstate-<env>`): versioning, enkripsi SSE-KMS, block public access, **`use_lockfile = true`** (native S3 locking).
-- Akses state hanya untuk role plan/apply env tersebut dan break-glass admin.
+- **Tidak ada SSH manual untuk perubahan konfigurasi.** Semua lewat MR → tag. SSH manual hanya untuk diagnosis atau break-glass, tercatat (auditd + log WireGuard), dan ditindaklanjuti dengan MR adopsi.
+- Patch keamanan OS: unattended-upgrades untuk paket security (tanpa auto-reboot di host DB). Reboot terjadwal lewat playbook `serial: 1` di jendela maintenance. Upgrade GitLab: mengikuti rilis keamanan ≤ 7 hari untuk severity kritis, dengan backup sebelum upgrade.
 
-### 11.4 Tagging
+### 11.4 Drift
 
-`default_tags` di provider: `Project=mesinprospek`, `Environment=<env>`, `Owner=<tim>`, `ManagedBy=terraform`, `Repo=sadewadee/MesinProspek`, `CostCenter=<…>`, `DataClassification=<public|internal|confidential|personal>`. Tag dipakai untuk cost allocation (FR-OPS-004) dan kebijakan akses.
+Setiap perubahan yang terdeteksi job `drift` diselesaikan ≤ 2 hari kerja dengan MR adopsi (kode mengikuti server) atau re-apply (server mengikuti kode). Setelan proyek GitLab (protected branch/tag, merge method, variables) juga dibandingkan dengan `gitlab_settings.py`.
 
-### 11.5 Least privilege & drift
+### 11.5 Least privilege di server
 
-- Role apply production tidak bisa diasumsikan dari PR. Hanya job dengan Environment `production-infra` yang bisa (§12.1).
-- Tidak ada `terraform apply` dari laptop, kecuali break-glass (tercatat di CloudTrail dan dilaporkan di issue).
-- Perubahan manual di console → drift terdeteksi ≤ 24 jam → diselesaikan dengan PR (adopsi ke kode) atau revert dengan apply.
+- User deploy `msp-deploy` di app host: anggota grup `docker`. Akses ini setara root, sehingga kunci SSH-nya hanya ada di variabel protected ber-scope environment, dan login dibatasi dari IP `ops-01`.
+- Kunci SSH deploy per environment berbeda. Kunci admin manusia bersifat personal (dicabut saat offboarding lewat role `users`).
+- Port DB/Redis/MinIO tidak pernah terbuka ke publik. MinIO publik hanya lewat Traefik `files.<domain>` untuk presigned URL.
+
+### 11.6 Backup & disaster recovery
+
+| Data | Mekanisme | Jadwal | Tujuan | Retensi |
+|---|---|---|---|---|
+| PostgreSQL | **pgBackRest**: full mingguan (Minggu 01:00), diff harian (01:00), WAL archive kontinu (`archive_mode=on`, `archive_timeout = 60s`, `archive-async`) | systemd timer di `db-01` | repo1: MinIO `stor-01` (pemulihan cepat). repo2: **off-site S3-compatible** di lokasi berbeda, tetap di Indonesia | Full: 4 minggu. PITR window: 14 hari (Proposed) |
+| Enkripsi backup | `repo-cipher-type=aes-256-cbc`, passphrase berbeda per repo (SOPS) | — | — | — |
+| Replika DB | Streaming replication `db-02` (async) | Kontinu | Pemulihan kegagalan host (RPO ≈ detik) | — |
+| MinIO | Versioning + replikasi bucket ke off-site S3-compatible (replikasi MinIO bila target MinIO; selain itu `mc mirror --watch` terjadwal) | Kontinu | Off-site | Lifecycle per bucket (export 24 jam per FR-EXP-001; snapshot permanen) |
+| GitLab | `gitlab-backup create` + `gitlab-secrets.json` + `gitlab.rb` (terenkripsi) + data registry | Harian 02:00 | MinIO + off-site | 14 hari |
+| Konfigurasi | Repo (Ansible, SOPS). Kunci age privat: salinan offline di 2 Maintainer (hardware key/brankas) | — | — | — |
+
+**Target:** RPO ≤ 15 menit (praktiknya ≤ 1–2 menit dengan `archive_timeout = 60s`), RTO ≤ 4 jam (NFR-AVAIL-02). Prometheus memantau umur backup terakhir, lag WAL archive, dan lag replikasi. Alert dikirim bila lag WAL archive > 5 menit atau backup harian terlewat.
+
+**Skenario:**
+
+| Skenario | Respons | RTO perkiraan |
+|---|---|---|
+| `db-01` mati | `db-failover.yml`: promote `db-02`, arahkan PgBouncer/app, `db-01` dibangun ulang sebagai standby | ±30 menit |
+| Korupsi data logis | PITR pgBackRest ke instance baru (§14.3) | 1–3 jam (tergantung ukuran DB) |
+| `app-01` mati | Provision ulang dari Ansible di server cadangan + deploy digest terakhir (`app-02` mengurangi ini menjadi menit) | 1–3 jam |
+| Kehilangan DC | Provision server di lokasi lain + restore dari repo off-site | Tergantung SLA provider (Q-CI-04). **Bisa melebihi 4 jam.** |
 
 ---
 
 ## 12. Secrets & konfigurasi
 
-### 12.1 GitHub OIDC → AWS IAM (tanpa long-lived key)
+### 12.1 SOPS + age
 
-| Role | Akun | Dipakai oleh | Trust (`sub` claim) | Izin |
+```yaml
+# .sops.yaml (ilustratif)
+creation_rules:
+  - path_regex: infra/ansible/inventories/production/secrets/.*\.sops\.yaml$
+    age: >-
+      age1prod...deployrunner, age1maint...alice, age1maint...bob
+  - path_regex: infra/ansible/inventories/staging/secrets/.*\.sops\.yaml$
+    age: >-
+      age1stg...deployrunner, age1eng...team
+  - path_regex: infra/secrets/signing\.sops\.yaml$
+    age: >-
+      age1ci...signing, age1maint...alice, age1maint...bob
+```
+
+- Engineer dapat **mengenkripsi** secret production (kunci publik ada di repo) tetapi tidak dapat mendekripsinya. Dekripsi production hanya oleh runner `deploy` (saat job tag) dan Maintainer.
+- Perubahan secret = MR biasa, dengan diff terenkripsi per nilai. Reviewer melihat *key* yang berubah, bukan nilainya.
+- File di repo selalu `*.sops.yaml`. Pre-commit hook dan job CI menolak file secret yang tidak terenkripsi (cek metadata `sops`).
+
+### 12.2 GitLab CI/CD variables
+
+| Variabel | Tipe | Protected | Scope environment | Isi |
 |---|---|---|---|---|
-| `gha-ecr-push` | shared | `main.yml` build | `repo:sadewadee/MesinProspek:ref:refs/heads/main` (+ `release/v*`) | Push/pull ECR `msp-*` |
-| `gha-deploy-staging` | staging | `_deploy-ecs.yml` | `repo:sadewadee/MesinProspek:environment:staging` | Register task def, update service, run-task `msp-migrate`, `iam:PassRole` terbatas ke role task |
-| `gha-deploy-production` | production | `_deploy-ecs.yml` | `…:environment:production` | Sama dengan staging, di akun production |
-| `gha-data-jobs-<env>` | staging/prod | rilis data/model, nightly data quality | `…:environment:data-<env>` | Run-task job data, baca laporan S3 |
-| `gha-tf-plan-<env>` | per env | `infra.yml` PR & drift | `…:pull_request` dan `…:ref:refs/heads/main` | ReadOnly + baca state |
-| `gha-tf-apply-<env>` | per env | `infra.yml` apply | `…:environment:<env>-infra` | Admin terbatas pada resource bertag `Project=mesinprospek` |
+| `SOPS_AGE_KEY` | File, masked | Ya | `staging` / `production` (nilai berbeda) | Kunci age privat runner deploy per environment |
+| `DEPLOY_SSH_KEY` | File | Ya | `staging` / `production` | Kunci SSH user `msp-deploy` |
+| `SOPS_AGE_KEY_SIGNING` | File | Ya | `signing` | Membuka `cosign.key` + password |
+| `RELEASE_TOKEN` | Masked | Ya | `release` | Project access token bot rilis (Maintainer) |
+| `RENOVATE_TOKEN` | Masked | Ya | `renovate` | Token bot Renovate |
+| `LLM_EVAL_API_KEY` | Masked | Tidak (MR perlu) | `ai-eval` | Key LLM khusus eval, kuota & budget kecil |
+| `MR_GATE_TOKEN` | Masked | Tidak | — | `read_api`, role Reporter |
 
-Audience `sts.amazonaws.com`. Kondisi trust memakai `StringEquals` (bukan wildcard luas) pada `sub` dan `aud`. Job tanpa kebutuhan AWS tidak mendapat `id-token: write`.
+Job hanya menerima variabel ber-scope bila menyatakan `environment:` yang sesuai. Job yang tidak men-deploy memakai `environment: { name: <x>, action: prepare }`. Runner tidak menyimpan secret di disk: semua datang dari variabel saat job berjalan, dan workspace job dibersihkan setelahnya.
 
-### 12.2 Penyimpanan secret & konfigurasi
+### 12.3 Secret di server
 
-| Jenis | Tempat | Contoh |
+- Ansible mendekripsi SOPS di runner `deploy` lalu menulis setiap secret sebagai **file** di **tmpfs** `/run/msp/<warna>/` (mode 0400). File di-mount ke container sebagai Compose `secrets:` (`/run/secrets/<nama>`) dan dibaca Pydantic Settings (`secrets_dir`). Secret tidak dikirim lewat env var, sehingga tidak tampil di `docker inspect`.
+- Konsekuensi tmpfs (ADR-22): setelah reboot, secret hilang. Unit systemd `msp-rehydrate` saat boot memicu pipeline `rehydrate` lewat *pipeline trigger token* (token hanya bisa memicu, tidak membaca secret). Job berjalan di runner `deploy` dan menjalankan `rehydrate.yml`. Bila gagal, on-call menjalankannya manual (runbook).
+- Konfigurasi non-secret: variabel inventory Ansible → env var container dengan prefix `MSP_` (12-factor). Contoh: `MSP_ENV`, `MSP_APP_VERSION`, `MSP_COLOR`, `MSP_OTEL_EXPORTER_OTLP_ENDPOINT`, `MSP_S3_ENDPOINT`, `MSP_LOG_LEVEL`. Aplikasi gagal start bila variabel wajib hilang.
+- `.env.example` di root berisi semua variabel dengan nilai dummy aman untuk local. `.env` ada di `.gitignore`.
+
+### 12.4 Jangan pernah mencetak secret & rotasi
+
+- Tidak ada `set -x` di job yang menyentuh secret. Task Ansible yang menyentuh secret memakai `no_log: true`. Log aplikasi memakai redaksi terstruktur (BR-PRIV-01, QG-10). Artifact CI hanya berisi data sintetis (trace Playwright 7 hari, diunggah hanya saat gagal).
+
+| Secret | Rotasi terjadwal | Rotasi segera bila |
 |---|---|---|
-| Secret runtime | **AWS Secrets Manager** (per akun), disuntik via `secrets` task definition | Kredensial DB (rotasi otomatis RDS), API key LLM, provider email, managed auth, kunci master webhook |
-| Konfigurasi non-secret | **SSM Parameter Store** | Endpoint, ukuran batch, URL publik, nama bucket |
-| Secret CI | GitHub Environment secrets (minimal) | Private key GitHub App release, API key LLM untuk `ai-eval` |
-| Variabel CI non-secret | GitHub Environment/Repo variables | ARN role, ID akun, URL environment |
+| Password role DB, Redis, MinIO | 90 hari (`rotate-secrets.yml`, dual credential selama transisi) | Offboarding, dugaan bocor |
+| Kunci age per environment | 12 bulan (re-encrypt via `sops updatekeys`) | Offboarding Maintainer, runner dikompromikan |
+| Kunci SSH deploy | 90 hari | Sama |
+| Kunci cosign | 12 bulan. Verifikasi menerima kunci lama + baru selama 30 hari | Dugaan bocor (semua image ditandatangani ulang) |
+| Token GitLab (bot, Renovate, trigger) | Kedaluwarsa ≤ 365 hari, diganti 30 hari sebelumnya | Sama |
+| API key LLM/email | 90 hari | Sama |
+| Passphrase repo pgBackRest | Tidak dirotasi tanpa rencana (rotasi = repo baru) | Dugaan bocor |
+| Kunci master webhook | 12 bulan (lihat bawah) | Dugaan bocor |
 
-### 12.3 Konvensi environment variable (12-factor)
-
-- Prefix `MSP_`, huruf besar, dibaca lewat Pydantic Settings. Contoh: `MSP_ENV` (`local|test|staging|production`), `MSP_DATABASE_URL`, `MSP_REDIS_URL`, `MSP_S3_BUCKET_EXPORTS`, `MSP_OTEL_EXPORTER_OTLP_ENDPOINT`, `MSP_AUTH_MODE`, `MSP_LOG_LEVEL`.
-- Web: runtime config di server (§5.1). `NEXT_PUBLIC_*` hanya untuk nilai yang identik di semua environment.
-- Aplikasi gagal start (fail fast) bila variabel wajib hilang. Nilai secret tidak pernah dicetak, termasuk di pesan error validasi.
-- `.env.example` di root berisi semua variabel dengan nilai dummy aman untuk local. `.env` ada di `.gitignore`. Pre-commit hook gitleaks dianjurkan untuk engineer.
-
-### 12.4 Jangan pernah mencetak secret
-
-- Workflow tidak memakai `set -x` pada step yang menyentuh secret. Nilai turunan secret di-mask (`::add-mask::`).
-- Log aplikasi memakai redaksi terstruktur (BR-PRIV-01). Test redaksi termasuk QG-09.
-- Artifact CI (trace Playwright, screenshot) hanya berasal dari data sintetis. Retensi 7 hari, diunggah hanya saat gagal.
-
-### 12.5 Rotasi kunci master webhook
-
-Secret per endpoint webhook (FR-EXP-003) disimpan terenkripsi dengan **kunci master** (envelope encryption via AWS KMS, detail di 04). Rotasi:
-1. Buat versi kunci baru (`webhook-kek-v{n+1}`). Aplikasi bisa mendekripsi dengan v{n} dan v{n+1}, sedangkan enkripsi baru memakai v{n+1}.
-2. Job background mengenkripsi ulang semua secret endpoint ke v{n+1} (idempotent, progres terpantau).
-3. Setelah 100% dan bake 7 hari, v{n} dinonaktifkan, lalu dihapus sesuai kebijakan KMS.
-
-Rotasi terjadwal tahunan, dan segera bila ada dugaan kebocoran. Rotasi secret per endpoint oleh customer (periode overlap dua secret) didefinisikan di 04.
+**Kunci master webhook.** Secret per endpoint (FR-EXP-003) dienkripsi aplikasi dengan AES-256-GCM memakai *key ring* berversi (`secret_kid`, 04 §5.5, ADR-22). Rotasi: (1) tambah versi kunci baru ke SOPS dan deploy (dekripsi menerima semua versi aktif, enkripsi memakai versi terbaru); (2) job background mengenkripsi ulang semua `secret_ciphertext` ke versi baru; (3) setelah 100% + 7 hari, versi lama dihapus dari key ring.
 
 ---
 
@@ -870,35 +981,35 @@ Rotasi terjadwal tahunan, dan segera bila ada dugaan kebocoran. Rotasi secret pe
 
 ### 13.1 Tipe flag
 
-| Tipe | Prefix | Contoh | Umur | Default saat flag store gagal |
+| Tipe | Penamaan | Contoh | Umur | Saat flag store gagal |
 |---|---|---|---|---|
-| Release | `rel.` | `rel.geo.territory-ranking`, `rel.ai.brief-1.1.0` | Sementara: dihapus ≤ 30 hari setelah 100% | **Off** |
-| Ops kill switch (FR-OPS-007, FR-AI-006) | `ks.` | `ks.ai`, `ks.export`, `ks.webhook`, `ks.upload` | Permanen | Nilai terakhir di cache. Tanpa cache → kapabilitas **on** (tidak memutus layanan karena flag store gagal) |
-| Fault injection (staging) | `chaos.` | `chaos.webhook-5xx`, `chaos.pipeline-fail` | Permanen | Off. Ditolak di production (§3.3) |
-| Eksperimen | `exp.` | (V1+) | Sementara | Off |
+| Release | `rel.<area>.<nama>` | `rel.geo.territory-ranking`, `rel.ai.brief-1.1.0` | Sementara: dihapus ≤ 30 hari setelah 100% | **Off** |
+| Ops kill switch (FR-OPS-007, FR-AI-006) | Nama kapabilitas (04) | `upload.create`, `export.create`, `webhook.deliver`, `ai.generate` | Permanen | Nilai cache terakhir. Tanpa cache → kapabilitas **on** |
+| Fault injection | `chaos.<nama>` | `chaos.webhook-5xx` | Permanen | Off. Ditolak di production |
+| Eksperimen | `exp.<nama>` | (V1+) | Sementara | Off |
 
-**Permission dan plan bukan flag.** Entitlement plan (FR-BILL-003) dan RBAC (FR-AUTH-004) ditegakkan oleh service entitlement/permission di server. Flag tidak pernah menjadi satu-satunya penghalang akses ke data atau fitur berbayar.
+Nama kill switch final ditetapkan di 04. Respons API saat kill switch aktif = `FEATURE_DISABLED` (04 §11).
+
+**Permission dan plan bukan flag.** Entitlement (FR-BILL-003) dan RBAC (FR-AUTH-004) ditegakkan service di server. Flag tidak pernah menjadi satu-satunya penghalang akses.
 
 ### 13.2 Mekanisme
 
-- **Registry di repo** (`apps/api/src/msp/flags/registry.yaml`): nama, tipe, owner, deskripsi, tanggal dibuat, tanggal kedaluwarsa (wajib untuk `rel.`/`exp.`), default. CI memeriksa bahwa setiap flag yang dipakai di kode (backend & web) terdaftar, dan setiap flag terdaftar dipakai.
-- **Nilai runtime** per environment disimpan di Postgres (tabel flag + override per workspace), diubah lewat ops console, dan **tercatat di audit log** (FR-OPS-007). Evaluasi di-cache in-process (TTL 30 detik) dan disebarkan lewat Redis pub/sub agar kill switch berlaku ≤ 1 menit.
-- Antarmuka evaluasi tipis yang kompatibel dengan OpenFeature, agar bisa berpindah ke vendor kelak tanpa mengubah call site.
+- **Registry di repo** (`apps/api/msp/platform/flags/registry.yaml`): nama, tipe, owner, deskripsi, tanggal dibuat, kedaluwarsa (wajib untuk `rel.`/`exp.`), default. CI memeriksa bahwa setiap flag yang dipakai kode (backend & web) terdaftar, dan setiap flag terdaftar dipakai.
+- **Nilai runtime** per environment di `platform.feature_flag` (+ override per workspace), diubah lewat ops console (`/v1/ops/feature-flags/{key}`) dan **tercatat di audit log** (FR-OPS-007). Cache in-process (TTL 30 detik) + invalidasi via Redis pub/sub, sehingga kill switch berlaku ≤ 1 menit.
+- Antarmuka evaluasi tipis yang kompatibel OpenFeature, agar bisa berpindah ke vendor/Unleash self-hosted kelak tanpa mengubah call site.
 
 ### 13.3 Lifecycle & cleanup
 
 ```
-dibuat (PR + registry) → dark launch (off di prod) → workspace internal MSP → cohort beta (allowlist)
-→ persentase per workspace (hash workspace_id: 10% → 50% → 100%) → PR hapus flag + kode lama (≤ 30 hari)
+dibuat (MR + registry) → dark launch (off di prod) → workspace internal MSP → cohort beta (allowlist)
+→ persentase per workspace (hash workspace_id: 10% → 50% → 100%) → MR hapus flag + kode lama (≤ 30 hari)
 ```
 
-- Job `flag-hygiene` mingguan membuat issue untuk flag `rel.` yang melewati tanggal kedaluwarsa atau sudah 100% > 30 hari.
-- CI gagal bila flag `rel.` melewati kedaluwarsa > 30 hari tanpa perpanjangan (perpanjangan = PR yang mengubah tanggal, dengan alasan).
-- Rollout bertahap selalu per **workspace** (bukan per user), agar pengalaman konsisten di satu tim.
+Job `weekly` membuat issue untuk flag `rel.` yang melewati kedaluwarsa atau sudah 100% > 30 hari. CI gagal bila flag `rel.` lewat kedaluwarsa > 30 hari tanpa perpanjangan (MR yang mengubah tanggal + alasan). Rollout selalu per **workspace**, agar pengalaman konsisten dalam satu tim.
 
 ### 13.4 Dark launch
 
-Kode baru di-deploy dalam keadaan off, sehingga deploy (perubahan kode) terpisah dari release (perubahan perilaku). Untuk pipeline berat (mis. faktor skor baru), dark launch dapat menghitung hasil secara bayangan (shadow) tanpa ditampilkan, lalu hasilnya dibandingkan di laporan regresi (§10.3).
+Deploy (perubahan kode) dipisahkan dari release (perubahan perilaku). Untuk pipeline berat (mis. faktor skor baru), dark launch menghitung hasil bayangan tanpa ditampilkan, lalu hasilnya dibandingkan di laporan regresi (§10.3).
 
 ---
 
@@ -906,108 +1017,106 @@ Kode baru di-deploy dalam keadaan off, sehingga deploy (perubahan kode) terpisah
 
 ### 14.1 Rollback aplikasi
 
-- Workflow **`rollback.yml`** (`workflow_dispatch`, input: `environment`, `to` = tag versi atau `previous`). Satu perintah:
-  `gh workflow run rollback.yml -f environment=production -f to=previous`
-- Langkah: resolve digest dari riwayat GitHub Deployments → verifikasi tanda tangan (QG-27) → update service **tanpa migrasi** (urutan web → api → worker, kebalikan deploy) → smoke. Target ≤ 15 menit.
-- Aman karena skema bersifat expand-only terhadap N-1 (§9.1). Rollback melewati lebih dari satu rilis hanya boleh bila tidak ada migrasi contract di antaranya. Workflow memeriksa ini dan menolak bila ada.
-- Approval: Environment `production` (on-call cukup satu reviewer. Saat SEV1, admin repo dapat mem-bypass review dan pemakaian bypass tercatat).
+| Situasi | Tindakan | Target waktu |
+|---|---|---|
+| Selama canary/bake | Otomatis oleh blok `rescue` deploy (§6.3) | < 1 menit |
+| Setelah bake, warna lama masih ada di host | Job manual **`rollback:production`** (pipeline tag versi saat ini atau `main`, Maintainer) → `rollback.yml -e to=previous`: start warna lama dengan digest sebelumnya (image masih di cache host), worker dulu, alihkan traffic 100%, smoke | ≤ 5 menit |
+| Lebih dari satu rilis ke belakang | `rollback.yml -e to=vX.Y.Z`. Ditolak bila ada migrasi contract di antara keduanya | ≤ 15 menit |
+| `ops-01` (GitLab) tidak tersedia | Maintainer menjalankan `rollback.yml` dari laptop via WireGuard (kunci age & SSH break-glass), lalu dicatat di issue | ≤ 30 menit |
+
+Rollback tidak menjalankan migrasi dan aman karena skema bersifat expand-only terhadap N-1 (§9.1). Host menyimpan image 5 rilis terakhir (prune terjadwal).
 
 ### 14.2 Matikan lewat flag
 
-Langkah tercepat untuk kapabilitas yang bermasalah: kill switch `ks.ai`, `ks.export`, `ks.webhook`, `ks.upload` (≤ 1 menit, tercatat di audit), atau set flag `rel.*` terkait ke off. Pilihan ini didahulukan sebelum rollback bila masalah terlokalisasi.
+Langkah tercepat untuk kapabilitas bermasalah: kill switch (`ai.generate`, `export.create`, `webhook.deliver`, `upload.create`) atau flag `rel.*` ke off (≤ 1 menit, tercatat di audit). Langkah ini didahulukan sebelum rollback bila masalah terlokalisasi.
 
 ### 14.3 Database
 
-- **Forward fix:** migrasi perbaikan baru melalui pipeline normal (bisa dipercepat: review on-call + tech lead).
-- **PITR** (RPO ≤ 15 menit) hanya untuk korupsi atau kehilangan data yang tidak bisa diperbaiki secara forward. Keputusan ada di incident commander + founder, karena data yang ditulis setelah titik restore hilang (termasuk usage/ledger, yang harus direkonsiliasi). Restore dilakukan ke instance baru, lalu aplikasi diarahkan ulang. Prosedurnya dilatih di drill bulanan (§7.1).
+- **Forward fix:** migrasi perbaikan lewat pipeline normal (dipercepat: review on-call + Maintainer).
+- **PITR** (pgBackRest) hanya untuk korupsi/kehilangan data yang tidak bisa diperbaiki secara forward. Keputusan ada di incident commander + founder, karena data setelah titik restore hilang (termasuk usage/ledger yang harus direkonsiliasi). Restore dilakukan ke instance baru, lalu PgBouncer diarahkan ulang. Prosedurnya dilatih di drill bulanan (§7.1).
+- **Kegagalan host primary:** `db-failover.yml` (§11.6).
 
 ### 14.4 Rollback data & model
 
 | Artefak | Rollback |
 |---|---|
-| Snapshot dataset | Publish ulang snapshot aktif sebelumnya + recompute (§10.2) |
-| Versi skor/geo | Aktifkan kembali versi sebelumnya. Skornya masih ada selama bake 7 hari (§10.3) |
-| Versi prompt | Aktifkan kembali versi sebelumnya via flag/registry. Kill switch `ks.ai` bila perlu |
+| Snapshot dataset | Publish ulang snapshot sebelumnya + recompute (§10.2) |
+| Versi skor/geo | Aktifkan kembali epoch versi sebelumnya (tersimpan selama bake 7 hari) |
+| Versi prompt | Aktifkan kembali versi sebelumnya. Kill switch AI bila perlu |
 
 ### 14.5 Incident
 
 | Severity | Contoh | Respons | Komunikasi |
 |---|---|---|---|
-| **SEV1** | Production down; **kebocoran data lintas tenant**; dugaan kegagalan pelindungan data pribadi; tagihan ganda massal | Segera, 24/7. Incident commander ditunjuk | Kanal insiden + founder ≤ 15 menit; customer terdampak ≤ 4 jam (email); status berkala setiap 1 jam |
-| **SEV2** | Fitur inti terganggu (search, export, webhook, unlock), SLO burn tinggi | ≤ 30 menit jam kerja, ≤ 1 jam di luar jam kerja | Kanal insiden; customer bila > 1 jam |
-| **SEV3** | Degradasi sebagian dengan workaround; drill gagal | Hari kerja yang sama | Issue |
+| **SEV1** | Production down; **kebocoran data lintas tenant**; dugaan kegagalan pelindungan data pribadi; tagihan ganda massal; DC/jaringan down | Segera, 24/7. Incident commander ditunjuk | Kanal insiden + founder ≤ 15 menit; customer terdampak ≤ 4 jam (email); update tiap 1 jam |
+| **SEV2** | Fitur inti terganggu (search, export, webhook, unlock), SLO burn tinggi, replikasi/backup gagal > 1 jam | ≤ 30 menit jam kerja, ≤ 1 jam di luar | Kanal insiden; customer bila > 1 jam |
+| **SEV3** | Degradasi dengan workaround; drill gagal | Hari kerja yang sama | Issue |
 | **SEV4** | Kosmetik, internal | Backlog | — |
 
-Peran: incident commander, komunikasi, scribe. Mulai dengan containment (kill switch, rollback), baru diagnosis.
+Peran: incident commander, komunikasi, scribe. Mulai dengan containment (kill switch, rollback, blokir akses), baru diagnosis.
 
-**Hook UU PDP (BR-PRIV-03) di runbook:** setiap insiden yang menyangkut data pribadi (contact point person, data upload customer, akses lintas tenant) langsung ditandai `pdp-suspected`. Penandaan ini memicu:
-1. Pencatatan waktu diketahuinya insiden. **Hitung mundur 3×24 jam** untuk notifikasi kegagalan pelindungan data dimulai.
-2. Eskalasi ke founder dan penanggung jawab pelindungan data, serta konsultan hukum. Ruang lingkup dan pihak yang wajib diberi tahu divalidasi konsultan hukum (BR-PRIV-03).
-3. Preservasi bukti: audit log (immutable), CloudTrail, log akses S3/ALB untuk jendela waktu terkait. Retensi diperpanjang, tidak ada penghapusan.
-4. Draf notifikasi (isi minimal: data yang terdampak, waktu dan cara kejadian, upaya penanganan dan pemulihan) disiapkan paralel dengan penanganan teknis.
+**Hook UU PDP (BR-PRIV-03) di runbook.** Insiden yang menyangkut data pribadi (contact point person, upload customer, akses lintas tenant) langsung diberi label `pdp-suspected`, yang memicu:
+1. Pencatatan waktu insiden diketahui. **Hitung mundur 3×24 jam** untuk notifikasi kegagalan pelindungan data dimulai.
+2. Eskalasi ke founder, penanggung jawab pelindungan data, dan konsultan hukum. Lingkup dan pihak yang wajib diberi tahu divalidasi konsultan hukum (BR-PRIV-03).
+3. Preservasi bukti: `platform.audit_log` (immutable), log Traefik/aplikasi di Loki, log auditd dan WireGuard, log akses MinIO. Retensi diperpanjang, tidak ada penghapusan.
+4. Draf notifikasi (data terdampak, waktu dan cara kejadian, upaya penanganan dan pemulihan) disiapkan paralel dengan penanganan teknis.
 
-**Post-incident review** (SEV1/SEV2 wajib, SEV3 opsional): blameless, ≤ 5 hari kerja, timeline + akar masalah + action item ber-owner dan bertenggat (issue berlabel `pir`). Setiap insiden menghasilkan minimal satu test regresi atau alert baru. Change failure rate dan MTTR diperbarui (§16.2).
+**Post-incident review** (wajib untuk SEV1/2): blameless, ≤ 5 hari kerja, berisi timeline, akar masalah, dan action item ber-owner dan bertenggat (issue `pir`). Setiap insiden menghasilkan minimal satu test regresi atau alert baru. Metrik DORA diperbarui (§16.2).
 
 ### 14.6 Checklist verifikasi pasca-deploy
 
-- [ ] `/healthz` dan `/readyz` hijau untuk semua task. Jumlah task sesuai desired count
+- [ ] Semua container warna aktif *healthy*. Traefik hanya merujuk warna aktif
 - [ ] Smoke production lulus (workspace sintetis)
-- [ ] Rasio 5xx, p95 search/profil dalam threshold (§6.3) selama 30 menit
-- [ ] Worker: backlog normal, tidak ada lonjakan DLQ, rasio job gagal < 5%
-- [ ] Log migration task bersih, `alembic current` = head yang diharapkan
-- [ ] Error tracking: tidak ada issue baru severity tinggi pada release ini
-- [ ] Status flag sesuai rencana rollout (tidak ada flag yang ikut menyala tanpa sengaja)
-- [ ] Deployment marker dan anotasi rilis tercatat (§16.1)
-- [ ] Changelog dipublikasikan. Perubahan yang terlihat customer dikomunikasikan (id-ID)
+- [ ] 5xx dan p95 search/profil dalam threshold (§6.3) selama 30 menit
+- [ ] Worker: backlog normal, tidak ada lonjakan DLQ, rasio gagal < 5%. Worker warna lama sudah berhenti
+- [ ] Log container migrasi bersih, `alembic current` = head yang diharapkan
+- [ ] GlitchTip: tidak ada issue baru severity tinggi pada release ini
+- [ ] Flag sesuai rencana rollout
+- [ ] Deployment tercatat di GitLab environment, anotasi Grafana ada
+- [ ] Catatan rilis dipublikasikan. Perubahan yang terlihat customer dikomunikasikan (id-ID)
 
 ---
 
 ## 15. Supply chain security
 
-### 15.1 GitHub Actions
+### 15.1 Platform & pipeline
 
 | Kontrol | Penerapan |
 |---|---|
-| Pin SHA | Semua `uses:` pihak ketiga dan resmi di-pin ke SHA commit 40 karakter, dengan komentar versi (`# vX.Y.Z`). Renovate memperbarui SHA dan komentar. Pelajaran insiden `tj-actions/changed-files` (Maret 2025): tag yang bisa dipindah dapat menyuntikkan kode yang membocorkan secret. |
-| Permission minimal | `permissions: {}` di level workflow. Setiap job membuka hanya yang dibutuhkan (`contents: read`, `id-token: write` hanya untuk job AWS, `pull-requests: write` hanya untuk komentar). |
-| Checkout | `persist-credentials: false` kecuali job yang perlu push (release-please memakai token App). |
-| Trigger berbahaya | Tidak ada `pull_request_target` yang men-checkout kode PR. Tidak ada interpolasi `${{ github.event.* }}` langsung di `run:` (lewat `env:`). Ditegakkan oleh zizmor (QG-20). |
-| Fork | Repo privat. Bila kelak ada kontributor eksternal, PR fork tidak mendapat secret dan job `ai-eval`/deploy tidak berjalan. |
-| Runner | GitHub-hosted (ephemeral). Self-hosted runner tidak dipakai di MVP. |
-| Pengubahan workflow | `.github/**` milik CODEOWNERS platform. Environment `production` membatasi deploy ke tag `v*`, jadi workflow di branch fitur tidak bisa deploy ke production. |
+| Image job di-pin | Setiap `image:` dan `services:` memakai `@sha256:<digest>`. Tool CI (oasdiff, squawk, gitleaks, Trivy, syft, cosign, OSV-Scanner, Semgrep, ansible, sops, age, k6, commitlint) dibundel dalam image **`ci-tools`** yang dibangun dari `ci/images/tools/Dockerfile` dengan versi di-pin + checksum. Renovate memperbaruinya. |
+| `include:` CI | Hanya `include: local`. Template eksternal tidak dipakai. |
+| Tanpa unduhan liar | Larangan `curl \| sh`/`wget \| bash` di job (dicek `ci:lint`) |
+| Runner terpisah | `ci-docker` (non-privileged, `allowed_images` dibatasi ke registry internal + daftar image publik yang di-pin), `ci-build` (BuildKit rootless, tanpa `privileged`), `deploy` (protected, di `ops-01`). Runner MR tidak punya rute ke prod/stg. |
+| Variabel | Masked + protected + scope environment (§12.2). Variabel protected tidak pernah tersedia di pipeline MR. |
+| Push protection | Server hook `pre-receive` menjalankan gitleaks pada setiap push (batas waktu & ukuran dikonfigurasi). Push yang mengandung secret ditolak. |
+| Akun | 2FA wajib, sign-up nonaktif, Maintainer minimal, token berkedaluwarsa, review akses per kuartal |
+| GitLab | Ikuti rilis keamanan (patch kritis ≤ 7 hari). UI hanya via WireGuard. Sertifikat via ACME DNS-01 atau CA internal |
 
 ### 15.2 Dependency
 
 - Lockfile wajib dan instalasi beku: `uv sync --locked`, `pnpm install --frozen-lockfile`.
-- Dependency review di PR (QG-18, QG-19). Trivy license untuk `uv.lock` sebagai pemeriksa silang.
+- `security:deps` di setiap MR + rescan nightly (QG-19, QG-20). Pengecualian bertanggal kedaluwarsa.
 - Base image di-pin digest dan diperbarui Renovate.
 
 ### 15.3 Artefak: SBOM, provenance, signing
 
 | Artefak | Dibuat | Disimpan | Retensi |
 |---|---|---|---|
-| SBOM SPDX (syft) | Setiap image `main` | Attestation cosign di ECR + artifact workflow + bucket evidence | ≥ 1 tahun, atau selama digest masih di-deploy |
-| Provenance SLSA | BuildKit `mode=max` (image index). Bila plan GitHub mendukung artifact attestations untuk repo privat, tambahkan `actions/attest-build-provenance`. | ECR | Sama |
-| Tanda tangan | cosign keyless (Fulcio/Rekor) setelah QG-26 lolos | ECR (+ transparency log) | Sama |
+| SBOM SPDX (syft) | Setiap image `main` | Attestation cosign di registry + artifact + `msp-evidence` | ≥ 1 tahun, atau selama digest masih di-deploy |
+| Provenance | BuildKit `mode=max` (image index) | Registry | Sama |
+| Tanda tangan | cosign key pair setelah QG-27 lolos (`--tlog-upload=false`) | Registry (tag `.sig`/`.att`) | Sama |
 
-Verifikasi saat deploy (QG-27): `cosign verify` + `cosign verify-attestation --type spdxjson` dengan `--certificate-identity-regexp` yang mengunci repo, workflow `main.yml`, dan ref `main`/`release/v*`, serta `--certificate-oidc-issuer https://token.actions.githubusercontent.com`. Role deploy hanya boleh merujuk image dari ECR `msp-*` (kondisi IAM), sehingga image dari registry lain tidak bisa dipakai.
+Verifikasi saat deploy (QG-28): `cosign verify --key infra/keys/cosign.pub --insecure-ignore-tlog=true` + `cosign verify-attestation --type spdxjson`. Kunci privat hanya bisa dibuka job `sign:images` di pipeline `main`/`release/*` (scope `signing`). Cleanup policy registry tidak boleh menghapus tag `.sig`/`.att` milik digest yang masih disimpan.
 
-> Catatan privasi: entri transparency log publik Sigstore memuat identitas workflow (nama repo, path workflow, ref). Isinya bukan kode atau data, tetapi tetap terlihat publik. Bila tidak dapat diterima, ganti ke `cosign --key awskms://…` (kunci KMS di akun shared, tanpa upload tlog). Lihat Q-CI-04.
-
-### 15.4 Renovate
+### 15.4 Renovate (self-hosted, scheduled pipeline)
 
 | Kebijakan | Nilai |
 |---|---|
-| Jadwal | Jam kerja Senin–Jumat (WIB) |
-| `minimumReleaseAge` | 3 hari untuk semua update (perlindungan dari rilis berbahaya yang ditarik kembali). Security update: tanpa penundaan. |
-| Grouping | `python-dev` (ruff, mypy, pytest-*), `js-lint` (eslint, prettier, typescript-eslint), `storybook`, `playwright`, `github-actions` (SHA), `docker-base`, `terraform-providers` |
-| Automerge | **Patch** dan **minor devDependency** dengan CI hijau, lewat merge queue. Pengecualian: tidak pernah automerge untuk `fastapi`, `sqlalchemy`, `alembic`, `psycopg`, `pydantic`, `next`, `react`, provider Terraform, base image. Major selalu manual. |
-| Batas | Maksimal 5 PR terbuka, 2 PR/jam |
-| Dashboard | Dependency Dashboard issue aktif |
-
-### 15.5 Tag & rilis terlindungi
-
-Ruleset tag (§2.5), dan Release hanya dibuat oleh GitHub App release. Perubahan pada `release-please-config.json` dan `.release-please-manifest.json` milik CODEOWNERS platform.
+| Eksekusi | Image `renovate/renovate` (pin digest), `platform: gitlab`, token bot di scope `renovate` |
+| `minimumReleaseAge` | 3 hari untuk semua update. Security update tanpa penundaan |
+| Grouping | `python-dev` (ruff, mypy, pytest-*), `js-lint`, `storybook`, `playwright`, `ci-images` (digest), `docker-base`, `ansible-collections` |
+| Automerge | **Patch** dan **minor devDependency** dengan pipeline hijau (label `automerge`, `mr:gate` mengizinkan tanpa approval). Tidak pernah automerge untuk `fastapi`, `sqlalchemy`, `alembic`, `psycopg`, `pydantic`, `dramatiq`, `next`, `react`, collection Ansible, base image. Major selalu manual. |
+| Batas | Maks 5 MR terbuka, 2 MR/jam. Dependency Dashboard issue aktif |
 
 ---
 
@@ -1015,554 +1124,508 @@ Ruleset tag (§2.5), dan Release hanya dibuat oleh GitHub App release. Perubahan
 
 ### 16.1 Deployment marker & anotasi rilis
 
-Setiap deploy (staging dan production) mengirim:
-- **GitHub Deployment** + status (environment, digest, versi), yang menjadi sumber data DORA.
-- **Release di error tracking**: `msp@<versi>` (production) atau `msp@sha-<short>` (staging), commit terkait, environment. Source map web diunggah saat build dan **tidak** disajikan publik (hidden source maps).
-- **Anotasi di observability backend**: marker deploy di dashboard SLO (latency, error rate, backlog), sehingga regresi bisa langsung dikaitkan dengan rilis.
-- Atribut resource OpenTelemetry di setiap service: `service.name`, `service.version` (= versi aplikasi), `deployment.environment.name`, dan revisi commit (`vcs.ref.head.revision` atau atribut kustom `msp.git_sha`).
+Setiap deploy (staging dan production) menghasilkan:
+- **Deployment GitLab** (`environment:`) beserta SHA dan job. Ini sumber data DORA.
+- **Release GlitchTip**: `msp@vX.Y.Z` (production) atau `msp@sha-<short>` (staging). Source map web diunggah saat deploy dan **tidak** disajikan publik.
+- **Anotasi Grafana** (API) di dashboard SLO: latency, error rate, backlog, replikasi DB.
+- Atribut resource OpenTelemetry setiap service: `service.name`, `service.version` (= `MSP_APP_VERSION`), `deployment.environment.name`, revisi git, dan `msp.color` (blue/green, dipakai query canary §6.3).
+
+Stack (ADR-21, di `ops-01`): OTel Collector/Grafana Alloy di setiap host → Prometheus (metrik, retensi 30 hari), Loki (log JSON terstruktur, retensi 30 hari, PII teredaksi), Tempo (trace, 7 hari), GlitchTip (error, 90 hari). Alertmanager → kanal chat + email on-call. Blackbox exporter memeriksa endpoint dari dalam DC. **Probe eksternal** di luar DC (VPS kecil di lokasi lain atau layanan uptime) memeriksa `app.<domain>` dan menerima heartbeat *watchdog* Alertmanager (dead man's switch), sehingga DC down atau `ops-01` mati tetap terdeteksi.
 
 ### 16.2 DORA (target tahap MVP)
 
-| Metrik | Definisi operasional | Target MVP 1 | Sumber data |
+| Metrik | Definisi operasional | Target MVP 1 | Sumber |
 |---|---|---|---|
-| Deployment frequency | Deploy production sukses per minggu | ≥ 2/minggu (staging: setiap merge) | GitHub Deployments |
+| Deployment frequency | Deploy production sukses per minggu | ≥ 2/minggu (staging: setiap merge) | GitLab Deployments API |
 | Lead time for changes | Merge ke `main` → berjalan di production, p50 | ≤ 2 hari kerja | Commit + Deployments |
-| Change failure rate | Deploy production yang memicu rollback, hotfix, atau insiden SEV1/2 | ≤ 15% | Deployments + label insiden |
-| Failed deployment recovery time (MTTR) | Deteksi → pulih (rollback/flag/fix) | ≤ 1 jam (rollback ≤ 15 menit) | Issue insiden |
+| Change failure rate | Deploy production yang memicu rollback, hotfix, atau SEV1/2 | ≤ 15% | Deployments + label insiden |
+| Failed deployment recovery time | Deteksi → pulih | ≤ 1 jam (rollback ≤ 5–15 menit) | Issue insiden |
 
-Dilaporkan bulanan oleh script yang membaca GitHub API (tanpa vendor tambahan) dan ditinjau di retro engineering.
+Dihitung oleh script mingguan (GitLab API → Prometheus/Grafana, karena dashboard DORA GitLab berbayar) dan ditinjau di retro engineering bulanan.
 
 ### 16.3 Kesehatan CI
 
 | Metrik | Target | Tindakan bila meleset |
 |---|---|---|
-| Durasi pipeline PR | p50 ≤ 10 menit, p90 ≤ 15 menit | Profil job terlambat; shard; larger runner; pindahkan test ke nightly |
-| Durasi merge queue | p50 ≤ 15 menit | Kurangi batas grup, tambah concurrency |
+| Durasi pipeline MR | p50 ≤ 10 menit, p90 ≤ 15 menit | Profil job; tambah concurrency/shard; pindahkan ke nightly |
 | Merge → `staging-verified` | p50 ≤ 30 menit | Paralelkan E2E staging |
-| Flaky rate | ≤ 2% run (job yang lulus setelah retry) | Test flaky masuk **karantina** (`@pytest.mark.quarantine` / `test.fixme` dengan tautan issue): tetap jalan di nightly, tidak memblokir PR, maksimal 14 hari, lalu diperbaiki atau dihapus |
-| Waktu `main` merah | ≤ 1 jam per kejadian | Stop-the-line (§5.5) |
-| Biaya CI | Dipantau bulanan (menit runner, storage artifact/cache) | Retensi artifact default 14 hari, laporan rilis ke S3 |
+| Antre job (pending) | p90 ≤ 1 menit | Tambah `concurrent` runner atau kapasitas `ci-01` |
+| Flaky rate | ≤ 2% job (lulus setelah retry) | **Karantina** (`@pytest.mark.quarantine` / `test.fixme` + issue): jalan di nightly, tidak memblokir MR, maks 14 hari |
+| `main` merah | ≤ 1 jam per kejadian | Stop-the-line (§5.4) |
+| Disk `ci-01`/registry | < 80% | Cleanup policy, prune cache |
 
-Data diambil dari GitHub Actions API dan laporan JUnit (artifact), lalu dirangkum di dashboard sederhana (job mingguan).
+Data dikumpulkan **gitlab-ci-pipelines-exporter** dan laporan JUnit, lalu ditampilkan di dashboard Grafana "CI health".
 
 ---
 
-## 17. Contoh workflow (ilustratif)
+## 17. Contoh konfigurasi (ilustratif)
 
-> Notasi pin: `uses: owner/action@<sha> # vX.Y.Z`. `<sha>` diganti SHA 40 karakter saat bootstrap dan dipelihara Renovate. Contoh dipersingkat: beberapa job dan step ditandai `# …`.
-
-### 17.1 `pr.yml`
+### 17.1 `.gitlab-ci.yml` (dipersingkat)
 
 ```yaml
-name: pr
-on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
-  merge_group:
-    types: [checks_requested]
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
+      when: never                                        # cegah pipeline ganda branch + MR
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_BRANCH =~ /^release\/v\d+\.\d+$/
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
+    - if: $CI_COMMIT_TAG =~ /^(infra|ds|priority|geo|brief)-/   # job di ci/*.yml
+    - if: $CI_PIPELINE_SOURCE == "schedule" || $CI_PIPELINE_SOURCE == "trigger"
 
-permissions: {}                       # default tanpa izin; dibuka per job
+include:
+  - local: ci/data-release.yml        # tag ds-*, priority-*, geo-*, brief-*
+  - local: ci/infra.yml               # MR infra, apply staging, tag infra-*
+  - local: ci/scheduled.yml           # nightly, drift, renovate, drill, rehydrate
 
-concurrency:
-  group: pr-${{ github.event.pull_request.number || github.event.merge_group.head_ref }}
-  cancel-in-progress: true
+stages: [validate, test, build, scan, deploy-staging, verify, release, deploy-production]
 
-jobs:
-  changes:
-    runs-on: ubuntu-24.04
-    permissions: { contents: read, pull-requests: read }
-    outputs:
-      backend:    ${{ steps.f.outputs.backend }}
-      migrations: ${{ steps.f.outputs.migrations }}
-      web:        ${{ steps.f.outputs.web }}
-      contracts:  ${{ steps.f.outputs.contracts }}
-      tokens:     ${{ steps.f.outputs.tokens }}
-      e2e:        ${{ steps.f.outputs.e2e }}
-      docs:       ${{ steps.f.outputs.docs }}
-    steps:
-      - uses: actions/checkout@<sha> # vX.Y.Z
-        with: { persist-credentials: false, fetch-depth: 0 }
-      - id: f
-        uses: dorny/paths-filter@<sha> # vX.Y.Z
-        with:
-          base: ${{ github.event.merge_group.base_sha || github.event.pull_request.base.sha }}
-          filters: |
-            backend:    ['apps/api/**', 'data/**', 'pyproject.toml', 'uv.lock']
-            migrations: ['apps/api/migrations/**', 'apps/api/src/msp/**/models*.py']
-            web:        ['apps/web/**', 'packages/**', 'pnpm-lock.yaml', 'turbo.json']
-            contracts:  ['contracts/**', 'apps/api/src/msp/**/api/**', 'packages/api-client/**']
-            tokens:     ['docs/02-design-system/tokens/**', 'packages/design-tokens/**']
-            e2e:        ['apps/**', 'packages/**', 'contracts/**', 'infra/docker/**']
-            docs:       ['docs/**', '**/*.md']
+variables:
+  TOOLS_IMAGE: $CI_REGISTRY/msp/ci-tools@sha256:<digest>
+  UV_IMAGE: ghcr.io/astral-sh/uv:python3.13-bookworm-slim@sha256:<digest>
+  BUILDKIT_IMAGE: moby/buildkit:rootless@sha256:<digest>
+  POSTGIS_IMAGE: postgis/postgis:16-3.5@sha256:<digest>     # = versi PGDG di Ansible
+  REDIS_IMAGE: redis:7-alpine@sha256:<digest>
+  UV_CACHE_DIR: $CI_PROJECT_DIR/.cache/uv
+  FF_NETWORK_PER_BUILD: "true"                              # service saling terhubung per job
 
-  backend-tests:
-    needs: changes
-    if: needs.changes.outputs.backend == 'true'
-    runs-on: ubuntu-24.04
-    permissions: { contents: read }
-    services:
-      postgres:
-        image: postgis/postgis:16-3.5@sha256:<digest>   # samakan dengan versi RDS
-        env: { POSTGRES_USER: msp, POSTGRES_PASSWORD: msp, POSTGRES_DB: msp_test }
-        ports: ["5432:5432"]
-        options: >-
-          --health-cmd "pg_isready -U msp" --health-interval 5s --health-retries 20
-      redis:
-        image: redis:7-alpine@sha256:<digest>
-        ports: ["6379:6379"]
-    env:
-      MSP_ENV: test
-      MSP_AUTH_MODE: stub
-      MSP_DATABASE_URL: postgresql+psycopg://msp:msp@localhost:5432/msp_test
-      MSP_REDIS_URL: redis://localhost:6379/0
-    steps:
-      - uses: actions/checkout@<sha> # vX.Y.Z
-        with: { persist-credentials: false }
-      - uses: astral-sh/setup-uv@<sha> # vX.Y.Z
-        with: { python-version: "3.13", enable-cache: true }
-      - run: uv sync --locked
-      - name: Migrasi ke head (prasyarat integration test)
-        run: uv run alembic -c apps/api/alembic.ini upgrade head
-      - name: Unit + integration (QG-04)
-        run: >-
-          uv run pytest apps/api/tests -n auto
-          -m "not slow and not ai_eval and not tenant_isolation"
-          --cov=msp --cov-report= --junitxml=reports/junit-main.xml
-      - name: Tenant isolation suite (QG-08)
-        run: >-
-          uv run pytest apps/api/tests -m tenant_isolation
-          --cov=msp --cov-append --cov-report= --junitxml=reports/junit-tenant.xml
-      - name: Coverage gate (QG-05, QG-06)
-        run: |
-          uv run coverage report --fail-under=75
-          uv run coverage report --fail-under=85 --include="apps/api/src/msp/identity/normalize/*,apps/api/src/msp/identity/resolve/*,apps/api/src/msp/intelligence/scoring/*"
-      - if: always()
-        uses: actions/upload-artifact@<sha> # vX.Y.Z
-        with: { name: backend-reports, path: reports/, retention-days: 14 }
+default:
+  image: $TOOLS_IMAGE
+  tags: [ci-docker]
+  interruptible: true
 
-  migrations:
-    needs: changes
-    if: needs.changes.outputs.migrations == 'true'
-    runs-on: ubuntu-24.04
-    permissions: { contents: read, pull-requests: read }
-    services:
-      postgres: { image: "postgis/postgis:16-3.5@sha256:<digest>", env: { POSTGRES_USER: msp, POSTGRES_PASSWORD: msp, POSTGRES_DB: msp_mig }, ports: ["5432:5432"] }
-    env:
-      MSP_DATABASE_URL: postgresql+psycopg://msp:msp@localhost:5432/msp_mig
-    steps:
-      # … checkout (fetch-depth: 0), setup-uv, uv sync --locked
-      - run: test "$(uv run alembic heads | wc -l)" -eq 1                 # satu head
-      - run: uv run alembic upgrade head                                  # dari DB kosong
-      - run: uv run alembic check                                         # tak ada perubahan model tertunda
-      - run: uv run python scripts/ci/check_rls.py                        # RLS tabel tenant
-      - name: Squawk pada SQL migrasi baru
-        run: |
-          uv run python scripts/ci/render_new_migrations_sql.py --base "${{ github.event.merge_group.base_sha || github.event.pull_request.base.sha }}" > new.sql
-          squawk new.sql
-      - name: Fase contract hanya dengan label db-contract
-        env: { GH_TOKEN: "${{ github.token }}" }
-        run: uv run python scripts/ci/check_migration_phase.py --labels "$(scripts/ci/pr_labels.sh)"
+.if-mr:   &if-mr   { if: '$CI_PIPELINE_SOURCE == "merge_request_event"' }
+.if-main: &if-main { if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH' }
+.if-rel:  &if-rel  { if: '$CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/' }
 
-  contracts:
-    needs: changes
-    if: needs.changes.outputs.contracts == 'true'
-    runs-on: ubuntu-24.04
-    permissions: { contents: read, pull-requests: read }
-    env:
-      BASE_SHA: ${{ github.event.merge_group.base_sha || github.event.pull_request.base.sha }}
-    steps:
-      # … checkout (fetch-depth: 0), setup-uv, setup-node 24 + pnpm (cache), install beku
-      - name: Spec ter-commit == spec aplikasi
-        run: uv run python -m msp.tools.export_openapi > /tmp/openapi.yaml && diff -u contracts/openapi/openapi.yaml /tmp/openapi.yaml
-      - run: pnpm exec spectral lint contracts/openapi/openapi.yaml --fail-severity=error   # QG-11
-      - name: Breaking change vs base (QG-12)
-        env: { GH_TOKEN: "${{ github.token }}" }
-        run: |
-          git show "$BASE_SHA:contracts/openapi/openapi.yaml" > /tmp/base.yaml
-          if ! oasdiff breaking /tmp/base.yaml contracts/openapi/openapi.yaml --fail-on ERR; then
-            scripts/ci/require_label.sh api-breaking --with-section "Rencana versi API"
-          fi
-      - name: Client TS up to date (QG-13)
-        run: pnpm --filter @msp/api-client generate && git diff --exit-code packages/api-client
-      - name: JSON Schema & contoh payload (QG-13)
-        run: |
-          uvx check-jsonschema --check-metaschema contracts/events/*.schema.json contracts/input/*.schema.json
-          scripts/ci/validate_examples.sh
-      # … Schemathesis smoke terhadap API ephemeral (service postgres/redis seperti backend-tests)
+.rules-backend:
+  rules:
+    - <<: *if-mr
+      changes: { paths: [apps/api/**/*, data/**/*, pyproject.toml, uv.lock], compare_to: refs/heads/main }
+    - *if-main
 
-  e2e-smoke:
-    needs: changes
-    if: needs.changes.outputs.e2e == 'true'
-    runs-on: ubuntu-24.04
-    permissions: { contents: read }
-    strategy:
-      fail-fast: false
-      matrix: { shard: [1, 2] }
-    steps:
-      - uses: actions/checkout@<sha> # vX.Y.Z
-        with: { persist-credentials: false }
-      - uses: docker/setup-buildx-action@<sha> # vX.Y.Z
-      - name: Build & start stack (cache GHA)
-        run: |
-          docker buildx bake -f infra/docker/compose.yml -f infra/docker/compose.ci.yml \
-            --set '*.cache-from=type=gha' --set '*.cache-to=type=gha,mode=max' --load
-          docker compose -f infra/docker/compose.yml -f infra/docker/compose.ci.yml up -d --wait
-          docker compose -f infra/docker/compose.yml run --rm api python -m msp.devtools.seed --profile e2e
-      # … setup-node 24 + pnpm, playwright install --with-deps chromium
-      - run: pnpm --filter web exec playwright test --grep @smoke --shard=${{ matrix.shard }}/2
-      - if: failure()
-        uses: actions/upload-artifact@<sha> # vX.Y.Z
-        with: { name: "playwright-${{ matrix.shard }}", path: apps/web/playwright-report/, retention-days: 7 }
+# ---------------- MR: validate & test ----------------
+mr:title:
+  stage: validate
+  needs: []
+  rules: [*if-mr]
+  script: [echo "$CI_MERGE_REQUEST_TITLE" | commitlint]                      # QG-01
 
-  security:
-    runs-on: ubuntu-24.04
-    permissions: { contents: read, pull-requests: write }   # komentar dependency review
-    steps:
-      - uses: actions/checkout@<sha> # vX.Y.Z
-        with: { persist-credentials: false, fetch-depth: 0 }
-      - run: gitleaks git --log-opts="${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}..HEAD" --redact --exit-code 1
-      - uses: aquasecurity/trivy-action@<sha> # vX.Y.Z
-        with: { scan-type: fs, scanners: "vuln,secret,misconfig", severity: "CRITICAL,HIGH", ignore-unfixed: true, exit-code: "1" }
-      - if: github.event_name == 'pull_request'
-        uses: actions/dependency-review-action@<sha> # vX.Y.Z
-        with:
-          fail-on-severity: high
-          allow-licenses: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, MPL-2.0, PSF-2.0, 0BSD, Unlicense, CC0-1.0
+mr:gate:
+  stage: .post
+  needs: []
+  rules:
+    - <<: *if-mr
+      when: manual
+      allow_failure: false                         # pipeline "blocked" → MR tak bisa di-merge
+  script: [python scripts/ci/mr_gate.py --codeowners .gitlab/CODEOWNERS]     # QG-02
 
-  # … backend-lint, web-lint, web-tests, tokens, web-build, docs, workflow-lint (pola sama)
+backend:test:
+  stage: test
+  image: $UV_IMAGE
+  extends: .rules-backend
+  needs: []
+  services:
+    - name: $POSTGIS_IMAGE
+      alias: postgres
+      variables: { POSTGRES_USER: msp, POSTGRES_PASSWORD: msp, POSTGRES_DB: msp_test }
+    - name: $REDIS_IMAGE
+      alias: redis
+  variables:
+    MSP_ENV: test
+    MSP_AUTH_MODE: stub
+    MSP_DATABASE_URL: postgresql+psycopg://msp:msp@postgres:5432/msp_test
+    MSP_REDIS_URL: redis://redis:6379/0
+  cache: { key: { files: [uv.lock] }, paths: [.cache/uv] }
+  script:
+    - uv sync --locked
+    - uv run alembic -c apps/api/alembic.ini upgrade head
+    - uv run pytest apps/api/tests -n auto -m "not slow and not ai_eval and not tenant_isolation"
+      --cov=msp --cov-report= --junitxml=reports/junit-main.xml                 # QG-05
+    - uv run pytest apps/api/tests -m tenant_isolation
+      --cov=msp --cov-append --cov-report= --junitxml=reports/junit-tenant.xml  # QG-09
+    - uv run coverage xml -o reports/coverage.xml
+    - uv run coverage report --fail-under=75                                    # QG-07
+    - uv run coverage report --fail-under=85
+      --include="apps/api/msp/identity/internal/normalize/*,apps/api/msp/identity/internal/resolve/*,apps/api/msp/intelligence/internal/scoring/*"   # QG-06
+  coverage: '/^TOTAL.+?(\d+(?:\.\d+)?%)$/'
+  artifacts:
+    when: always
+    expire_in: 14 days
+    reports:
+      junit: reports/junit-*.xml
+      coverage_report: { coverage_format: cobertura, path: reports/coverage.xml }
 
-  ci-ok:
-    if: always()
-    needs: [changes, backend-tests, migrations, contracts, e2e-smoke, security]   # + semua job lain
-    runs-on: ubuntu-24.04
-    permissions: {}
-    steps:
-      - name: Gagal bila ada job failure/cancelled
-        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
-        run: exit 1
-      - run: echo "Semua gate PR lulus atau tidak relevan (skipped)."
+contracts:
+  stage: test
+  needs: []
+  rules:
+    - <<: *if-mr
+      changes: { paths: [contracts/**/*, apps/api/msp/**/routes.py, packages/api-client/**/*], compare_to: refs/heads/main }
+  script:
+    - scripts/ci/export_openapi.sh > /tmp/openapi.yaml && diff -u contracts/openapi/openapi.yaml /tmp/openapi.yaml   # QG-14
+    - spectral lint contracts/openapi/openapi.yaml --fail-severity=error                                           # QG-12
+    - git fetch origin main --depth=50 && git show origin/main:contracts/openapi/openapi.yaml > /tmp/base.yaml
+    - oasdiff breaking /tmp/base.yaml contracts/openapi/openapi.yaml --fail-on ERR
+      || scripts/ci/require_label.sh api-breaking --section "Rencana versi API"                                     # QG-13
+    - pnpm --filter @msp/api-client generate && git diff --exit-code packages/api-client                           # QG-14
+    - check-jsonschema --check-metaschema contracts/events/*.schema.json contracts/input/*.schema.json
+    - scripts/ci/validate_examples.sh
+
+build:mr-images:
+  stage: build
+  image: $BUILDKIT_IMAGE
+  tags: [ci-build]
+  needs: []
+  rules:
+    - <<: *if-mr
+      changes: { paths: [apps/**/*, packages/**/*, contracts/**/*, infra/docker/**/*], compare_to: refs/heads/main }
+  variables: { BUILDKITD_FLAGS: --oci-worker-no-process-sandbox }
+  script:
+    - scripts/ci/buildkit_build.sh msp-api apps/api "$CI_REGISTRY_IMAGE/mr/msp-api:$CI_COMMIT_SHA"
+    - scripts/ci/buildkit_build.sh msp-web apps/web "$CI_REGISTRY_IMAGE/mr/msp-web:$CI_COMMIT_SHA"
+
+e2e:smoke:
+  stage: verify
+  image: mcr.microsoft.com/playwright:<versi>-noble@sha256:<digest>
+  needs: [build:mr-images]
+  rules:
+    - <<: *if-mr
+      changes: { paths: [apps/**/*, packages/**/*, contracts/**/*, infra/docker/**/*], compare_to: refs/heads/main }
+  parallel: 2
+  services:
+    - { name: $POSTGIS_IMAGE, alias: postgres, variables: { POSTGRES_USER: msp, POSTGRES_PASSWORD: msp, POSTGRES_DB: msp } }
+    - { name: $REDIS_IMAGE, alias: redis }
+    - { name: "minio/minio@sha256:<digest>", alias: minio, command: ["server", "/data"] }
+    - name: $CI_REGISTRY_IMAGE/mr/msp-api:$CI_COMMIT_SHA
+      alias: api
+      command: ["sh", "-c", "alembic upgrade head && python -m msp.devtools.seed --profile e2e && uvicorn msp.app.api:create_app --factory --host 0.0.0.0 --port 8000"]
+    - { name: $CI_REGISTRY_IMAGE/mr/msp-api:$CI_COMMIT_SHA, alias: worker, command: ["dramatiq", "msp.app.worker"] }
+    - { name: $CI_REGISTRY_IMAGE/mr/msp-web:$CI_COMMIT_SHA, alias: web }
+    - { name: "$CI_REGISTRY/msp/webhook-sink@sha256:<digest>", alias: webhook-sink }
+  variables:
+    MSP_ENV: test
+    MSP_AUTH_MODE: stub
+    MSP_DATABASE_URL: postgresql+psycopg://msp:msp@postgres:5432/msp
+    MSP_REDIS_URL: redis://redis:6379/0
+    MSP_S3_ENDPOINT: http://minio:9000
+  script:
+    - corepack enable && pnpm install --frozen-lockfile
+    - scripts/ci/wait_for.sh http://api:8000/readyz http://web:3000/healthz
+    - pnpm --filter web exec playwright test --grep @smoke --shard=$CI_NODE_INDEX/$CI_NODE_TOTAL   # QG-16, QG-17
+  artifacts: { when: on_failure, expire_in: 7 days, paths: [apps/web/playwright-report/] }
+
+security:secrets:
+  stage: validate
+  needs: []
+  rules: [*if-mr, *if-main]
+  script: [gitleaks git --log-opts="${CI_MERGE_REQUEST_DIFF_BASE_SHA:-HEAD~1}..HEAD" --redact --exit-code 1]   # QG-18
+
+security:deps:
+  stage: test
+  needs: []
+  rules: [*if-mr, *if-main]
+  script:
+    - osv-scanner scan source -r --licenses="MIT,Apache-2.0,BSD-2-Clause,BSD-3-Clause,ISC,MPL-2.0,PSF-2.0,0BSD,Unlicense,CC0-1.0" .  # QG-19, QG-20
+    - uv export --locked --format requirements-txt > /tmp/req.txt && pip-audit -r /tmp/req.txt
+    - pnpm audit --audit-level high
+    - trivy fs --scanners vuln,secret,misconfig --severity CRITICAL,HIGH --ignore-unfixed --exit-code 1 .
+
+# … backend:lint, web:lint, web:test, migrations, tokens, web:build, security:sast, model:regression,
+#   er:golden-synthetic, ai:eval, ci:lint, docs (pola sama)
+
+# ---------------- main: build, scan, sign, deploy staging ----------------
+build:api:
+  stage: build
+  image: $BUILDKIT_IMAGE
+  tags: [ci-build]
+  needs: []
+  rules: [*if-main]
+  variables: { BUILDKITD_FLAGS: --oci-worker-no-process-sandbox }
+  script:
+    - scripts/ci/buildkit_build.sh msp-api apps/api "$CI_REGISTRY_IMAGE/msp-api:sha-$CI_COMMIT_SHA" --provenance --metadata meta.json
+    - echo "API_IMAGE=$CI_REGISTRY_IMAGE/msp-api@$(scripts/ci/digest_from_meta.sh meta.json)" > build.env
+  artifacts: { reports: { dotenv: build.env } }
+
+build:web:
+  extends: build:api                                     # sama; menghasilkan WEB_IMAGE
+  script:
+    - scripts/ci/buildkit_build.sh msp-web apps/web "$CI_REGISTRY_IMAGE/msp-web:sha-$CI_COMMIT_SHA" --provenance --metadata meta.json
+    - echo "WEB_IMAGE=$CI_REGISTRY_IMAGE/msp-web@$(scripts/ci/digest_from_meta.sh meta.json)" > build.env
+
+scan:images:
+  stage: scan
+  needs: [build:api, build:web]
+  rules: [*if-main]
+  variables: { TRIVY_USERNAME: $CI_REGISTRY_USER, TRIVY_PASSWORD: $CI_REGISTRY_PASSWORD }
+  script:
+    - trivy image --severity CRITICAL,HIGH --ignore-unfixed --exit-code 1 "$API_IMAGE"          # QG-27
+    - trivy image --severity CRITICAL,HIGH --ignore-unfixed --exit-code 1 "$WEB_IMAGE"
+
+sign:images:
+  stage: scan
+  needs: [build:api, build:web, scan:images]
+  rules: [*if-main]
+  environment: { name: signing, action: prepare }       # akses SOPS_AGE_KEY_SIGNING
+  script:
+    - scripts/ci/sbom_and_sign.sh "$API_IMAGE" "$WEB_IMAGE"   # syft → cosign sign + attest (--tlog-upload=false)
+  artifacts: { paths: [sbom-*.spdx.json], expire_in: 90 days }
+
+deploy:staging:
+  stage: deploy-staging
+  tags: [deploy]
+  needs: [build:api, build:web, sign:images]
+  rules: [*if-main]
+  resource_group: staging
+  interruptible: false
+  environment: { name: staging, url: "https://app.staging.<domain>" }
+  script:
+    - eval "$(ssh-agent -s)" && ssh-add "$DEPLOY_SSH_KEY"
+    - export SOPS_AGE_KEY_FILE="$SOPS_AGE_KEY"
+    - ansible-playbook -i infra/ansible/inventories/staging infra/ansible/playbooks/deploy.yml
+      -e api_image="$API_IMAGE" -e web_image="$WEB_IMAGE" -e app_version="sha-$CI_COMMIT_SHORT_SHA"
+      -e '{"traffic_steps": [{"weight": 100, "watch_minutes": 5}]}'
+
+verify:staging:
+  stage: verify
+  needs: [deploy:staging]
+  rules: [*if-main]
+  parallel:
+    matrix:
+      - SUITE: [smoke, e2e-1, e2e-2, e2e-3, e2e-4, schemathesis, tenant-isolation]
+  script: [scripts/ci/verify_staging.sh "$SUITE"]                                            # QG-29
+
+mark:staging-verified:
+  stage: verify
+  needs: [verify:staging]
+  rules: [*if-main]
+  script: [scripts/ci/commit_status.sh "$CI_COMMIT_SHA" staging-verified success]
+
+release:cut:
+  stage: release
+  needs: [mark:staging-verified]
+  rules:
+    - <<: *if-main
+      when: manual
+  environment: { name: release, action: prepare }       # akses RELEASE_TOKEN
+  script:
+    - cd tools/release && pnpm install --frozen-lockfile && GITLAB_TOKEN="$RELEASE_TOKEN" pnpm exec semantic-release
+    - scripts/release/tag_design_tokens.sh
+
+# ---------------- tag vX.Y.Z: production ----------------
+release:resolve:
+  stage: release
+  needs: []
+  rules: [*if-rel]
+  script:
+    - scripts/release/await_status.sh "$CI_COMMIT_SHA" staging-verified 45m                     # QG-29
+    - scripts/release/resolve_digests.sh "$CI_COMMIT_SHA" > release.env                         # API_IMAGE, WEB_IMAGE, BUMP
+  artifacts: { reports: { dotenv: release.env } }
+
+release:readiness:
+  stage: release
+  needs: [release:resolve]
+  rules: [*if-rel]
+  script:
+    - scripts/release/check_open_vulns.sh "$API_IMAGE" "$WEB_IMAGE"                              # QG-19, QG-27
+    - '[ "$BUMP" = patch ] || scripts/release/check_rc_evidence.sh "$CI_COMMIT_SHA"'             # QG-26, QG-30, QG-31, QG-35
+    - '[ "$BUMP" != major ] || scripts/release/check_release_readiness_issue.sh "$CI_COMMIT_TAG"' # QG-32
+
+deploy:production:
+  stage: deploy-production
+  tags: [deploy]
+  needs: [release:resolve, release:readiness]
+  rules:
+    - <<: *if-rel
+      when: manual                      # tag terlindungi → hanya Maintainer yang bisa menjalankan
+      allow_failure: false
+  resource_group: production
+  interruptible: false
+  timeout: 2h
+  environment: { name: production, url: "https://app.<domain>" }
+  script:
+    - scripts/release/four_eyes.sh                                                               # opsional
+    - eval "$(ssh-agent -s)" && ssh-add "$DEPLOY_SSH_KEY"
+    - export SOPS_AGE_KEY_FILE="$SOPS_AGE_KEY"
+    - ansible-playbook -i infra/ansible/inventories/production infra/ansible/playbooks/deploy.yml
+      -e api_image="$API_IMAGE" -e web_image="$WEB_IMAGE" -e app_version="$CI_COMMIT_TAG"
+      -e '{"traffic_steps": [{"weight": 10, "watch_minutes": 10}, {"weight": 100, "watch_minutes": 20}]}'   # QG-33
+
+# … verify:production (smoke, status production-deployed, tag registry vX.Y.Z, GlitchTip release, notifikasi)
+# … rollback:production (manual, Maintainer): ansible-playbook … rollback.yml -e to=previous
 ```
 
-### 17.2 `main.yml`
+### 17.2 Playbook deploy (cuplikan)
 
 ```yaml
-name: main
-on:
-  push:
-    branches: [main, "release/v*"]
+# infra/ansible/playbooks/deploy.yml (ILUSTRATIF)
+- name: Deploy MSP blue/green
+  hosts: app
+  serial: 1
+  vars:
+    msp_root: /opt/msp
+    secrets_root: /run/msp                     # tmpfs (ADR-22)
+  pre_tasks:
+    - name: Verifikasi tanda tangan & SBOM (QG-28)
+      delegate_to: localhost
+      run_once: true
+      changed_when: false
+      ansible.builtin.command: "{{ playbook_dir }}/../../../scripts/deploy/verify_image.sh {{ item }}"
+      loop: ["{{ api_image }}", "{{ web_image }}"]
+    - name: Baca warna aktif
+      ansible.builtin.slurp: { src: "{{ msp_root }}/active_color" }
+      register: active
+    - ansible.builtin.set_fact:
+        color_old: "{{ active.content | b64decode | trim }}"
+        color_new: "{{ 'green' if (active.content | b64decode | trim) == 'blue' else 'blue' }}"
 
-permissions: {}
+  tasks:
+    - block:
+        - name: Secret SOPS → tmpfs (file 0400, tidak lewat env var)
+          ansible.builtin.copy:
+            content: "{{ item.value }}"
+            dest: "{{ secrets_root }}/{{ color_new }}/{{ item.key }}"
+            mode: "0400"
+          loop: "{{ lookup('community.sops.sops', inventory_dir ~ '/secrets/app.sops.yaml') | from_yaml | dict2items }}"
+          no_log: true
 
-concurrency:
-  group: main-build-${{ github.sha }}
-  cancel-in-progress: false
+        - name: Render compose warna baru (image by digest)
+          ansible.builtin.template: { src: compose.app.yml.j2, dest: "{{ msp_root }}/{{ color_new }}/compose.yml", mode: "0644" }
 
-env:
-  AWS_REGION: ap-southeast-3
-  ECR: ${{ vars.ECR_REGISTRY }}          # <shared-account>.dkr.ecr.ap-southeast-3.amazonaws.com
+        - name: Pull image
+          community.docker.docker_compose_v2_pull: { project_src: "{{ msp_root }}/{{ color_new }}" }
 
-jobs:
-  build-api:
-    runs-on: ubuntu-24.04
-    permissions: { contents: read, id-token: write }
-    outputs:
-      image: ${{ steps.out.outputs.image }}
-    steps:
-      - uses: actions/checkout@<sha> # vX.Y.Z
-        with: { persist-credentials: false }
-      - uses: aws-actions/configure-aws-credentials@<sha> # vX.Y.Z
-        with: { role-to-assume: "${{ vars.AWS_ECR_PUSH_ROLE_ARN }}", aws-region: "${{ env.AWS_REGION }}" }
-      - uses: aws-actions/amazon-ecr-login@<sha> # vX.Y.Z
-      - uses: docker/setup-buildx-action@<sha> # vX.Y.Z
-      - id: build
-        uses: docker/build-push-action@<sha> # vX.Y.Z
-        with:
-          context: .
-          file: apps/api/Dockerfile
-          push: true
-          tags: ${{ env.ECR }}/msp-api:sha-${{ github.sha }}     # immutable
-          provenance: mode=max
-          cache-from: type=gha,scope=msp-api
-          cache-to: type=gha,scope=msp-api,mode=max
-          build-args: |
-            GIT_SHA=${{ github.sha }}
-      - id: out
-        run: echo "image=${ECR}/msp-api@${{ steps.build.outputs.digest }}" >> "$GITHUB_OUTPUT"
-      - name: Trivy image gate (QG-26)
-        uses: aquasecurity/trivy-action@<sha> # vX.Y.Z
-        with: { image-ref: "${{ steps.out.outputs.image }}", severity: "CRITICAL,HIGH", ignore-unfixed: true, exit-code: "1" }
-      - uses: anchore/sbom-action@<sha> # vX.Y.Z
-        with: { image: "${{ steps.out.outputs.image }}", format: spdx-json, output-file: sbom-msp-api.spdx.json }
-      - uses: sigstore/cosign-installer@<sha> # vX.Y.Z
-      - name: Sign + attest SBOM (keyless) — hanya setelah gate lolos
-        env: { IMG: "${{ steps.out.outputs.image }}" }
-        run: |
-          cosign sign --yes "$IMG"
-          cosign attest --yes --type spdxjson --predicate sbom-msp-api.spdx.json "$IMG"
+        - name: Migrasi DB (one-off, expand-only, advisory lock)
+          run_once: true
+          community.docker.docker_container:
+            name: "msp-migrate-{{ app_version }}"
+            image: "{{ api_image }}"
+            command: ["alembic", "upgrade", "head"]
+            networks: [{ name: msp-backend }]
+            mounts:
+              - { type: bind, read_only: true, source: "{{ secrets_root }}/{{ color_new }}/database_url_owner", target: /run/secrets/database_url }
+            detach: false
+            cleanup: true
 
-  build-web:
-    # … identik dengan build-api: apps/web/Dockerfile, image msp-web, output `image`
-    runs-on: ubuntu-24.04
-    permissions: { contents: read, id-token: write }
-    outputs: { image: "${{ steps.out.outputs.image }}" }
-    steps: [ { run: "echo dipersingkat" } ]
+        - name: Start warna baru (worker, api, web) dan tunggu healthy
+          community.docker.docker_compose_v2:
+            project_src: "{{ msp_root }}/{{ color_new }}"
+            project_name: "msp-{{ color_new }}"
+            state: present
+            wait: true
+            wait_timeout: 300
 
-  deploy-staging:
-    needs: [build-api, build-web]
-    uses: ./.github/workflows/_deploy-ecs.yml
-    permissions: { contents: read, id-token: write, deployments: write }
-    with:
-      environment: staging
-      api_image: ${{ needs.build-api.outputs.image }}
-      web_image: ${{ needs.build-web.outputs.image }}
-      version: sha-${{ github.sha }}
-      strategy: rolling
+        - name: Drain worker warna lama (SIGTERM, stop_grace_period per pool)
+          ansible.builtin.command: "docker compose -p msp-{{ color_old }} stop {{ worker_services | join(' ') }}"
+          when: color_old != 'none'
 
-  verify-staging:
-    needs: deploy-staging
-    runs-on: ubuntu-24.04
-    environment: staging                     # vars URL & kredensial user sintetis
-    permissions: { contents: read }
-    strategy:
-      fail-fast: false
-      matrix:
-        suite: [smoke, e2e-1, e2e-2, e2e-3, e2e-4, schemathesis, tenant-isolation]
-    steps:
-      # … checkout, setup, lalu: scripts/ci/verify_staging.sh "${{ matrix.suite }}" "${{ vars.API_URL }}" "${{ vars.APP_URL }}"
-      - run: echo "dipersingkat"
+        - name: Canary → promote, dipantau Prometheus (gagal = rescue)
+          ansible.builtin.include_tasks: tasks/shift_traffic.yml     # render dynamic/msp.yml + watch_canary.py
+          loop: "{{ traffic_steps }}"
+          loop_control: { loop_var: step }
 
-  mark-verified:
-    needs: verify-staging
-    runs-on: ubuntu-24.04
-    permissions: { statuses: write }
-    steps:
-      - env: { GH_TOKEN: "${{ github.token }}" }
-        run: >-
-          gh api "repos/${{ github.repository }}/statuses/${{ github.sha }}"
-          -f state=success -f context=staging-verified
-          -f description="Smoke, E2E, Schemathesis, isolasi tenant lulus di staging"
+        - name: Render ulang Traefik tanpa warna lama, lalu hentikan api/web warna lama
+          ansible.builtin.include_tasks: tasks/finalize_color.yml
 
-  notify-failure:
-    needs: [build-api, build-web, deploy-staging, verify-staging]
-    if: failure()
-    runs-on: ubuntu-24.04
-    permissions: { issues: write }
-    steps:
-      - run: echo "buat/ perbarui issue main-red + notifikasi kanal"   # stop-the-line (§5.5)
+        - ansible.builtin.copy: { content: "{{ color_new }}\n", dest: "{{ msp_root }}/active_color" }
+
+      rescue:
+        - name: Kembalikan 100% traffic ke warna lama
+          ansible.builtin.template: { src: traefik-msp.yml.j2, dest: /opt/traefik/dynamic/msp.yml }
+          vars: { traffic: [{ color: "{{ color_old }}", weight: 100 }] }
+        - name: Start ulang worker warna lama
+          ansible.builtin.command: "docker compose -p msp-{{ color_old }} start {{ worker_services | join(' ') }}"
+        - name: Hentikan warna baru
+          community.docker.docker_compose_v2: { project_src: "{{ msp_root }}/{{ color_new }}", state: absent }
+        - ansible.builtin.fail: { msg: "Deploy {{ app_version }} gagal → rollback otomatis ke {{ color_old }}" }
 ```
 
-### 17.3 `release.yml` (+ `release-please.yml`)
+### 17.3 Traefik blue/green & label Compose
 
 ```yaml
-# release-please.yml
-name: release-please
-on:
-  push:
-    branches: [main]
-permissions: {}
-jobs:
-  release-please:
-    runs-on: ubuntu-24.04
-    permissions: { contents: read }
-    steps:
-      - id: app
-        uses: actions/create-github-app-token@<sha> # vX.Y.Z
-        with: { app-id: "${{ vars.RELEASE_APP_ID }}", private-key: "${{ secrets.RELEASE_APP_PRIVATE_KEY }}" }
-      - uses: googleapis/release-please-action@<sha> # vX.Y.Z
-        with:
-          token: ${{ steps.app.outputs.token }}       # token App: Release memicu release.yml
-          config-file: release-please-config.json
-          manifest-file: .release-please-manifest.json
+# /opt/traefik/dynamic/msp.yml — dirender Ansible (file provider, watch: true)
+http:
+  routers:
+    msp-api:
+      rule: "Host(`app.<domain>`) && PathPrefix(`/api`)"     # ADR-25: same-origin
+      entryPoints: [websecure]
+      service: msp-api
+      middlewares: [api-strip-prefix, security-headers]
+      tls: { certResolver: letsencrypt }
+    msp-web:
+      rule: "Host(`app.<domain>`)"
+      entryPoints: [websecure]
+      service: msp-web
+      middlewares: [security-headers]
+      tls: { certResolver: letsencrypt }
+  services:
+    msp-api:
+      weighted:
+        healthCheck: {}
+        services:
+          - { name: api-blue@docker,  weight: 90 }      # langkah canary; hanya warna yang hidup boleh dirujuk
+          - { name: api-green@docker, weight: 10 }
+    msp-web:
+      weighted:
+        healthCheck: {}
+        services:
+          - { name: web-blue@docker,  weight: 90 }
+          - { name: web-green@docker, weight: 10 }
 ```
 
 ```yaml
-# release.yml
-name: release
-on:
-  release:
-    types: [published]
-  workflow_dispatch:
-    inputs:
-      tag: { description: "Tag rilis, mis. v1.4.0", required: true, type: string }
-
-permissions: {}
-
-concurrency:
-  group: release-production
-  cancel-in-progress: false
-
-jobs:
-  resolve:
-    if: startsWith(github.event.release.tag_name || inputs.tag, 'v')     # abaikan design-tokens-v*
-    runs-on: ubuntu-24.04
-    permissions: { contents: read, statuses: read, id-token: write }
-    outputs:
-      sha:       ${{ steps.r.outputs.sha }}
-      bump:      ${{ steps.r.outputs.bump }}         # patch | minor | major
-      api_image: ${{ steps.r.outputs.api_image }}
-      web_image: ${{ steps.r.outputs.web_image }}
-    env:
-      TAG: ${{ github.event.release.tag_name || inputs.tag }}
-    steps:
-      - uses: actions/checkout@<sha> # vX.Y.Z
-        with: { persist-credentials: false, fetch-depth: 0, ref: "${{ env.TAG }}" }
-      - uses: aws-actions/configure-aws-credentials@<sha> # vX.Y.Z
-        with: { role-to-assume: "${{ vars.AWS_ECR_READ_ROLE_ARN }}", aws-region: ap-southeast-3 }
-      - id: r
-        env: { GH_TOKEN: "${{ github.token }}" }
-        run: |
-          SHA="$(git rev-list -n1 "$TAG")"
-          scripts/release/await_status.sh "$SHA" staging-verified 45m      # QG-28
-          scripts/release/resolve_digests.sh "$SHA" >> "$GITHUB_OUTPUT"     # api_image, web_image dari tag sha-<SHA>
-          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
-          echo "bump=$(scripts/release/bump_type.sh "$TAG")" >> "$GITHUB_OUTPUT"
-
-  readiness:
-    needs: resolve
-    runs-on: ubuntu-24.04
-    permissions: { contents: read, security-events: read, issues: read }
-    steps:
-      # … checkout
-      - name: Tidak ada Critical/High terbuka (QG-18, QG-26)
-        env: { GH_TOKEN: "${{ github.token }}" }
-        run: scripts/release/check_open_vulns.sh "${{ needs.resolve.outputs.sha }}"
-      - name: ZAP, k6, ER golden, drill restore (QG-29, QG-30, QG-25, QG-34)
-        if: needs.resolve.outputs.bump != 'patch'
-        run: scripts/release/check_rc_evidence.sh "${{ needs.resolve.outputs.sha }}"
-      - name: Bukti RG-1..RG-7 (QG-31)
-        if: needs.resolve.outputs.bump == 'major'
-        env: { GH_TOKEN: "${{ github.token }}" }
-        run: scripts/release/check_release_readiness_issue.sh "${{ github.event.release.tag_name || inputs.tag }}"
-
-  deploy-production:
-    needs: [resolve, readiness]
-    uses: ./.github/workflows/_deploy-ecs.yml           # job di dalamnya memakai Environment production
-    permissions: { contents: read, id-token: write, deployments: write }
-    with:
-      environment: production
-      api_image: ${{ needs.resolve.outputs.api_image }}
-      web_image: ${{ needs.resolve.outputs.web_image }}
-      version: ${{ github.event.release.tag_name || inputs.tag }}
-      strategy: canary                                  # canary 10% → 100% → bake; rollback via alarm
-
-  post-release:
-    needs: [resolve, deploy-production]
-    runs-on: ubuntu-24.04
-    environment: production
-    permissions: { contents: read, statuses: write, id-token: write }
-    steps:
-      # … smoke production (workspace sintetis), status production-deployed,
-      #   tambah tag ECR vX.Y.Z ke digest yang sama, finalisasi release error tracking, notifikasi
-      - run: echo "dipersingkat"
-```
-
-### 17.4 Reusable deploy `_deploy-ecs.yml`
-
-```yaml
-name: _deploy-ecs
-on:
-  workflow_call:
-    inputs:
-      environment: { type: string, required: true }     # staging | production
-      api_image:   { type: string, required: true }     # <ecr>/msp-api@sha256:...
-      web_image:   { type: string, required: true }
-      version:     { type: string, required: true }
-      strategy:    { type: string, required: true }     # rolling | canary
-
-permissions: {}
-
-jobs:
-  deploy:
-    runs-on: ubuntu-24.04
-    environment:
-      name: ${{ inputs.environment }}                   # production: required reviewers + tag v*
-      url: ${{ vars.APP_URL }}
-    concurrency:
-      group: deploy-${{ inputs.environment }}
-      cancel-in-progress: false
-    permissions: { contents: read, id-token: write, deployments: write }
-    timeout-minutes: 90
-    env:
-      CLUSTER: msp-${{ inputs.environment }}
-      CERT_ID: '^https://github\.com/sadewadee/MesinProspek/\.github/workflows/main\.yml@refs/heads/(main|release/v.+)$'
-    steps:
-      - uses: actions/checkout@<sha> # vX.Y.Z
-        with: { persist-credentials: false }
-      - uses: aws-actions/configure-aws-credentials@<sha> # vX.Y.Z
-        with: { role-to-assume: "${{ vars.AWS_DEPLOY_ROLE_ARN }}", aws-region: ap-southeast-3 }
-      - uses: sigstore/cosign-installer@<sha> # vX.Y.Z
-
-      - name: Verifikasi tanda tangan & SBOM (QG-27)
-        run: |
-          for IMG in "${{ inputs.api_image }}" "${{ inputs.web_image }}"; do
-            cosign verify "$IMG" --certificate-identity-regexp "$CERT_ID" \
-              --certificate-oidc-issuer https://token.actions.githubusercontent.com > /dev/null
-            cosign verify-attestation "$IMG" --type spdxjson --certificate-identity-regexp "$CERT_ID" \
-              --certificate-oidc-issuer https://token.actions.githubusercontent.com > /dev/null
-          done
-
-      - name: Render task definition (api, worker, web, migrate)
-        run: scripts/deploy/render_taskdefs.sh "${{ inputs.environment }}" "${{ inputs.api_image }}" "${{ inputs.web_image }}" "${{ inputs.version }}"
-        # membaca template infra/deploy/taskdefs/*.json + nilai SSM; menulis out/*.json
-
-      - name: Migrasi DB (one-off ECS task, expand-only)
-        run: scripts/deploy/run_oneoff.sh --cluster "$CLUSTER" --taskdef out/migrate.json --command "alembic upgrade head" --timeout 15m
-
-      - name: Deploy worker (rolling + circuit breaker)
-        uses: aws-actions/amazon-ecs-deploy-task-definition@<sha> # vX.Y.Z
-        with: { task-definition: out/worker.json, service: msp-worker, cluster: "${{ env.CLUSTER }}", wait-for-service-stability: true }
-
-      - name: Deploy api
-        uses: aws-actions/amazon-ecs-deploy-task-definition@<sha> # vX.Y.Z
-        with: { task-definition: out/api.json, service: msp-api, cluster: "${{ env.CLUSTER }}", wait-for-service-stability: true }
-        # strategi (rolling/canary + bake + alarm rollback) dikonfigurasi pada service oleh Terraform per env
-
-      - name: Deploy web
-        uses: aws-actions/amazon-ecs-deploy-task-definition@<sha> # vX.Y.Z
-        with: { task-definition: out/web.json, service: msp-web, cluster: "${{ env.CLUSTER }}", wait-for-service-stability: true }
-
-      - name: Deployment marker & catatan digest
-        if: always()
-        run: scripts/deploy/mark_deployment.sh "${{ inputs.environment }}" "${{ inputs.version }}" "${{ job.status }}"
+# compose.app.yml.j2 (cuplikan) — satu project per warna: msp-blue / msp-green
+services:
+  api:
+    image: "{{ api_image }}"
+    command: ["uvicorn", "msp.app.api:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
+    deploy: { replicas: 2 }
+    environment: { MSP_ENV: "{{ msp_env }}", MSP_APP_VERSION: "{{ app_version }}", MSP_COLOR: "{{ color_new }}" }
+    secrets: [database_url, redis_url, webhook_keyring]
+    networks: [edge, backend]
+    labels:
+      - traefik.enable=true
+      - traefik.http.services.api-{{ color_new }}.loadbalancer.server.port=8000
+      - traefik.http.services.api-{{ color_new }}.loadbalancer.healthcheck.path=/readyz
+      - traefik.http.services.api-{{ color_new }}.loadbalancer.healthcheck.interval=5s
+  worker-pipeline:
+    image: "{{ api_image }}"
+    command: ["dramatiq", "msp.app.worker", "--queues", "pipeline"]
+    stop_grace_period: 15m          # selesaikan pesan in-flight; job panjang resumable (ADR-06)
+    secrets: [database_url_pipeline, redis_url]
+    networks: [backend]
+secrets:
+  database_url: { file: "/run/msp/{{ color_new }}/database_url" }
+  # … redis_url, webhook_keyring, database_url_pipeline
 ```
 
 ---
 
 ## 18. Checklist bootstrap
 
-Urutan menyiapkan CI/CD dari nol. Setiap langkah menghasilkan artefak di repo atau di Terraform, kecuali yang ditandai *(manual)*.
+Urutan menyiapkan CI/CD dari nol. Setiap langkah menghasilkan artefak di repo, kecuali yang ditandai *(manual)*.
 
-1. *(manual)* Pindahkan repo ke **GitHub Organization** dan pastikan plan mendukung fitur di tabel prasyarat di bawah. Buat tim: `web`, `backend`, `data-intel`, `platform`, `design`, `product`, `qa`, `security`, `api-owners`.
-2. *(manual)* Setelan repo: squash merge saja, judul PR sebagai default pesan commit, auto-delete branch, nonaktifkan merge commit & rebase merge, aktifkan secret scanning + push protection, Dependabot alerts (sumber data alert), dan code scanning.
-3. Commit fondasi: `.github/CODEOWNERS`, `.github/pull_request_template.md`, `.editorconfig`, `.env.example`, `.gitignore`, `release-please-config.json`, `.release-please-manifest.json` (mulai `0.1.0`), `renovate.json`, `.squawk.toml`, `.spectral.yaml`, `.markdownlint-cli2.yaml`, `lychee.toml`.
-4. Buat **ruleset** `main` dan ruleset tag (§2.5). Status check wajib diisi setelah langkah 9, karena check harus pernah berjalan dulu.
-5. *(manual)* Buat **AWS Organization** dengan akun `msp-shared`, `msp-staging`, `msp-production`. Buat bucket state Terraform (bootstrap kecil, sekali jalan) dan IAM Identity Center + MFA untuk akses manusia.
-6. Terraform `envs/shared`: OIDC provider GitHub, ECR `msp-api`/`msp-web` (tag immutable, scan on push), bucket evidence, role `gha-ecr-push`.
-7. Terraform `envs/staging` lalu `envs/production`: network, ECS, RDS (PostGIS), ElastiCache, S3, Secrets Manager/SSM, observability + alarm, role OIDC per tujuan (§12.1), role DB (`msp_migrator`, `msp_app`, `msp_readonly`).
-8. **GitHub Environments**: `staging`, `production` (required reviewers, tag `v*`), `staging-infra`, `production-infra` (reviewers), `data-staging`, `data-production` (reviewers), `model-production` (data-intel + product), `ai-eval` (secret API key LLM). Isi variables: ARN role, `APP_URL`, `API_URL`, `ECR_REGISTRY`.
-9. Workflow pertama: `pr.yml` (dimulai dengan `changes`, lint, test, security, `ci-ok`), `codeql.yml`, `workflow-lint` (actionlint + zizmor). Buka PR uji → aktifkan required checks `ci-ok`, `CodeQL`, `pr-title`.
-10. Aktifkan **merge queue** pada ruleset `main` dan tambahkan trigger `merge_group` (sudah ada di `pr.yml`).
-11. Buat GitHub App **release** (izin contents + pull requests) → simpan private key sebagai secret → `release-please.yml`.
-12. `main.yml` + `_deploy-ecs.yml`: build, scan, SBOM, sign, deploy staging, verifikasi, `staging-verified`.
-13. `release.yml` + `rollback.yml`. Lakukan **rilis uji** `v0.1.0` ke production (halaman kosong/health saja), termasuk uji rollback.
-14. `infra.yml` (plan di PR, apply dengan approval) + drift detection.
-15. Renovate self-hosted (`renovate.yml`, token GitHub App terpisah dengan izin minimal) + Dependency Dashboard.
-16. `nightly.yml` bertahap: regresi penuh → ZAP → k6 (ECS task) → data quality → rescan image → Lighthouse.
-17. `restore-drill`: jalankan sekali secara manual sebelum menjadwalkannya.
-18. Flag registry + kill switch + job `flag-hygiene`.
-19. Integrasi observability: marker deploy, release error tracking, dashboard DORA & kesehatan CI.
-20. Dokumentasikan runbook (deploy, rollback, incident + hook PDP, drill) dan latih on-call sebelum closed beta.
-
-**Prasyarat platform GitHub (perlu diverifikasi terhadap plan aktual):**
-
-| Fitur | Dipakai untuk | Ketersediaan untuk repo privat (dokumentasi GitHub saat penulisan) | Fallback |
-|---|---|---|---|
-| Teams / CODEOWNERS tim | §2.3 | Butuh Organization | Username individual |
-| Merge queue | §2.6 | Organization + plan Enterprise Cloud untuk repo privat | Require up-to-date + auto-merge |
-| Environment required reviewers | §6.2, §11, §10 | Plan berbayar. Beberapa protection rule untuk repo privat hanya di Enterprise | Workflow dispatch terbatas + approval via Release PR. Two-person rule ditegakkan lewat review. |
-| Code scanning (CodeQL), dependency review | QG-18, QG-19 | GitHub Code Security (add-on) | Semgrep CE + Trivy + osv-scanner |
-| Secret scanning + push protection | QG-17 | GitHub Secret Protection (add-on) | gitleaks di CI + pre-commit |
-| Artifact attestations | §15.3 | Repo privat butuh Enterprise Cloud | Provenance BuildKit + cosign (default dokumen ini) |
+1. *(manual)* Kontrak dedicated server di DC Indonesia (Q-CI-04): `ops-01`, `ci-01`, `stg-01`, `app-01`, `db-01`, `db-02`, `stor-01`; VLAN privat; IP publik untuk `app-01` dan `ops-01`; penyimpanan off-site S3-compatible di lokasi lain di Indonesia. Pasang OS dengan LUKS.
+2. *(manual)* Buat kunci age per environment + kunci Maintainer (salinan offline), kunci SSH deploy, dan key pair cosign (`cosign generate-key-pair`). Commit kunci publik ke `infra/keys/`.
+3. Commit `infra/ansible` (inventory, role `base`, `users`, `firewall`, `wireguard`, `luks_unlock`) + `.sops.yaml`. Jalankan `site.yml` pertama dari laptop Maintainer via IP publik **sekali saja**, lalu tutup SSH publik. Selanjutnya semua akses lewat WireGuard.
+4. Role `gitlab` di `ops-01` (Omnibus, ACME DNS-01 atau CA internal, registry aktif, sign-up nonaktif, 2FA wajib, backup harian) + role `monitoring_stack`.
+5. Buat grup `msp`, proyek `MesinProspek` (private), tim/subgroup untuk CODEOWNERS (`web`, `backend`, `data-intel`, `platform`, `design`, `product`, `qa`, `security`, `api-owners`). Pindahkan repo (Q-CI-01).
+6. **Verifikasi tier** fitur CE yang dipakai (§1.3): protected runners, environment-scoped variables, server hooks, cleanup policies, project access tokens.
+7. Role `gitlab_runner` di `ci-01` (runner `ci-docker` & `ci-build`, cache S3 ke MinIO lokal, `allowed_images`) dan di `ops-01` (runner `deploy`, *protected*, tag `deploy`).
+8. `scripts/bootstrap/gitlab_settings.py`: protected branch/tag (§2.5), fast-forward + squash, template squash, merge checks, cleanup policy registry, server hook gitleaks.
+9. CI/CD variables (§12.2) dengan scope environment. Bot user: rilis (Maintainer), Renovate, `mr:gate` (Reporter). Token berkedaluwarsa.
+10. Commit fondasi repo: `.gitlab/CODEOWNERS`, `.gitlab/merge_request_templates/Default.md`, `.editorconfig`, `.env.example`, `.gitignore`, `commitlint.config.js`, `tools/release/` (semantic-release), `renovate.json`, `.squawk.toml`, `.spectral.yaml`, `.semgrep/`, `.markdownlint-cli2.yaml`, `lychee.toml`, `ci/images/tools/Dockerfile`.
+11. Pipeline pertama: build image `ci-tools`, lalu `.gitlab-ci.yml` MR (lint, test, security, `mr:gate`). Uji pada MR percobaan, termasuk pemblokiran merge oleh `mr:gate`.
+12. Provision `stg-01` (role `docker`, `traefik`, `msp_app`, Postgres/Redis/MinIO staging) → job `main`: build, scan, sign, `deploy:staging`, verifikasi, `staging-verified`.
+13. Provision production: `db-01`/`db-02` (role `postgres`, replikasi, PgBouncer, `pgbackrest` ke `stor-01` + off-site), `stor-01` (MinIO + replikasi), `app-01` (Traefik, `msp_app`), `monitoring_agent` di semua host.
+14. `release:cut` + pipeline tag `v*`. Rilis uji `v0.1.0` ke production (halaman health saja), termasuk uji rollback dan uji rescue canary (paksa gagal).
+15. `ci/infra.yml` (check/diff + apply staging + tag `infra-*`) dan schedule `drift`, `backup-check`.
+16. Schedule `nightly` bertahap: regresi penuh → ZAP → k6 → data quality → rescan → Lighthouse. Lalu `renovate` dan `weekly`.
+17. Drill restore pertama secara manual di `dr-01`, baru kemudian dijadwalkan bulanan.
+18. Flag registry + kill switch + laporan flag hygiene. Unit `msp-rehydrate` + trigger token.
+19. Observability: anotasi deploy, release GlitchTip, dashboard SLO, DORA, CI health, probe eksternal + watchdog.
+20. Runbook (deploy, rollback, failover DB, rehydrate, incident + hook PDP, drill) dan latihan on-call sebelum closed beta.
 
 ---
 
@@ -1572,13 +1635,14 @@ ID `Q-CI-nn` bersifat lokal di dokumen ini. Setelah diputuskan, keputusan dipind
 
 | ID | Pertanyaan | Default sementara | Dampak |
 |---|---|---|---|
-| Q-CI-01 | Plan GitHub dan kepemilikan repo (akun personal vs Organization; Team vs Enterprise Cloud; add-on Code Security/Secret Protection)? | Organization + plan yang mendukung merge queue dan environment reviewers. Bila tidak, pakai fallback §18. | Merge queue, approval production, CodeQL, push protection |
-| Q-CI-02 | Vendor cloud final. D-14 menetapkan region Jakarta, AWS ap-southeast-3 baru diusulkan. Ketersediaan fitur ECS (strategi canary/blue-green bawaan) dan layanan lain di region ini perlu dikonfirmasi. | AWS ap-southeast-3 | Seluruh §3, §5–§7, §11, §12 |
-| Q-CI-03 | Vendor observability & error tracking (managed OTel backend, Sentry SaaS vs self-hosted). Residensi data telemetry: apakah log/trace (sudah diredaksi) boleh disimpan di luar Indonesia? | Alarm rollback di CloudWatch (vendor-agnostik). Error tracking dengan scrubbing PII. | §6.3, §16, NFR-PRIV-03 |
-| Q-CI-04 | Signing keyless (identitas workflow tercatat di transparency log publik) vs kunci KMS? | Keyless | §15.3 |
-| Q-CI-05 | Preview environment: kapan dibutuhkan, dan dalam bentuk apa (web + MSW vs namespace staging)? | Ditunda (§3.2) | Kecepatan review UI |
-| Q-CI-06 | Lisensi dataset: apakah subset boleh dipakai di staging dan untuk eval AI (Q-05)? | Hanya sintetis sampai dikonfirmasi | Kualitas rehearsal §10.2, QG-25 penuh |
-| Q-CI-07 | Ukuran tim dan rotasi on-call: siapa reviewer Environment production dan penerima alert di luar jam kerja? | Tech lead + 1 engineer senior | §6.2, §14.5 |
-| Q-CI-08 | Nama domain production/staging dan penyedia DNS/sertifikat | `<domain>` placeholder. ACM + Route 53 | URL §3.1, CORS, callback auth |
-| Q-CI-09 | Penyedia managed auth (FR-AUTH-001): dukungan tenant dev/staging terpisah dan mode stub untuk CI | Tenant terpisah per environment. Stub hanya di local/CI | §3.3, E2E |
-| Q-CI-10 | Threshold QG-33 (validasi snapshot) dan alarm DLQ/latency awal | Nilai default di §6.3 dan §10.2 | Kalibrasi setelah Q-01/Q-02 dan 4 minggu data beta |
+| Q-CI-01 | Apakah source code **pindah penuh** dari GitHub ke GitLab, atau GitHub tetap ada sebagai mirror? | **GitLab primary.** Mirror push ke GitHub opsional (read-only, tanpa CI) bila dibutuhkan untuk akses pihak luar | §2, §15, README |
+| Q-CI-02 | Tetap di GitLab CE, atau beli GitLab Premium (approval rules, Code Owners, merge trains, protected environments)? | CE + mitigasi §1.3. Ditinjau ulang saat tim ≥ 6 engineer | §2.3, §2.6, §6.2 |
+| Q-CI-03 | Alternatif CI yang lebih ringan (Forgejo + Actions, Woodpecker) bila beban operasional GitLab terlalu besar | GitLab CE | §1.4 |
+| Q-CI-04 | Provider DC dan lokasi off-site (keduanya di Indonesia, kota/provider berbeda). SLA penggantian hardware dan ketersediaan `dr-01` (server cadangan vs sewa per jam) | Jakarta (utama) + lokasi kedua di Indonesia | RTO skenario kehilangan DC (§11.6), D-14 |
+| Q-CI-05 | Kapan `app-02` + VIP (keepalived/VRRP atau LB provider) ditambahkan? Kapan failover DB otomatis (Patroni)? | `app-02` sebelum paid GA. Patroni saat ada node DB ketiga | NFR-AVAIL-01 (99,5%), §6.3 |
+| Q-CI-06 | Kanal alert on-call (chat/WhatsApp/telepon) dan lokasi probe eksternal | Chat + email. Probe di VPS lokasi lain | §16.1 |
+| Q-CI-07 | Siapa Maintainer (berhak deploy production) dan rotasi on-call di luar jam kerja? | Tech lead + 1 engineer senior | §2.5, §6.2, §14.5 |
+| Q-CI-08 | Nama domain dan penyedia DNS (DNS-01 untuk GitLab internal, Let's Encrypt untuk `app.<domain>`) | `<domain>` placeholder | §3.1, §17.3 |
+| Q-CI-09 | Lisensi dataset: apakah subset boleh dipakai di staging dan eval AI (Q-05)? | Hanya sintetis sampai dikonfirmasi | §10.2, QG-26 penuh |
+| Q-CI-10 | Apakah SOPS + GitLab variables cukup untuk NFR-SEC-04 ("secret hanya di secret manager"), atau perlu OpenBao/Vault? | Cukup untuk MVP. OpenBao dievaluasi di V1 (ADR-22) | §12 |
+| Q-CI-11 | Threshold QG-34 dan alarm canary (DLQ, latency) awal | Nilai default §6.3 & §10.2 | Kalibrasi setelah Q-01/Q-02 + 4 minggu data beta |

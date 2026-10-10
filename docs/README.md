@@ -14,9 +14,12 @@ Dokumentasi produk & engineering untuk **MesinProspek — Sales Intelligence Eng
 | 03 | [UX spec](03-ux-spec.md) | Design, Frontend, Product | Information architecture, user flow, spesifikasi layar dan state, copy |
 | 04 | [Technical design](04-technical-design.md) | Engineering | Arsitektur, Input Contract, data model, pipeline, scoring, API & event, keamanan |
 | 05 | [Test strategy & plan](05-test-strategy.md) | QA, Engineering | Strategi, level test, test case, edge case, traceability, entry/exit criteria |
-| 06 | [CI/CD](06-ci-cd.md) | Engineering, DevOps | Branching, pipeline, quality gate, environment, deployment, migrasi, rollback |
+| 06 | [CI/CD](06-ci-cd.md) | Engineering, DevOps | Branching, pipeline GitLab CI, quality gate, environment, deployment, migrasi, rollback |
+| 07 | [Delivery plan](07-delivery-plan.md) | Founder, Product, Tech lead | Roadmap, epic & backlog ber-ID, rencana sprint MVP 0/MVP 1, milestone, DoR/DoD, RACI |
+| 08 | [Engineering standards](08-engineering-standards.md) | Engineering | Standar kode Go & Next.js, struktur repo, kontrak API, DB & migrasi, error/logging, keamanan, code review |
+| 09 | [Runbook operasional](09-runbook-operasional.md) | DevOps, Ops, Engineering | Deploy & rollback, backup/restore, alert playbook, insiden & notifikasi PDP, operasi data |
 
-**Urutan baca:** 00 → 01 → (02, 03) untuk design/frontend, atau (04, 05, 06) untuk engineering.
+**Urutan baca:** 00 → 01 → (02, 03) untuk design/frontend, (04, 05, 06, 08) untuk engineering, 07 untuk perencanaan, 09 untuk operasi.
 
 **Dokumen sumber (di luar repo):** *Sellable MVP Documentation Pack v1.2 — Intelligence Domains* (baseline produk) dan *MSP Website Acquisition & Crawler Engine Spec v1.0* (PAUSED).
 
@@ -38,20 +41,20 @@ Dokumentasi produk & engineering untuk **MesinProspek — Sales Intelligence Eng
 
 ## Konvensi teknis (Proposed, berlaku untuk semua dokumen)
 
-Ringkasan default dari D-11, D-12, D-14, D-18, D-19 beserta pilihan tooling. Detail dan alasannya ada di `04-technical-design.md` (ADR) dan `06-ci-cd.md`.
+Ringkasan default dari D-11, D-12, D-14, D-18, D-19, D-21 beserta pilihan tooling. Detail dan alasannya ada di `04-technical-design.md` (ADR) dan `06-ci-cd.md`.
 
 | Area | Pilihan |
 |---|---|
 | Repo | Monorepo. Host kode + CI + registry: **GitLab CE self-hosted** (D-18). Repo GitHub saat ini dapat di-mirror (Q-08). |
-| Frontend | Next.js (App Router) + TypeScript (strict), Tailwind CSS yang membaca design tokens, komponen di atas Radix primitives, TanStack Query |
-| Backend | Python 3.13, FastAPI, Pydantic v2, SQLAlchemy 2 + Alembic, psycopg 3. Modular monolith (D-11) |
-| Worker | Dramatiq + Redis (retry, backoff, DLQ) |
+| Frontend | Next.js (App Router) + TypeScript (strict), Tailwind CSS yang membaca design tokens, komponen di atas Radix primitives, TanStack Query. Next.js hanya untuk UI. API Go disajikan di origin yang sama (`/api`) lewat Traefik. Client TS di-generate dari OpenAPI (openapi-typescript + openapi-fetch) |
+| Backend | **Go** (D-21; versi stabil terbaru, minimal 1.26). Satu binary `cmd/msp` dengan subcommand `api`, `worker`, `migrate`. `net/http` + **oapi-codegen** (contract-first), **pgx v5 + sqlc**, migrasi **goose**, log `slog` JSON. Modular monolith (D-11) dengan batas modul via `internal/` + `depguard` |
+| Worker & antrean | **River** (antrean berbasis Postgres: retry, backoff, unique job, periodic job, enqueue transaksional, sekaligus outbox event/webhook). Redis hanya untuk cache, rate limit, dan counter fair-use |
 | Database | PostgreSQL 16+ dengan PostGIS, `pg_trgm`, `unaccent`. Full-text search Postgres (MVP) |
 | Storage | S3-compatible: **MinIO** self-hosted (export, upload, raw snapshot) |
 | Kontrak | OpenAPI 3.1 (`contracts/openapi/`), JSON Schema untuk event, webhook, dan Input Contract (`contracts/events/`, `contracts/input/`) |
 | JS tooling | Node 24 LTS, pnpm workspaces, Turborepo, ESLint, Prettier |
-| Python tooling | uv, ruff (lint + format), mypy |
-| Test | pytest, Hypothesis, Schemathesis, Vitest + Testing Library, Playwright + axe-core, k6 |
+| Go tooling | gofmt/goimports, golangci-lint (termasuk gosec, staticcheck, depguard), govulncheck, sqlc, oapi-codegen. Build `CGO_ENABLED=0` → image distroless/static |
+| Test | `go test` (+ `-race`, fuzzing native), rapid (property-based), golden file, Schemathesis, Vitest + Testing Library, Playwright + axe-core, k6 |
 | CI/CD | **GitLab CI** (runner Docker self-hosted), GitLab Container Registry. Deploy staging → production via job manual pada tag rilis terproteksi. **Tanpa GitHub** (D-18). |
 | Hosting | **Dedicated server** di data center Indonesia (D-19): Docker Compose di belakang Traefik, PostgreSQL + PostGIS self-managed (replika + pgBackRest PITR), Redis, MinIO. Provisioning dengan Ansible. Secret: SOPS + age. |
 | Observability | OpenTelemetry → Prometheus/Grafana/Loki/Tempo (self-hosted), log JSON terstruktur, error tracking GlitchTip (kompatibel Sentry SDK) |
@@ -63,7 +66,7 @@ Ringkasan default dari D-11, D-12, D-14, D-18, D-19 beserta pilihan tooling. Det
 MesinProspek/
 ├─ apps/
 │  ├─ web/                 Next.js (UI customer + ops console)
-│  └─ api/                 Paket Python `msp`: API FastAPI + entrypoint worker
+│  └─ api/                 Go module: cmd/msp (api|worker|migrate), internal/<modul>, db/migrations, db/queries
 ├─ packages/
 │  ├─ design-tokens/       Sumber: docs/02-design-system/tokens → build CSS/Tailwind/TS
 │  ├─ ui/                  Komponen React

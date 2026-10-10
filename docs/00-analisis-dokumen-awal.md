@@ -143,7 +143,7 @@ Status: **Proposed** = default yang dipakai dokumen lanjutan sampai dikonfirmasi
 | D-09 | Plan | Starter (≈ paket Prospect), Growth (≈ Intelligence + Workflow), Agency, Enterprise. Harga di luar dokumen ini. | — | Billing | Proposed |
 | D-10 | Integrasi CRM | MVP 1: webhook + export. V1: satu CRM (kandidat ditentukan dari survei customer beta). | CRM di MVP | Scope | Proposed |
 | D-11 | Arsitektur | **Modular monolith** (satu codebase backend dengan modul sesuai service boundary §11) + worker terpisah. Pecah menjadi service hanya bila ada alasan skala. | 6 microservice | Ops, CI/CD | Proposed |
-| D-12 | Stack | Sesuai MVP Pack §11 (Next.js + TS, FastAPI, PostgreSQL, Redis worker, Postgres FTS, S3-compatible), ditambah **PostGIS** untuk geo. Detail tool di SDD. | OpenSearch sejak awal | Infra | Proposed |
+| D-12 | Stack data | PostgreSQL + **PostGIS** + Postgres FTS/pg_trgm (tanpa OpenSearch di MVP), storage S3-compatible. Bahasa backend: lihat D-21. | OpenSearch sejak awal | Infra | Proposed |
 | D-13 | Kode wilayah kanonik | Kode **Kemendagri** (Kepmendagri kode & data wilayah terbaru), plus crosswalk ke kode BPS bila sumber populasi memakai kode BPS. Setiap metrik populasi wajib menyimpan periode referensi. | Kode BPS | Geo | Proposed |
 | D-14 | Residensi data | Semua penyimpanan utama (DB, storage, backup utama) di **data center Indonesia**. Backup off-site juga di Indonesia. Panggilan AI hanya membawa data level company, tidak membawa nilai kontak pribadi. | Luar negeri | Kepatuhan, infra | Proposed |
 | D-15 | Penyedia AI | Abstraksi provider. Default diusulkan: model Claude (kelas Sonnet untuk brief, kelas Haiku untuk klasifikasi). | Provider lain | Biaya, eval | Open |
@@ -152,6 +152,7 @@ Status: **Proposed** = default yang dipakai dokumen lanjutan sampai dikonfirmasi
 | D-18 | Platform CI/CD & host kode | **Tanpa GitHub** (arahan founder). Default: **GitLab CE self-hosted** (Git, merge request, GitLab CI, Container Registry, runner Docker di server CI terpisah). | Forgejo/Gitea + Actions, Woodpecker, Jenkins | CI/CD | **Accepted** (tanpa GitHub) / Proposed (GitLab CE) |
 | D-19 | Hosting & runtime | **Dedicated server** (arahan founder). Default: Docker Compose + Traefik (blue/green), PostgreSQL + PostGIS bare-metal dengan replika streaming + pgBackRest, Redis, MinIO, Ansible untuk provisioning, SOPS + age untuk secret, monitoring self-hosted. | Docker Swarm / k3s saat > 2 app server | Infra, CI/CD, SDD | **Accepted** (dedicated) / Proposed (stack) |
 | D-20 | Identity provider | Disarankan self-hosted (**Ory Kratos**: verifikasi email, login Google via OIDC, TOTP MFA) agar data identitas user tetap di Indonesia. Aplikasi dibuat provider-agnostic. | Managed OIDC SaaS, Keycloak | Auth, kepatuhan | Open |
+| D-21 | Bahasa backend | **Go** untuk API dan worker, **Next.js + TypeScript** untuk UI (keputusan founder). Menggantikan FastAPI/Python di MVP Pack §11. Alasan: pipeline data jutaan baris, query SQL/PostGIS berat (sqlc), worker konkuren, efisiensi resource di dedicated server. Python boleh dipakai offline (notebook) untuk kalibrasi model kelak, di luar service. | NestJS + Next.js; Python + Next.js | Semua dokumen engineering | **Accepted** |
 
 ---
 

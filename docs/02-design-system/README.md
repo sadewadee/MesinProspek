@@ -7,7 +7,7 @@
 | Tanggal | 2026-10-10 |
 | Basis | `01-prd.md` (BR-TRUST, BR-VER, BR-SCORE, NFR-A11Y-01, NFR-L10N-01, FR-GEO-009) |
 | Audience | Design, Frontend, QA |
-| File | `tokens/design-tokens.json` (sumber kebenaran, DTCG) · `tokens/tokens.css` (hasil build) · `tokens/build.py` (build + validasi kontras) |
+| File | `tokens/design-tokens.json` (sumber kebenaran, DTCG) · `tokens/tokens.css` (hasil build) · `tokens/build.mjs` (build + validasi kontras, Node tanpa dependency) |
 
 > **Brand masih placeholder (D-17).** Warna `accent` (indigo) dipakai sementara sampai identitas visual final. Mengganti brand cukup dilakukan di token `color.accent.*` dan `base.color.*`. Nama token semantik tidak berubah sehingga komponen tidak perlu disentuh.
 
@@ -58,12 +58,12 @@ Pemilihan tema:
 ### 2.3 Build & validasi
 
 ```bash
-python3 docs/02-design-system/tokens/build.py           # tulis tokens.css + cek kontras
-python3 docs/02-design-system/tokens/build.py --check   # CI: gagal bila CSS basi atau kontras gagal
-python3 docs/02-design-system/tokens/build.py --report  # tabel kontras lengkap (markdown)
+node docs/02-design-system/tokens/build.mjs           # tulis tokens.css + cek kontras
+node docs/02-design-system/tokens/build.mjs --check   # CI: gagal bila CSS basi atau kontras gagal
+node docs/02-design-system/tokens/build.mjs --report  # tabel kontras lengkap (markdown)
 ```
 
-`build.py` adalah implementasi referensi (stdlib Python). Saat `packages/design-tokens` dibuat (Style Dictionary → CSS, preset Tailwind, TS), **kontrak output tetap sama**: nama CSS variable identik dan semua pasangan kontras lolos. CI menjalankan `--check` sebagai quality gate (lihat `06-ci-cd.md`).
+`build.mjs` adalah implementasi referensi (Node, tanpa dependency; toolchain frontend sudah memakai Node). Saat `packages/design-tokens` dibuat (Style Dictionary → CSS, preset Tailwind, TS), **kontrak output tetap sama**: nama CSS variable identik dan semua pasangan kontras lolos. CI menjalankan `--check` sebagai quality gate (lihat `06-ci-cd.md`).
 
 ### 2.4 Versioning token
 | Perubahan | Versi |
@@ -271,7 +271,7 @@ export default {
 
 ## 8. Aksesibilitas: hasil validasi kontras
 
-`build.py` memeriksa **90 pasangan** (45 pasangan × 2 mode). Teks memakai ambang 4,5:1 dan elemen UI non-teks 3:1. Hasil saat ini: **90/90 lolos**. Rasio terendah:
+`build.mjs` memeriksa **90 pasangan** (45 pasangan × 2 mode). Teks memakai ambang 4,5:1 dan elemen UI non-teks 3:1. Hasil saat ini: **90/90 lolos**. Rasio terendah:
 
 | Pasangan | Mode | Rasio | Min |
 |---|---|---|---|
@@ -295,5 +295,5 @@ Aturan tambahan:
 | D-17 | Brand final (warna aksen, logo, mungkin font display) | Open. Token `accent` placeholder. |
 | DS-01 | Set ikon: Lucide diusulkan (ISC) | Proposed |
 | DS-02 | Basemap peta & gaya peta dasar | Menunggu Q-05 (lisensi dataset) |
-| DS-03 | Migrasi `build.py` → `packages/design-tokens` (Style Dictionary v4) dengan kontrak output yang sama | Saat bootstrap monorepo |
+| DS-03 | Migrasi `build.mjs` → `packages/design-tokens` (Style Dictionary v4) dengan kontrak output yang sama | Saat bootstrap monorepo |
 | DS-04 | Ilustrasi empty state | Setelah brand final |

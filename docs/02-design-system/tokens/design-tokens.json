@@ -1,5 +1,5 @@
 {
-  "$description": "MesinProspek design tokens v0.1.0 — format DTCG (nilai warna hex, dimensi string px). Sumber kebenaran; build CSS dengan build.py.",
+  "$description": "MesinProspek design tokens v0.1.0 — format DTCG (nilai warna hex, dimensi string px). Sumber kebenaran; build CSS dengan build.mjs.",
   "base": {
     "$description": "Primitive tokens. Jangan dipakai langsung di komponen; pakai token semantik.",
     "color": {
