@@ -157,6 +157,21 @@ MesinProspek adalah platform **sales intelligence multi-tenant** untuk penjual B
 
 \* Bisa dibatasi Admin melalui pengaturan "Member boleh export" (default: aktif).
 
+#### 8.1.2 Peran internal (ops MesinProspek)
+
+Semua akun internal wajib MFA (FR-AUTH-006) dan setiap aksi tercatat di audit (FR-AUD-001). Satu orang boleh memegang lebih dari satu peran.
+
+| Permission | Ops Engineer (on-call) | Data Steward | Privacy & Billing | Ops Admin |
+|---|:-:|:-:|:-:|:-:|
+| Lihat dashboard data/pipeline/intelligence/cost | ✓ | ✓ | ✓ | ✓ |
+| Feature flag & kill switch, redrive DLQ | ✓ | — | — | ✓ |
+| Merge review, koreksi data (FR-OPS-009), triase laporan data | — | ✓ | — | ✓ |
+| Review laporan validasi snapshot (publish via pipeline rilis data, `06`) | — | ✓ | — | ✓ |
+| Suppression & permintaan subjek data | — | — | ✓ | ✓ |
+| Grant/refund credit, ubah plan | — | — | ✓ | ✓ |
+| Akses support read-only ke data tenant (dengan alasan) | ✓ | ✓ | ✓ | ✓ |
+| Kelola akun & peran internal | — | — | — | ✓ |
+
 ### 8.2 DATA — Fondasi data & pipeline
 
 | ID | Requirement | Pri | Rel | Acceptance (ringkas) |
@@ -172,7 +187,7 @@ MesinProspek adalah platform **sales intelligence multi-tenant** untuk penjual B
 | FR-DATA-009 | Penetapan area: setiap Establishment dipetakan ke kelurahan/desa melalui point-in-polygon (bila ada batas) atau pencocokan alamat, dengan `geo_confidence`. | P0 | MVP0 | ≥ 90% establishment ber-koordinat terpetakan ke kelurahan. |
 | FR-DATA-010 | Digital presence lite: klasifikasi nilai website (domain sendiri / subdomain platform gratis / profil sosial / link aggregator / link pesan / tidak ada) dan klasifikasi email (domain sendiri / webmail gratis). | P0 | MVP0 | Unit test klasifikasi lulus untuk daftar pola (SDD). |
 | FR-DATA-011 | Identifikasi penyedia dari DNS: host MX → penyedia email (mis. Google Workspace, Microsoft 365) dan include SPF → tool email marketing. Memakai cache DNS yang sama dengan pengecekan MX untuk status verifikasi di FR-DATA-005 (FR-DATA-005 hanya menentukan ada/tidaknya MX). | P1 | MVP1 | Hasil DNS di-cache dengan TTL dan dicatat sebagai evidence. |
-| FR-DATA-012 | **Upload customer** CSV/XLSX (≤ 50.000 baris per file di MVP 1): mapping kolom, preview validasi, proses async, pencocokan ke entity global (link, bukan merge), laporan match-rate. Data upload privat untuk workspace. Baris yang tidak cocok dengan entity global menjadi **prospek privat** workspace: tampil di search workspace tersebut dengan label "Dari upload Anda" dan dinilai dengan aturan yang sama. | P0 | MVP1 | Data upload tidak pernah terbaca workspace lain. Laporan menampilkan matched/new/rejected. |
+| FR-DATA-012 | **Upload customer** CSV/XLSX (≤ 50.000 baris per file di MVP 1): mapping kolom, preview validasi, proses async, pencocokan ke entity global (link, bukan merge), laporan match-rate. Data upload privat untuk workspace. Baris yang tidak cocok dengan entity global menjadi **prospek privat** workspace: tampil di search workspace tersebut dengan label "Dari upload Anda" dan dinilai dengan aturan yang sama. Kandidat **"mungkin cocok"** (skor 0,80–0,92, BR-ER-04) ditampilkan untuk dikonfirmasi user (tautkan / jadikan prospek privat); tanpa konfirmasi diperlakukan sebagai prospek privat. | P0 | MVP1 | Data upload tidak pernah terbaca workspace lain. Laporan menampilkan matched/new/rejected. |
 | FR-DATA-013 | Diff antar snapshot → change record (input untuk signal). | P1 | V1 | Change record merujuk kedua snapshot. |
 | FR-DATA-014 | User dapat melaporkan data salah ("Laporkan data") dari profil. Laporan masuk antrean ops. | P0 | MVP1 | Laporan tercatat dengan claim yang dirujuk. |
 
@@ -316,7 +331,7 @@ MesinProspek adalah platform **sales intelligence multi-tenant** untuk penjual B
 | FR-AUD-001 | **Audit log immutable** untuk login, perubahan role, export, unlock, konfigurasi webhook/API key, suppression, keputusan merge, grant credit, dan akses support. Setiap entri memuat aktor, waktu, IP, dan target. | P0 | MVP1 | MVP-13. Tidak ada endpoint update/delete audit. |
 | FR-AUD-002 | Penampil audit log untuk Owner/Admin. | P1 | MVP1 | — |
 | FR-AUD-003 | **Suppression list** global (dikelola ops): person/contact point ter-suppress hilang dari search, profil, export, dan webhook ≤ 24 jam, termasuk projection. File export yang belum kedaluwarsa dan memuat record tersebut dibatalkan lalu dibuat ulang tanpa record itu. Workspace yang pernah menerima record (export/webhook) menerima event `suppression.applied` (tanpa nilai kontak) agar dapat menghapus di sistem hilir. | P0 | MVP1 | Uji propagasi ke semua projection, file export aktif, dan event. |
-| FR-AUD-004 | Intake **permintaan subjek data** (akses, koreksi, hapus, keberatan) via form/email + workflow internal dengan SLA terpantau. Pengakuan penerimaan ≤ 1 hari kerja. Tenggat pemenuhan mengikuti UU PDP dan aturan pelaksananya (beberapa hak bertenggat 3×24 jam; divalidasi konsultan hukum). Untuk data upload tenant (tenant = pengendali), permintaan diteruskan ke tenant. | P0 | MVP1 | Permintaan tercatat dari masuk hingga selesai, termasuk penerusan ke tenant. |
+| FR-AUD-004 | Intake **permintaan subjek data** (akses, koreksi, hapus, keberatan) via form/email + workflow internal dengan SLA terpantau. Pengakuan penerimaan ≤ 1 hari kerja. Tenggat pemenuhan mengikuti UU PDP dan aturan pelaksananya (beberapa hak bertenggat 3×24 jam; divalidasi konsultan hukum). Untuk data upload tenant (tenant = pengendali), permintaan diteruskan ke tenant. Verifikasi identitas pemohon memakai OTP email (SMTP). Bila pemohon hanya punya kontak telepon, ops memverifikasi manual lewat panggilan balik ke nomor yang tercatat (tanpa provider SMS di MVP). | P0 | MVP1 | Permintaan tercatat dari masuk hingga selesai, termasuk penerusan ke tenant. |
 | FR-AUD-005 | Penutupan workspace → data tenant (termasuk upload) dihapus setelah masa tenggang 30 hari. Pengecualian: `audit_log` dan `credit_ledger`/invoice disimpan sesuai masa retensi hukum dan **dipseudonimkan saat purge hari ke-30** (identitas aktor diganti ID ter-hash, tanpa data pribadi). Masa retensi divalidasi konsultan hukum. | P0 | MVP1 | Job penghapusan terverifikasi. Audit & ledger tetap utuh tetapi tanpa PII. |
 | FR-AUD-006 | **Isolasi tenant** ditegakkan di layer DB (RLS) dan aplikasi. | P0 | MVP1 | MVP-12. Uji lintas-tenant otomatis di CI. |
 | FR-AUD-007 | Kebijakan retensi per kelas data dapat dikonfigurasi. | P1 | V1 | — |

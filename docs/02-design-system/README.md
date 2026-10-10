@@ -106,7 +106,7 @@ Semua token domain memiliki `fg`, `bg`, `border`. Label UI id-ID final ditetapka
 | `color.score.hot` | HOT ≥ 80 | solid orange 700 + teks putih | `flame` |
 | `color.score.warm` | WARM 60–79 | solid amber 400 + teks amber 950 | `sun` |
 | `color.score.cold` | COLD < 60 | solid sky 700 + teks putih | `snowflake` |
-| `color.score.unscored` | UNSCORED | solid slate 200 + teks slate 700 | `circle-minus` |
+| `color.score.unscored` | UNSCORED ("Belum dinilai") | solid slate 200 + teks slate 700 | `circle-minus` |
 
 **Verifikasi contact point** (BR-VER)
 
@@ -212,7 +212,7 @@ Komponen dibangun di `packages/ui` di atas Radix primitives. Komponen hanya bole
 |---|---|---|---|---|
 | **Button** | label, ikon opsional | `accent.*`, `fg.on-accent`, `radius.md`, `size.control.*` | primary / secondary / ghost / danger; loading; disabled. Tombol berbayar menampilkan biaya ("Unlock · 1 credit"). | Fokus `border.focus`. Aksi berbayar wajib lewat dialog konfirmasi. |
 | **Badge** | ikon + label | `color.{score,verification,claim,freshness,confidence,status}.*`, `radius.sm`, `text.label` | Varian `solid` / `subtle`. Badge claim memakai `border-style.claim.*`. | Label teks wajib. Tooltip berisi angka (confidence) dan tanggal. |
-| **ScoreBadge** | angka skor + band + (opsional) badge coverage | `color.score.*.solid/on-solid`, `text.numeric` | UNSCORED menampilkan "—" + label. `coverage` < 0,6 menampilkan badge "Data terbatas" (`status.warning`). | `aria-label` lengkap, misalnya "Skor prioritas 92, HOT". |
+| **ScoreBadge** | angka skor + band + (opsional) badge coverage | `color.score.*.solid/on-solid`, `text.numeric` | UNSCORED menampilkan label "Belum dinilai" tanpa angka (tidak pernah "—" atau "0", BR-TRUST-06). `coverage` < 0,6 menampilkan badge "Data terbatas" (`status.warning`). | `aria-label` lengkap, misalnya "Skor prioritas 92, HOT". |
 | **ConfidenceMeter** | 3 bar + label | `color.confidence.*` | Tinggi 3 bar, Sedang 2, Rendah 1. Angka di tooltip. | Bukan warna saja: jumlah bar + label. |
 | **FactorBar** (penjelasan skor) | nama faktor, bar kontribusi, bobot, nilai, badge claim | `color.accent.default` (bar), `color.claim.*`, `text.numeric` | Faktor Unknown: bar kosong bergaris putus + "Tidak dihitung". | Tersedia sebagai tabel untuk screen reader. |
 | **MaskedValue + Unlock** | nilai ter-mask, tombol unlock | `fg.muted`, `text.mono` | Ter-mask → dialog biaya → terbuka (copy, WhatsApp, telepon). | Nilai ter-mask dibacakan "disembunyikan". |
