@@ -62,6 +62,9 @@ Semua dokumen memakai nama-nama ini persis.
 | Service Compose (prod & staging) | `caddy`, `web`, `api`, `worker`, `kratos`, `postgres` |
 | Service Compose (server ops) | `gitlab`, `gitlab-runner`, `prometheus`, `alertmanager`, `grafana` |
 | Environment | `local` (laptop, Docker Compose), `staging` (server ops), `production` (server prod) |
+| Direktori Compose di server | `/opt/msp` (prod), `/opt/msp-staging` (staging, di server ops), `/opt/ops` (GitLab, runner, monitoring) |
+| Menjalankan tool di server | `docker compose run --rm worker msp <subcommand>` |
+| Backup | pgBackRest stanza `msp` |
 | API | Prefix `/api/v1` · health `/healthz` (proses hidup) dan `/readyz` (DB siap) · metrik `/metrics` (internal) |
 | Env var | Prefix `MSP_`, mis. `MSP_DATABASE_URL`, `MSP_ANTHROPIC_API_KEY`, `MSP_LLM_FALLBACK_BASE_URL`, `MSP_LLM_FALLBACK_API_KEY`, `MSP_LLM_FALLBACK_MODEL`, `MSP_GEOAPI_BASE_URL`, `MSP_STORAGE_DIR`, `MSP_ENCRYPTION_KEY` |
 | Image | `<registry>/msp/api:<git-sha>`, `<registry>/msp/web:<git-sha>`. Rilis = tag Git `vX.Y.Z` |

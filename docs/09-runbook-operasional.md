@@ -5,9 +5,7 @@ Prosedur operasi F1 untuk `production` dan `staging`. Versi 0.2 (lean). Stack da
 **Konvensi.** Placeholder ditulis `<…>`. Waktu dalam WIB. Apa pun yang bisa diubah lewat GitLab atau halaman ops diubah lewat sana, bukan lewat SSH. Perintah di server dijalankan dari direktori Compose (§1.1); `msp` dijalankan di image aplikasi: `docker compose run --rm worker msp <subcommand>`.
 
 ## 1. Inventaris
-
 ### 1.1 Server
-
 | Server | Service Compose | Direktori | URL |
 |---|---|---|---|
 | `prod` | `caddy`, `web`, `api`, `worker`, `kratos`, `postgres` (+ pgBackRest, stanza `msp`) | `/opt/msp` | `https://<domain>` · health `/healthz`, `/readyz` · halaman ops `/ops` |
@@ -17,7 +15,6 @@ Prosedur operasi F1 untuk `production` dan `staging`. Versi 0.2 (lean). Stack da
 Direktori dibuat oleh `deploy/bootstrap.sh` (06). Prometheus mengambil `/metrics` aplikasi dan metrik host (disk, CPU, RAM) kedua server; Alertmanager mengirim alert ke email dan Telegram `<grup-ops>`. Probe eksternal `<layanan-uptime>` (di luar kedua server) memeriksa `https://<domain>/readyz` dan `https://gitlab.<domain>` tiap menit, sehingga server `ops` yang mati tetap terdeteksi.
 
 ### 1.2 Dependensi eksternal
-
 | Dependensi | Dipakai untuk | Bila gangguan |
 |---|---|---|
 | GeoAPI (`geoapi.mcpke.dev`) | `msp tool geo-sync`, vector tiles peta | Peta tanpa batas wilayah; tabel peringkat tetap jalan. Tunda geo-sync |
@@ -28,7 +25,6 @@ Direktori dibuat oleh `deploy/bootstrap.sh` (06). Prometheus mengambil `/metrics
 | Object storage S3-compatible off-site `<penyedia>` (Indonesia) | pgBackRest: backup + WAL | WAL menumpuk di disk `prod` (AL-06) |
 
 ### 1.3 Log & perintah umum
-
 Log aplikasi berformat JSON (`slog`) di stdout container. Docker merotasi log berdasarkan ukuran, jadi **simpan log ke file segera saat insiden**. GitLab dan monitoring: perintah sama di `/opt/ops`; staging di `/opt/msp-staging`.
 
 ```bash
@@ -54,11 +50,11 @@ WHERE state = 'discarded' AND finalized_at > now() - interval '24 hours' GROUP B
 ```
 
 ## 2. Akses
-
 - SSH hanya dengan kunci, dari IP di allowlist firewall. Tanpa login password dan tanpa login `root`. Tiap orang punya user sendiri.
 - Agent AI tidak punya akses SSH. Mereka bekerja lewat GitLab (MR dan pipeline) dan tidak bisa menjalankan job production.
 - Semua akun web operasional wajib MFA. Prometheus dan Alertmanager tidak dibuka ke internet: `ssh -L 9090:localhost:9090 -L 9093:localhost:9093 <user>@<ops>`.
 - Salinan semua secret production disimpan di password manager founder, sebagai cadangan bila GitLab hilang (RB-11).
+- **Orang keluar:** hapus kuncinya dari `~/.ssh/authorized_keys` dan IP-nya dari allowlist, nonaktifkan akun GitLab, ops, dan Grafana-nya, lalu rotasi secret yang pernah ia pegang (RB-12).
 
 | Akses | Siapa | Catatan |
 |---|---|---|
@@ -69,10 +65,7 @@ WHERE state = 'discarded' AND finalized_at > now() - interval '24 hours' GROUP B
 | Grafana | Founder, `<engineer>` | Login lewat akun GitLab |
 | Panel penyedia: hosting, DNS, storage backup, Anthropic, LLM fallback, SMTP, Google Cloud | Founder | MFA |
 
-**Orang keluar:** hapus kuncinya dari `~/.ssh/authorized_keys` dan IP-nya dari allowlist, nonaktifkan akun GitLab, ops, dan Grafana-nya, lalu rotasi secret yang pernah ia pegang (RB-12).
-
 ## 3. Prosedur
-
 ### RB-01 — Deploy production
 **Kapan:** tag `vX.Y.Z` lulus pipeline, sudah diverifikasi di staging, dan founder setuju.
 1. Pastikan tidak ada alert aktif dan RB-09 hijau.
@@ -95,8 +88,7 @@ WHERE state = 'discarded' AND finalized_at > now() - interval '24 hours' GROUP B
 3. Salin file dan jalankan di `tmux` agar tidak putus saat SSH putus:
 ```bash
 ssh <user>@<prod> mkdir -p import && scp <file>.jsonl.gz <user>@<prod>:import/
-ssh <user>@<prod>
-tmux new -s import
+ssh -t <user>@<prod> tmux new -s import
 cd /opt/msp && docker compose run --rm -v "$HOME/import:/import:ro" worker msp tool import /import/<file>.jsonl.gz
 ```
 4. Baca laporan (output tool dan `/ops/imports`, bisa diunduh CSV): **baru**, **berubah**, **tidak berubah**, **ditolak per alasan**. Import ulang file yang sama harus menghasilkan baru = 0 dan berubah = 0. Ditolak > 5% atau ada alasan yang tidak dikenal → kirim laporan dan contoh baris ke engineering sebelum import berikutnya.
@@ -120,16 +112,14 @@ cd /opt/msp && docker compose run --rm -v "$HOME/import:/import:ro" worker msp t
 ### RB-06 — Grant credit & refund manual
 **Kapan:** workspace membayar paket atau top-up (billing F1 manual), kompensasi, atau credit terpotong karena kesalahan.
 1. Grant: `/ops/workspaces` → `<workspace>` → **Grant credit**: jenis (credit / AI credit), jumlah, alasan berisi nomor invoice atau tiket.
-2. Refund: di ledger workspace pilih entri debit → **Refund** + alasan.
-3. Jangan pernah mengubah ledger lewat SQL.
+2. Refund: di ledger workspace pilih entri debit → **Refund** + alasan. Jangan pernah mengubah ledger lewat SQL.
 
 **Verifikasi:** saldo workspace berubah sesuai jumlah; entri ledger dan audit (`/ops/audit`) tercatat atas nama Anda.
 
 ### RB-07 — Feature flag & kill switch AI
 **Kapan:** provider AI gagal (AL-08), biaya AI melonjak, output AI bermasalah, atau export/webhook bermasalah (bug, banjir request, dugaan kebocoran).
 1. `/ops/flags` → `AI`, `export`, atau `webhook` → **Off** + alasan. Berlaku langsung tanpa deploy; app customer menampilkan banner FITUR DIMATIKAN.
-2. Mati > 30 menit → kirim pesan status ke workspace terdampak (§5).
-3. Penyebab sudah beres → **On** lagi.
+2. Mati > 30 menit → kirim pesan status ke workspace terdampak (§5). Penyebab sudah beres → **On** lagi.
 
 **Verifikasi:** di workspace uji kontrol fitur nonaktif; tidak ada job baru di antrean terkait (Q1); perubahan flag ada di `/ops/audit`. Setelah On: satu AI brief, export, atau webhook uji berhasil.
 
@@ -152,8 +142,7 @@ docker compose exec postgres psql -U postgres -c "SELECT last_archived_time, las
 **Verifikasi:** `info` berstatus `ok` dengan backup terakhir sesuai jadwal 06 (≤ 24 jam); `check` selesai tanpa error; `last_archived_time` ≤ 15 menit lalu (RPO, NFR-04) dan tidak ada `last_failed_time` yang lebih baru.
 
 ### RB-10 — Restore PITR ke server/DB baru
-**Kapan:** data rusak atau terhapus, server `prod` hilang (dari RB-11), atau uji restore bulanan.
-**Aturan:** restore ke direktori atau server **baru**, jangan menimpa DB yang masih jalan. Untuk uji, **jangan** start `worker` karena akan mengirim webhook, email, dan panggilan AI sungguhan.
+**Kapan:** data rusak atau terhapus, server `prod` hilang (dari RB-11), atau uji restore bulanan. **Aturan:** restore ke direktori atau server **baru**, jangan menimpa DB yang masih jalan. Untuk uji, **jangan** start `worker` karena akan mengirim webhook, email, dan panggilan AI sungguhan.
 1. Tentukan waktu target sebelum kejadian (dari `/ops/audit` atau log). Untuk RB-11 tanpa target waktu: hapus opsi `--type` dan `--target*` agar pulih sampai WAL terakhir.
 2. Siapkan direktori baru berisi file `deploy/` dan `.env` production (dari variabel GitLab), lalu:
 ```bash
@@ -167,9 +156,7 @@ docker compose up -d --wait postgres api      # tanpa worker; --archive-mode=off
 **Verifikasi:** `SELECT pg_is_in_recovery(), pg_last_xact_replay_timestamp();` → `f` dan waktu mendekati target; `api` `healthy` (`/readyz`); `SELECT count(*)` beberapa tabel utama cocok dengan production. Uji bulanan: catat durasi (RTO ≤ 8 jam) dan titik pulih (RPO ≤ 15 menit) di `<log-ops>`, lalu `docker compose down -v` dan hapus direktorinya.
 
 ### RB-11 — Bangun ulang server
-**Kapan:** server rusak, hilang, atau terkompromi. `prod` = SEV-1 dengan target RTO ≤ 8 jam (NFR-04). Bila terkompromi: jangan hapus server lama (bukti), jalankan langkah kebocoran data (§5), dan rotasi semua secret (RB-12) sebelum deploy.
-
-`prod`:
+**Kapan:** server rusak, hilang, atau terkompromi. Bila terkompromi: jangan hapus server lama (bukti), jalankan langkah kebocoran data (§5), dan rotasi semua secret (RB-12) sebelum deploy. Untuk `prod` (SEV-1, RTO ≤ 8 jam, NFR-04):
 1. Pesan server baru di Indonesia. Turunkan TTL DNS `<domain>` ke 300 detik bila masih sempat.
 2. Bootstrap dari clone repo: `ssh root@<ip-baru> 'bash -s' < deploy/bootstrap.sh` (06).
 3. Restore DB dengan RB-10 di `/opt/msp` server baru, tanpa target waktu dan tanpa `--archive-mode=off`.
@@ -177,10 +164,7 @@ docker compose up -d --wait postgres api      # tanpa worker; --archive-mode=off
 5. Arahkan DNS `<domain>` ke IP baru; Caddy mengambil sertifikat TLS otomatis. Ganti target `prod` di konfigurasi Prometheus (`deploy/`).
 6. Backup penuh: `docker compose exec -u postgres postgres pgbackrest --stanza=msp --type=full backup`.
 
-`ops` (`prod` tetap jalan, tetapi deploy dan monitoring mati sampai selesai):
-1. Server baru + bootstrap.
-2. Pulihkan GitLab dari backup-nya (`gitlab-backup restore`, 06). Tanpa backup: GitLab baru, push repo dari clone terbaru, isi ulang variabel CI dari password manager founder.
-3. Daftarkan ulang `gitlab-runner`, jalankan pipeline `main` (build image + deploy staging), lalu start `prometheus`, `alertmanager`, `grafana` dari `deploy/`.
+Untuk `ops` (`prod` tetap jalan, tetapi deploy dan monitoring mati sampai selesai): server baru + bootstrap → pulihkan GitLab dari backup-nya (`gitlab-backup restore`, 06); tanpa backup: GitLab baru, push repo dari clone terbaru, isi ulang variabel CI dari password manager founder → daftarkan ulang `gitlab-runner` → jalankan pipeline `main` (build image + deploy staging) → start `prometheus`, `alertmanager`, `grafana` dari `deploy/`.
 
 **Verifikasi:** smoke test RB-01, RB-09 hijau, probe eksternal dan semua target Prometheus hijau.
 
@@ -211,48 +195,20 @@ Di `ops`, registry GitLab: `cd /opt/ops && docker compose exec gitlab gitlab-ctl
 **Verifikasi:** `df -h` < 70%.
 
 ## 4. Alert
+Aturan alert ada di `deploy/` (Prometheus + probe eksternal); ambang di bawah adalah acuannya. Level SEV di §5; L1, L2, Q1, Q2 di §1.3.
 
-Aturan alert ada di `deploy/` (Prometheus + probe eksternal); ambang di bawah adalah acuannya. Level SEV ada di §5.
-
-**AL-01 — Situs down.** *Ambang:* probe `https://<domain>/readyz` gagal 2× berturut. *Dampak:* semua user, SEV-1.
-1. `docker compose ps` di `prod`. Service mati atau unhealthy → `docker compose logs --since 30m <service>` → `docker compose up -d <service>`.
-2. `/healthz` OK tetapi `/readyz` gagal → DB bermasalah: log `postgres`, disk (RB-13).
-3. Server tidak bisa di-SSH → console/reboot di panel hosting; rusak permanen → RB-11. Baru saja deploy → RB-02.
-4. Probe `https://gitlab.<domain>` gagal → server `ops` mati: SEV-2 (prod jalan, tetapi tanpa monitoring dan deploy).
-
-**AL-02 — Rasio 5xx tinggi.** *Ambang:* > 5% respons API 5xx selama 10 menit. *Dampak:* sebagian aksi gagal, SEV-2 (SEV-1 bila > 50%).
-1. Error terbanyak: `docker compose logs --no-log-prefix --since 30m api | jq -rR 'fromjson? | select(.level=="ERROR") | .msg' | sort | uniq -c | sort -rn | head`.
-2. Mulai setelah deploy → RB-02. Error DB → langkah DB di AL-03. Error login → `docker compose logs --since 30m kratos`.
-
-**AL-03 — Latensi p95 di atas NFR-01.** *Ambang:* search p95 > 1 s atau profil p95 > 500 ms selama 15 menit. *Dampak:* app lambat, SEV-3 (SEV-2 bila > 2× target).
-1. Sedang ada import atau rescore? Wajar sementara; bila mengganggu, pindahkan ke jam sepi.
-2. Query macet: `SELECT pid, now()-query_start AS durasi, left(query,100) FROM pg_stat_activity WHERE state <> 'idle' ORDER BY durasi DESC LIMIT 10;` → yang > 5 menit dan bukan backup: `SELECT pg_cancel_backend(<pid>);`.
-3. CPU, RAM, atau IO host jenuh di Grafana → laporkan ke engineering (query/indeks) dan founder (kapasitas).
-
-**AL-04 — Antrean River tertahan.** *Ambang:* job `available` tertua > 15 menit di `export`, `webhook`, `ai`, atau > 2 jam di `import`, `score`. *Dampak:* export, webhook, AI brief, atau skor tertunda, SEV-2.
-1. Q1, lalu `docker compose ps worker` dan `docker compose logs --since 30m worker`.
-2. Worker mati atau macet → `docker compose restart worker`. Job idempotent (STD-DB-06), aman diulang.
-3. Hanya `import`/`score` yang panjang karena import besar → tunggu dan pantau.
-
-**AL-05 — Banyak job gagal.** *Ambang:* > 10 job `discarded` dalam 1 jam di antrean `import`, `export`, `webhook`, atau `ai`. *Dampak:* aksi user gagal (export gagal tidak ditagih), SEV-2.
-1. Q2 untuk melihat error.
-2. `webhook` → biasanya endpoint customer menolak atau timeout: kabari customer. `ai` → AL-08. `export` → disk (RB-13) atau bug (engineering). `import` → laporan RB-03.
-3. F1 tidak punya redrive massal: setelah penyebab beres, user mengulang aksinya dan ops mengulang import (aman, upsert).
-
-**AL-06 — Arsip WAL atau backup gagal.** *Ambang:* tidak ada WAL terarsip > 15 menit, `failed_count` naik, atau backup terakhir > 26 jam. *Dampak:* RPO ≤ 15 menit (NFR-04) tidak terjamin; `pg_wal` menumpuk sampai disk penuh. SEV-2 (SEV-1 bila disk > 90%).
-1. RB-09, lalu `docker compose logs --since 1h postgres | grep -iE 'archive|pgbackrest'`.
-2. Penyebab umum: storage off-site tidak terjangkau, kredensial kedaluwarsa (RB-12), kuota bucket habis, disk lokal penuh.
-3. Setelah beres: `pgbackrest check`, lalu `docker compose exec -u postgres postgres pgbackrest --stanza=msp backup`.
-
-**AL-07 — Disk > 80%.** *Ambang:* > 80% peringatan, > 90% kritis, di server mana pun. *Dampak:* Postgres berhenti menulis bila disk penuh → situs down. SEV-2; SEV-1 bila > 90% di `prod`. Langkah: RB-13.
-
-**AL-08 — Provider AI gagal.** *Ambang:* > 20% AI brief memakai fallback selama 15 menit (peringatan, Claude bermasalah); > 20% AI brief gagal di kedua provider selama 10 menit (kritis). *Dampak:* AI brief lambat atau gagal, fitur lain normal. SEV-3 / SEV-2.
-1. Cek halaman status penyedia dan `docker compose logs --no-log-prefix --since 30m worker | jq -cR 'fromjson? | select(.level!="INFO")' | tail -50`.
-2. 401/403 → kunci salah atau dicabut (RB-12). 429 → kuota atau rate limit di konsol penyedia. 5xx/timeout → tunggu penyedia.
-3. Kritis > 30 menit → kill switch AI (RB-07); nyalakan lagi setelah pulih.
+| ID | Alert & ambang | Dampak | Langkah pertama |
+|---|---|---|---|
+| AL-01 | **Situs down:** probe `https://<domain>/readyz` gagal 2× berturut | Semua user. SEV-1 | `docker compose ps`; service mati/unhealthy → L1 → `docker compose up -d <service>`. `/healthz` OK tetapi `/readyz` gagal → DB: log `postgres`, disk (RB-13). Tidak bisa SSH → console/reboot di panel hosting; rusak permanen → RB-11. Baru deploy → RB-02. Probe `gitlab.<domain>` gagal = server `ops` mati: SEV-2 (prod jalan tanpa monitoring dan deploy) |
+| AL-02 | **5xx tinggi:** > 5% respons API 5xx selama 10 menit | Sebagian aksi gagal. SEV-2, SEV-1 bila > 50% | L2. Mulai setelah deploy → RB-02. Error DB → langkah DB di AL-03. Error login → L1 untuk `kratos` |
+| AL-03 | **p95 di atas NFR-01:** search > 1 s atau profil > 500 ms selama 15 menit | App lambat. SEV-3, SEV-2 bila > 2× target | Ada import/rescore jalan → wajar sementara, pindahkan ke jam sepi bila mengganggu. Query macet: `SELECT pid, now()-query_start AS durasi, left(query,100) FROM pg_stat_activity WHERE state <> 'idle' ORDER BY durasi DESC LIMIT 10;` → yang > 5 menit dan bukan backup: `SELECT pg_cancel_backend(<pid>);`. CPU/RAM/IO host jenuh di Grafana → engineering (query/indeks) dan founder (kapasitas) |
+| AL-04 | **Antrean River tertahan:** job `available` tertua > 15 menit di `export`, `webhook`, `ai`, atau > 2 jam di `import`, `score` | Export, webhook, AI brief, atau skor tertunda. SEV-2 | Q1, `docker compose ps worker`, L1 untuk `worker`. Worker mati/macet → `docker compose restart worker` (job idempotent, STD-DB-06). Hanya `import`/`score` yang panjang karena import besar → tunggu |
+| AL-05 | **Banyak job gagal:** > 10 job `discarded` dalam 1 jam di `import`, `export`, `webhook`, atau `ai` | Aksi user gagal (export gagal tidak ditagih). SEV-2 | Q2. `webhook` → biasanya endpoint customer menolak/timeout: kabari customer. `ai` → AL-08. `export` → disk (RB-13) atau bug (engineering). `import` → laporan RB-03. Tidak ada redrive massal di F1: setelah penyebab beres, user mengulang aksinya; ops mengulang import (aman, upsert) |
+| AL-06 | **Arsip WAL/backup gagal:** tidak ada WAL terarsip > 15 menit, `failed_count` naik, atau backup terakhir > 26 jam | RPO ≤ 15 menit (NFR-04) tidak terjamin; `pg_wal` menumpuk sampai disk penuh. SEV-2, SEV-1 bila disk > 90% | RB-09 dan L1 untuk `postgres`. Penyebab umum: storage off-site tidak terjangkau, kredensial kedaluwarsa (RB-12), kuota bucket habis, disk lokal penuh. Setelah beres: `docker compose exec -u postgres postgres pgbackrest --stanza=msp backup` |
+| AL-07 | **Disk penuh:** > 80% peringatan, > 90% kritis, di server mana pun | Postgres berhenti menulis bila disk penuh → situs down. SEV-2, SEV-1 bila > 90% di `prod` | RB-13 |
+| AL-08 | **Provider AI gagal:** > 20% AI brief memakai fallback selama 15 menit (peringatan); > 20% gagal di kedua provider selama 10 menit (kritis) | AI brief lambat/gagal, fitur lain normal. SEV-3 / SEV-2 | Halaman status penyedia + L1 untuk `worker`. 401/403 → kunci salah/dicabut (RB-12). 429 → kuota/rate limit di konsol penyedia. 5xx/timeout → tunggu penyedia. Kritis > 30 menit → kill switch AI (RB-07), nyalakan lagi setelah pulih |
 
 ## 5. Insiden
-
 | Level | Contoh | Respons |
 |---|---|---|
 | SEV-1 | Situs down, data hilang atau rusak, dugaan kebocoran data, credit terpotong salah secara massal | Segera, kapan pun; founder dilibatkan |
@@ -266,16 +222,16 @@ Aturan alert ada di `deploy/` (Prometheus + probe eksternal); ambang di bawah ad
 
 ```text
 Subjek: [MesinProspek] Gangguan <fitur> — <tanggal>
-
 Halo,
 Sejak pukul <jam> WIB, <fitur> di MesinProspek <tidak dapat digunakan / lebih lambat dari biasanya>.
 Tim kami sedang menanganinya. <Credit tidak ditagih untuk export yang gagal.>
 Kabar berikutnya paling lambat pukul <jam> WIB.
+Salam, Tim MesinProspek
 
-Pembaruan <jam> WIB: <fitur> sudah normal kembali sejak pukul <jam> WIB. Mohon maaf atas ketidaknyamanannya.
-
-Salam,
-Tim MesinProspek
+Subjek: [MesinProspek] Selesai: gangguan <fitur> — <tanggal>
+Halo,
+<Fitur> sudah normal kembali sejak pukul <jam> WIB. Mohon maaf atas ketidaknyamanannya.
+Salam, Tim MesinProspek
 ```
 
 **Dugaan kebocoran data** (data customer, kontak, secret, atau akses tidak sah):
@@ -285,7 +241,6 @@ Tim MesinProspek
 4. Ikuti instruksi tim legal. Jangan berkomunikasi ke luar soal kebocoran tanpa persetujuan tim legal.
 
 ## 6. Jadwal rutin
-
 | Kapan | Tugas |
 |---|---|
 | Harian | RB-09; tinjau alert 24 jam terakhir |
