@@ -8,6 +8,8 @@ Dokumentasi produk & engineering untuk **MesinProspek — Sales Intelligence Eng
 2. **DRY.** Satu sumber kebenaran per hal. Dokumen lain merujuk, tidak menyalin ulang.
 3. **Make it work → make it right → make it fast.** Fase **F1** (work), **F2** (right), **F3** (fast). Hanya F1 yang dirinci.
 
+Prinsip ini juga tertulis sebagai aturan wajib untuk setiap sesi Claude dan agent di [`CLAUDE.md`](../CLAUDE.md).
+
 Kondisi saat ini:
 - **Crawler PAUSED.** Input = dataset JSON-LD yang sudah ada + data wilayah GeoAPI.
 - **Pembangun** = agent AI (maks. 8 paralel) diorkestrasi Claude. Founder menyetujui gerbang fase.
