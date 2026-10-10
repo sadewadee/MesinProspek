@@ -75,7 +75,7 @@ Skala **Likelihood (L)**: 1 = rendah, 2 = sedang, 3 = tinggi. **Impact (I)**: 1 
 | RQ-04 | Nilai inferred tampil sebagai fakta | Band revenue tanpa label "Perkiraan"; "WhatsApp" tampil terverifikasi | 2 | 2 | 4 | U (component snapshot), I (API payload), D (AI eval) | TC-PROF-009/012, TC-DATA-018 |
 | RQ-05 | Tagihan ganda / overspend / saldo tidak rekonsiliasi | Retry jaringan memotong credit dua kali; saldo negatif saat bulk paralel | 2 | 3 | 6 | I (idempotensi, konkurensi), U (stateful property), D (rekonsiliasi) | TC-BILL-002..006/015/016 |
 | RQ-06 | Halusinasi AI | Brief menyebut "punya 5 dokter" tanpa data; sitasi ke ID yang tidak ada | 3 | 2 | 6 | I (validator), D (eval offline), S (prompt injection) | TC-AI-001/002/006/007/008 |
-| RQ-07 | PII bocor ke LLM, log, analytics, error tracker | Email pemilik ikut dalam prompt; nomor telepon tercetak di log exception | 2 | 3 | 6 | S (spy provider, canary scan log) | TC-AI-003, TC-AUD-010 |
+| RQ-07 | PII bocor ke LLM, log, analytics, error tracker | Email pemilik ikut dalam prompt; nomor telepon tercetak di log error/panic | 2 | 3 | 6 | S (spy provider, canary scan log) | TC-AI-003, TC-AUD-010 |
 | RQ-08 | SSRF via URL webhook | Webhook menjangkau PostgreSQL/Redis/MinIO/Grafana di LAN server, IP management, atau `169.254.169.254`; DNS rebinding; worker melewati egress proxy | 2 | 3 | 6 | S (korpus SSRF, fake DNS, egress proxy, nftables), I | TC-EXP-005, TC-EXP-020, TC-EXP-022 |
 | RQ-09 | Suppression tidak terpropagasi | Kontak ter-suppress masih ada di segment count, export, atau outbox webhook | 2 | 3 | 6 | I (registry projection), E2E | TC-AUD-003/004, TC-EXP-010, TC-PROF-005 |
 | RQ-10 | Skor non-deterministik / berubah tanpa versi | Urutan batch paralel mengubah persentil; refactor mengubah skor tanpa bump versi | 2 | 2 | 4 | D (snapshot regression), U (metamorphic) | TC-INTL-015/016/017, TC-GEO-004/008 |
@@ -1239,7 +1239,7 @@ Nilai contoh (nama, nomor, domain) adalah data sintetis. Nama header, kode error
 #### TC-AUD-010 — Redaksi PII di log, GlitchTip, dan analytics
 *NFR-PRIV-01, BR-PRIV-01 · S · P0 · main (CI), nightly (staging)*
 - **Given** seed data berisi canary PII unik: email `canary.pii.7f3a@example.id`, telepon `+628110000731`, nama "Canary Persona Tujuh".
-- **When** suite integration dan E2E dijalankan dengan log level DEBUG, termasuk jalur error (exception yang membawa payload, validasi gagal, upload gagal).
+- **When** suite integration dan E2E dijalankan dengan log level DEBUG, termasuk jalur error (error/panic yang membawa payload, validasi gagal, upload gagal).
 - **Then** pencarian di seluruh output log (API, worker, web, Traefik; di staging via query LogQL ke Loki), event GlitchTip (hook `BeforeSend` sentry-go diuji), dan payload analytics menemukan 0 kemunculan canary dalam bentuk utuh; yang boleh muncul hanya hash atau redaksi.
 - **And** request log tidak mencatat body permintaan upload maupun body respons unlock.
 
