@@ -1,5 +1,5 @@
 {
-  "$description": "MesinProspek design tokens v0.1.0 — format DTCG (nilai warna hex, dimensi string px). Sumber kebenaran; build CSS dengan build.mjs.",
+  "$description": "MesinProspek design tokens v0.2.0 — format DTCG (nilai warna hex, dimensi string px). Sumber kebenaran; build CSS dengan build.mjs.",
   "base": {
     "$description": "Primitive tokens. Jangan dipakai langsung di komponen; pakai token semantik.",
     "color": {
@@ -43,41 +43,6 @@
         },
         "950": {
           "$value": "#020617"
-        }
-      },
-      "indigo": {
-        "50": {
-          "$value": "#eef2ff"
-        },
-        "100": {
-          "$value": "#e0e7ff"
-        },
-        "200": {
-          "$value": "#c7d2fe"
-        },
-        "300": {
-          "$value": "#a5b4fc"
-        },
-        "400": {
-          "$value": "#818cf8"
-        },
-        "500": {
-          "$value": "#6366f1"
-        },
-        "600": {
-          "$value": "#4f46e5"
-        },
-        "700": {
-          "$value": "#4338ca"
-        },
-        "800": {
-          "$value": "#3730a3"
-        },
-        "900": {
-          "$value": "#312e81"
-        },
-        "950": {
-          "$value": "#1e1b4b"
         }
       },
       "green": {
@@ -467,6 +432,41 @@
             "$value": "#d03b3b"
           }
         }
+      },
+      "emerald": {
+        "50": {
+          "$value": "#ecfdf5"
+        },
+        "100": {
+          "$value": "#d1fae5"
+        },
+        "200": {
+          "$value": "#a7f3d0"
+        },
+        "300": {
+          "$value": "#6ee7b7"
+        },
+        "400": {
+          "$value": "#34d399"
+        },
+        "500": {
+          "$value": "#10b981"
+        },
+        "600": {
+          "$value": "#059669"
+        },
+        "700": {
+          "$value": "#047857"
+        },
+        "800": {
+          "$value": "#065f46"
+        },
+        "900": {
+          "$value": "#064e3b"
+        },
+        "950": {
+          "$value": "#022c22"
+        }
       }
     }
   },
@@ -524,12 +524,12 @@
         }
       },
       "selected": {
-        "$value": "{base.color.indigo.50}",
+        "$value": "{base.color.emerald.50}",
         "$type": "color",
         "$description": "Baris/item terpilih",
         "$extensions": {
           "com.mesinprospek.mode": {
-            "dark": "{base.color.indigo.950}"
+            "dark": "{base.color.emerald.950}"
           }
         }
       },
@@ -616,12 +616,12 @@
         }
       },
       "link": {
-        "$value": "{base.color.indigo.700}",
+        "$value": "{base.color.emerald.700}",
         "$type": "color",
         "$description": "Tautan",
         "$extensions": {
           "com.mesinprospek.mode": {
-            "dark": "{base.color.indigo.300}"
+            "dark": "{base.color.emerald.300}"
           }
         }
       }
@@ -668,67 +668,77 @@
         }
       },
       "focus": {
-        "$value": "{base.color.indigo.600}",
+        "$value": "{base.color.emerald.600}",
         "$type": "color",
         "$description": "Focus ring",
         "$extensions": {
           "com.mesinprospek.mode": {
-            "dark": "{base.color.indigo.400}"
+            "dark": "{base.color.emerald.400}"
           }
         }
       }
     },
     "accent": {
-      "$description": "Warna brand. PLACEHOLDER sampai identitas visual final (D-17).",
+      "$description": "Brand Forest & Mint (D-17): forest #064E3B, mint #10B981, mint-light #D1FAE5.",
       "default": {
-        "$value": "{base.color.indigo.600}",
+        "$value": "{base.color.emerald.900}",
         "$type": "color",
-        "$description": "Tombol primer",
+        "$description": "Tombol primer (forest)",
         "$extensions": {
           "com.mesinprospek.mode": {
-            "dark": "{base.color.indigo.600}"
+            "dark": "{base.color.emerald.700}"
           }
         }
       },
       "hover": {
-        "$value": "{base.color.indigo.700}",
+        "$value": "{base.color.emerald.800}",
         "$type": "color",
         "$description": "Hover tombol primer",
         "$extensions": {
           "com.mesinprospek.mode": {
-            "dark": "{base.color.indigo.700}"
+            "dark": "{base.color.emerald.800}"
           }
         }
       },
       "active": {
-        "$value": "{base.color.indigo.800}",
+        "$value": "{base.color.emerald.950}",
         "$type": "color",
         "$description": "Tombol primer ditekan",
         "$extensions": {
           "com.mesinprospek.mode": {
-            "dark": "{base.color.indigo.800}"
+            "dark": "{base.color.emerald.900}"
           }
         }
       },
       "subtle": {
-        "$value": "{base.color.indigo.50}",
+        "$value": "{base.color.emerald.100}",
         "$type": "color",
-        "$description": "Latar chip/nav aktif",
+        "$description": "Latar chip/nav aktif (mint-light)",
         "$extensions": {
           "com.mesinprospek.mode": {
-            "dark": "{base.color.indigo.950}"
+            "dark": "{base.color.emerald.900}"
           }
         }
       },
       "fg": {
-        "$value": "{base.color.indigo.700}",
+        "$value": "{base.color.emerald.900}",
         "$type": "color",
         "$description": "Teks/ikon berwarna brand",
         "$extensions": {
           "com.mesinprospek.mode": {
-            "dark": "{base.color.indigo.300}"
+            "dark": "{base.color.emerald.300}"
           }
         }
+      },
+      "highlight": {
+        "$type": "color",
+        "$value": "{base.color.emerald.500}",
+        "$extensions": {
+          "com.mesinprospek.mode": {
+            "dark": "{base.color.emerald.500}"
+          }
+        },
+        "$description": "Mint: indikator dekoratif non-teks (bar nav aktif, progres). Jangan untuk teks."
       }
     },
     "status": {
@@ -1538,12 +1548,12 @@
         }
       },
       "selected": {
-        "$value": "{base.color.indigo.600}",
+        "$value": "{base.color.emerald.600}",
         "$type": "color",
         "$description": "Outline area terpilih",
         "$extensions": {
           "com.mesinprospek.mode": {
-            "dark": "{base.color.indigo.400}"
+            "dark": "{base.color.emerald.400}"
           }
         }
       }
@@ -1840,7 +1850,7 @@
     },
     "h3": {
       "$value": {
-        "fontFamily": "{font.family.sans}",
+        "fontFamily": "{font.family.display}",
         "fontSize": "{font.size.xl}",
         "fontWeight": "{font.weight.semibold}",
         "lineHeight": "{font.line-height.xl}",

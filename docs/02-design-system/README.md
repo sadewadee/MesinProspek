@@ -3,13 +3,13 @@
 | Field | Value |
 |---|---|
 | Dokumen | Design system & design tokens |
-| Versi | 0.1 (Draft) · tokens `0.1.0` |
+| Versi | 0.2 · tokens `0.2.0` (brand Forest & Mint) |
 | Tanggal | 2026-10-10 |
 | Basis | `01-prd.md` (BR-TRUST, BR-VER, BR-SCORE, NFR-A11Y-01, NFR-L10N-01, FR-GEO-009) |
 | Audience | Design, Frontend, QA |
 | File | `tokens/design-tokens.json` (sumber kebenaran, DTCG) · `tokens/tokens.css` (hasil build) · `tokens/build.mjs` (build + validasi kontras, Node tanpa dependency) |
 
-> **Brand masih placeholder (D-17).** Warna `accent` (indigo) dipakai sementara sampai identitas visual final. Mengganti brand cukup dilakukan di token `color.accent.*` dan `base.color.*`. Nama token semantik tidak berubah sehingga komponen tidak perlu disentuh.
+> **Brand: Forest & Mint (D-17, Accepted).** Forest `#064E3B` untuk tombol primer dan teks brand; Mint `#10B981` hanya untuk aksen non-teks (indikator nav aktif, progres) karena kontrasnya di atas putih < 3:1; Mint-light `#D1FAE5` untuk latar chip/nav aktif. Heading memakai **Plus Jakarta Sans**, body memakai **Inter**. Ketiga warna = skala `emerald` 900/500/100.
 
 ---
 
@@ -84,15 +84,17 @@ node docs/02-design-system/tokens/build.mjs --report  # tabel kontras lengkap (m
 | `color.bg.surface` | white | slate 900 `#0f172a` | Kartu, tabel, panel |
 | `color.bg.surface-raised` | white | slate 800 | Popover, dropdown, dialog |
 | `color.bg.surface-sunken` | slate 100 | slate 950 | Area inset |
-| `color.bg.hover` / `selected` | slate 100 / indigo 50 | slate 800 / indigo 950 | Baris tabel |
+| `color.bg.hover` / `selected` | slate 100 / emerald 50 | slate 800 / emerald 950 | Baris tabel |
 | `color.bg.overlay` | slate 900 @50% | slate 950 @70% | Scrim dialog/drawer |
 | `color.bg.inverse` | slate 900 | slate 50 | Tooltip, toast |
 | `color.fg.default` / `muted` / `subtle` | slate 900 / 600 / 500 | slate 50 / 300 / 400 | Teks |
-| `color.fg.link` | indigo 700 | indigo 300 | Tautan |
+| `color.fg.link` | emerald 700 | emerald 300 | Tautan |
 | `color.border.default` / `subtle` / `strong` | slate 200 / 100 / 400 | slate 700 / 800 / 600 | Pemisah |
 | `color.border.input` | slate 500 | slate 500 | Batas kontrol form (≥ 3:1, WCAG 1.4.11) |
-| `color.border.focus` | indigo 600 | indigo 400 | Focus ring 2px + offset 2px |
-| `color.accent.*` | indigo 600/700/800 | indigo 600/700/800 | Brand (placeholder) |
+| `color.border.focus` | emerald 600 | emerald 400 | Focus ring 2px + offset 2px |
+| `color.accent.default` / `hover` / `active` | forest `#064E3B` / emerald 800 / 950 | emerald 700 / 800 / 900 | Tombol primer (teks putih) |
+| `color.accent.subtle` / `fg` | mint-light `#D1FAE5` / forest | forest / emerald 300 | Chip & nav aktif, teks brand |
+| `color.accent.highlight` | mint `#10B981` | mint | Aksen dekoratif non-teks |
 | `color.status.{success,warning,danger,info}.{fg,bg,border}` | green/amber/red/blue | — | Alert, toast, validasi form |
 
 ### 3.2 Token domain (trust & intelligence)
@@ -171,7 +173,7 @@ Aturan chart tambahan: satu sumbu Y (tidak ada dual-axis); legend selalu ada unt
 | `text.display` | display | 36 / 44 | 700 | Angka/judul besar di laporan |
 | `text.h1` | display | 30 / 36 | 600 | Judul halaman |
 | `text.h2` | display | 24 / 32 | 600 | Judul seksi |
-| `text.h3` | sans | 18 / 28 | 600 | Judul kartu/panel |
+| `text.h3` | display | 18 / 28 | 600 | Judul kartu/panel |
 | `text.body-lg` | sans | 16 / 24 | 400 | Teks panjang (AI brief) |
 | `text.body` | sans | 14 / 20 | 400 | **Default UI** |
 | `text.body-sm` | sans | 13 / 18 | 400 | Sel tabel compact |
@@ -180,7 +182,7 @@ Aturan chart tambahan: satu sumbu Y (tidak ada dual-axis); legend selalu ada unt
 | `text.numeric` | sans | 14 / 20 | 500, **tabular-nums** | Kolom angka |
 | `text.mono` | mono | 13 / 20 | 400 | ID, JSON payload |
 
-Font: **Inter** (UI & data), **Plus Jakarta Sans** (display), dan **JetBrains Mono** (mono). Ketiganya berlisensi SIL OFL dan di-self-host. Tidak ada huruf kapital penuh untuk label berbahasa Indonesia; gunakan sentence case.
+Font: **Plus Jakarta Sans** (semua heading), **Inter** (body, tabel, data), dan **JetBrains Mono** (mono). Ketiganya berlisensi SIL OFL dan di-self-host. Tidak ada huruf kapital penuh untuk label berbahasa Indonesia; gunakan sentence case.
 
 ---
 
@@ -292,7 +294,7 @@ Aturan tambahan:
 
 | ID | Item | Status |
 |---|---|---|
-| D-17 | Brand final (warna aksen, logo, mungkin font display) | Open. Token `accent` placeholder. |
+| D-17 | Brand final | **Selesai:** Forest & Mint, Plus Jakarta Sans + Inter. Logo menyusul. |
 | DS-01 | Set ikon: Lucide diusulkan (ISC) | Proposed |
 | DS-02 | Basemap peta & gaya peta dasar | Menunggu Q-05 (lisensi dataset) |
 | DS-03 | Migrasi `build.mjs` → `packages/design-tokens` (Style Dictionary v4) dengan kontrak output yang sama | Saat bootstrap monorepo |
