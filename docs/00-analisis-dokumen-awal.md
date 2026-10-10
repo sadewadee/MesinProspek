@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Dokumen | Analisis dokumen awal → dasar dokumen lanjutan |
-| Status | Draft v0.1 |
+| Status | v0.2 (lean): keputusan founder diterapkan, lihat §7 |
 | Tanggal | 2026-10-10 |
 | Input | (1) *MesinProspek Sales Intelligence Engine — Sellable MVP Documentation Pack v1.2 (Intelligence Domains)*, selanjutnya **MVP Pack**; (2) *MSP Website Acquisition & Crawler Engine Spec v1.0*, selanjutnya **Crawler Spec** (versi .docx dan .pdf identik) |
 | Output | Daftar inkonsistensi (I-xx), gap (G-xx), dampak pause crawler, register keputusan (D-xx), peta dokumen lanjutan |
@@ -126,63 +126,55 @@ Dengan crawler di-pause, **ketersediaan fitur bergantung pada field yang ada di 
 
 ---
 
-## 7. Register keputusan (usulan default, butuh konfirmasi)
+## 7. Register keputusan (status v0.2)
 
-Status: **Proposed** = default yang dipakai dokumen lanjutan sampai dikonfirmasi; **Open** = belum ada default.
+Revisi 0.2 menerapkan arahan founder: **KISS, DRY, make it work → right → fast**. Tabel ini satu-satunya register keputusan (DRY).
 
-| ID | Keputusan | Default yang diusulkan | Alternatif | Dampak | Status |
-|---|---|---|---|---|---|
-| D-01 | Status crawler | PAUSED. Engine source-agnostic. Crawler kelak masuk sebagai source adapter yang memenuhi Input Contract. | — | Scope MVP | **Accepted** (arahan founder) |
-| D-02 | Input MVP | (a) Dataset bisnis yang sudah ada, di-import sebagai **dataset snapshot** berversi. (b) Dataset populasi/wilayah per kelurahan. (c) Upload CSV/XLSX oleh customer. | Partner API | Skema, pipeline | Proposed |
-| D-03 | Tenancy data | **Dua lapis.** *Global layer* (milik MSP): company, establishment, kontak publik, atribut, metrik area, dibaca semua tenant. *Tenant layer* (privat): ICP, Offering, skor ICP/priority, opportunity relevance, segment, tag, note, assignment, upload, unlock, activity. Record hasil upload hanya di-*link* ke entity global, tidak di-merge ke global. | Semua per tenant (mahal, tanpa network effect) | Skema, RLS, biaya | Proposed |
-| D-04 | Objek Offering | Tenant mendefinisikan ≥1 **Offering** (apa yang dijual: website, booking system, SEO lokal, dsb.). Opportunity global = "gap fact". Relevansi gap ke Offering = opportunity tenant. | Opportunity global tanpa konteks | Intelligence, UX onboarding | Proposed |
-| D-05 | Model entity | `Company` (entitas bisnis/brand) 1—N `Establishment` (lokasi fisik/cabang). Geo dan kontak lokasi menempel pada Establishment. | Satu tabel Company | Skema, ER | Proposed |
-| D-06 | Priority score | Bobot Rev 1.2 §9 sebagai default. Faktor Unknown dikeluarkan dan bobot di-renormalisasi. `coverage` < 0,6 → badge "Data terbatas" dan tidak boleh berlabel HOT. Bobot dapat diatur per Offering preset (MVP) dan per tenant (V1.5). | Rumus §06 | Scoring | Proposed |
-| D-07 | Score band | HOT ≥ 80, WARM 60–79, COLD < 60, UNSCORED. Dapat dikonfigurasi. | 4 band | UX, tokens | Proposed |
-| D-08 | Model credit | Meter `credit` + `ai_credit`. Search/profil tidak memakai credit (fair-use per plan). Semua nilai contact point dan nama person ditampilkan ter-mask sampai **unlock** (1 credit/record, permanen per tenant). Export/sync record yang sudah di-unlock gratis. Refund otomatis untuk operasi gagal dan untuk kontak yang terbukti INVALID ≤ 30 hari setelah unlock. | Charge per export | Billing, UX | Proposed |
-| D-09 | Plan | Starter (≈ paket Prospect), Growth (≈ Intelligence + Workflow), Agency, Enterprise. Harga di luar dokumen ini. | — | Billing | Proposed |
-| D-10 | Integrasi CRM | MVP 1: webhook + export. V1: satu CRM (kandidat ditentukan dari survei customer beta). | CRM di MVP | Scope | Proposed |
-| D-11 | Arsitektur | **Modular monolith** (satu codebase backend dengan modul sesuai service boundary §11) + worker terpisah. Pecah menjadi service hanya bila ada alasan skala. | 6 microservice | Ops, CI/CD | Proposed |
-| D-12 | Stack data | PostgreSQL + **PostGIS** + Postgres FTS/pg_trgm (tanpa OpenSearch di MVP), storage S3-compatible. Bahasa backend: lihat D-21. | OpenSearch sejak awal | Infra | Proposed |
-| D-13 | Kode wilayah kanonik | Kode **Kemendagri** (Kepmendagri kode & data wilayah terbaru), plus crosswalk ke kode BPS bila sumber populasi memakai kode BPS. Setiap metrik populasi wajib menyimpan periode referensi. | Kode BPS | Geo | Proposed |
-| D-14 | Residensi data | Semua penyimpanan utama (DB, storage, backup utama) di **data center Indonesia**. Backup off-site juga di Indonesia. Panggilan AI hanya membawa data level company, tidak membawa nilai kontak pribadi. | Luar negeri | Kepatuhan, infra | Proposed |
-| D-15 | Penyedia AI | Abstraksi provider. Default diusulkan: model Claude (kelas Sonnet untuk brief, kelas Haiku untuk klasifikasi). | Provider lain | Biaya, eval | Open |
-| D-16 | Beachhead | Penjual B2B yang menargetkan **bisnis lokal Indonesia yang punya lokasi fisik**: agency digital (website, ads, SEO lokal), vendor SaaS SMB (booking, POS, CRM), distributor. Contoh vertikal awal: klinik gigi/kesehatan, F&B, retail. | Enterprise B2B | Persona, opportunity catalog | Proposed |
-| D-17 | Brand | Token warna brand bersifat **placeholder** sampai identitas visual final. Struktur token tidak berubah saat brand diganti. | — | Design tokens | Open |
-| D-18 | Platform CI/CD & host kode | **Tanpa GitHub** (arahan founder). Default: **GitLab CE self-hosted** (Git, merge request, GitLab CI, Container Registry, runner Docker di server CI terpisah). | Forgejo/Gitea + Actions, Woodpecker, Jenkins | CI/CD | **Accepted** (tanpa GitHub) / Proposed (GitLab CE) |
-| D-19 | Hosting & runtime | **Dedicated server** (arahan founder). Default: Docker Compose + Traefik (blue/green), PostgreSQL + PostGIS bare-metal dengan replika streaming + pgBackRest, Redis, SeaweedFS (S3-compatible; MinIO community sudah diarsipkan, alternatif Garage), Ansible untuk provisioning, SOPS + age untuk secret, monitoring self-hosted. | Docker Swarm / k3s saat > 2 app server | Infra, CI/CD, SDD | **Accepted** (dedicated) / Proposed (stack) |
-| D-20 | Identity provider | Disarankan self-hosted (**Ory Kratos**: verifikasi email, login Google via OIDC, TOTP MFA) agar data identitas user tetap di Indonesia. Aplikasi dibuat provider-agnostic. | Managed OIDC SaaS, Keycloak | Auth, kepatuhan | Open |
-| D-21 | Bahasa backend | **Go** untuk API dan worker, **Next.js + TypeScript** untuk UI (keputusan founder). Menggantikan FastAPI/Python di MVP Pack §11. Alasan: pipeline data jutaan baris, query SQL/PostGIS berat (sqlc), worker konkuren, efisiensi resource di dedicated server. Python boleh dipakai offline (notebook) untuk kalibrasi model kelak, di luar service. | NestJS + Next.js; Python + Next.js | Semua dokumen engineering | **Accepted** |
-
----
-
-## 8. Pertanyaan terbuka (butuh jawaban pemilik dataset/founder)
-
-| ID | Pertanyaan | Kenapa penting |
+| ID | Keputusan | Status |
 |---|---|---|
-| Q-01 | Skema dan field dataset bisnis yang tersedia (daftar kolom, tipe, % terisi)? | Menentukan fitur mana yang aktif dan mana yang Unknown (§6). |
-| Q-02 | Volume (jumlah record), cakupan wilayah, dan tanggal pengambilan data? | Sizing NFR dan informasi freshness. |
-| Q-03 | Apakah dataset akan diperbarui? Dengan kadens berapa? | Desain snapshot, refresh, dan signal (V1). |
-| Q-04 | Sumber dan periode dataset populasi per kelurahan, serta sistem kode wilayah yang dipakai? | D-13, label periode referensi. |
-| Q-05 | Ketentuan lisensi/penggunaan dataset untuk penyimpanan, tampilan, dan export ke customer (guardrail Rev 1.2 §8)? | Aturan export dan tampilan. |
-| Q-06 | Apakah ada data ground truth revenue/karyawan untuk kalibrasi model revenue? | Confidence revenue (G-09). |
-| Q-07 | Siapa 5–10 calon customer beta dan Offering mereka? | Prioritas opportunity catalog dan preset bobot. |
-| Q-08 | Apakah source code ikut pindah sepenuhnya dari GitHub ke GitLab self-hosted, atau GitHub tetap ada sebagai mirror? Default usulan: GitLab primary, mirror GitHub opsional (= `06` Q-CI-01). | Setup repo, CI/CD (D-18). |
-| Q-09 | Spesifikasi dan jumlah dedicated server yang tersedia/dianggarkan, serta lokasi backup off-site? | Topologi, HA, DR (D-19). |
-| Q-10 | Apakah tersedia data batas wilayah (poligon kelurahan/kecamatan) beserta lisensinya? | Peta choropleth FR-GEO-002 (A-03). |
-| Q-11 | Validasi hukum PDP: kapan tenggat 3×24 jam mulai dihitung, kanal pelaporan ke Lembaga PDP, tenggat notifikasi ke tenant saat MSP berperan sebagai prosesor, masa retensi audit/ledger, dan kesesuaian dengan PP 33/2026 (cek JDIH). | Runbook insiden RB-50 (`09`), FR-AUD-004/005, BR-PRIV-03. |
+| D-01 | Crawler di-PAUSE. Engine source-agnostic | Accepted |
+| D-02 | Input F1 = dataset JSON-LD (D-24) + data wilayah GeoAPI (D-25). Upload daftar customer di F2 | Accepted |
+| D-03 | Dua lapis data: data bisnis global (milik MSP, dibaca semua workspace) + data workspace privat (ICP, skor, list, unlock, ledger) | Accepted |
+| D-04 | Offering menentukan relevansi opportunity | Accepted |
+| D-05 | Prospek = satu tempat usaha (`google_place_id`). Pengelompokan multi-cabang di F2 | Accepted (disederhanakan) |
+| D-06 | Priority score disederhanakan ke 6 faktor yang datanya ada (PRD Lampiran A) | Accepted |
+| D-07 | Band HOT ≥ 80 / WARM 60–79 / COLD < 60 | Accepted |
+| D-08 | Credit: unlock 1 credit permanen; export auto-unlock hanya saat berhasil; refund manual oleh ops | Accepted (disederhanakan) |
+| D-09 | Plan Starter / Growth / Agency | Proposed (menunggu pricing) |
+| D-10 | Integrasi CRM di F2. F1 cukup export + webhook | Accepted |
+| D-11 | Modular monolith, satu binary Go | Accepted |
+| D-12 | PostgreSQL + PostGIS + full-text search Postgres. Tanpa mesin search terpisah | Accepted |
+| D-13 | Kunci wilayah = ID & kode area GeoAPI. Tanpa crosswalk Kemendagri/BPS di F1 | Accepted (menggantikan usulan lama) |
+| D-14 | Data utama dan backup disimpan di Indonesia | Accepted |
+| D-15 | AI: Claude, fallback ke API OpenAI-compatible | Accepted |
+| D-16 | Beachhead: penjual B2B (agency digital, vendor SaaS UMKM) ke bisnis lokal | Accepted |
+| D-17 | Brand Forest & Mint; heading Plus Jakarta Sans, body Inter | Accepted |
+| D-18 | GitLab CE self-hosted, tanpa GitHub | Accepted |
+| D-19 | Hosting di dedicated server | Accepted |
+| D-20 | Identity: Ory Kratos | Accepted |
+| D-21 | Go (backend) + Next.js (frontend) | Accepted |
+| D-22 | Dibangun agent AI (maks. 8 paralel) yang diorkestrasi Claude. Founder menyetujui gerbang fase dan deploy produksi | Accepted |
+| D-23 | Prinsip KISS, DRY, make it work → right → fast | Accepted |
+| D-24 | Dataset = JSON-LD schema.org per tempat usaha, kunci `google_place_id` | Accepted |
+| D-25 | Wilayah & populasi dari GeoAPI (Kontur 2023, perkiraan model), di-sync ke PostGIS | Accepted |
+| D-26 | Infra F1 minimal: 2 server, tanpa Redis, PgBouncer, object storage internal, maupun HA | Accepted |
+| D-27 | Isu hukum (PDP, lisensi data, retensi) ditangani tim legal | Accepted |
 
----
+## 8. Pertanyaan terbuka
+
+| ID | Pertanyaan | Status |
+|---|---|---|
+| Q-01 | Skema dataset | **Terjawab:** JSON-LD schema.org (lihat PRD §7.1) |
+| Q-02 | Jumlah record & cakupan wilayah dataset | Terbuka |
+| Q-03 | Kadens pembaruan dataset | Terbuka |
+| Q-04 / Q-10 | Populasi & batas wilayah | **Terjawab:** GeoAPI |
+| Q-05 | Aturan pakai/tampil/export data | Tim legal |
+| Q-06 | Data acuan revenue | Ditunda: band revenue di F2 |
+| Q-07 | Calon customer beta & Offering mereka | Terbuka |
+| Q-08 | GitHub tetap jadi mirror atau ditinggalkan? | Terbuka (default: GitLab sebagai repo utama) |
+| Q-09 | Spesifikasi 2 server & lokasi backup off-site | Terbuka |
+| Q-11 | Validasi hukum PDP | Tim legal |
 
 ## 9. Peta dokumen lanjutan
 
-| No | Dokumen | Isi | Bergantung pada |
-|---|---|---|---|
-| 01 | `01-prd.md` | Product Requirements: persona, scope per release, FR/NFR ber-ID, business rules, metrik | Analisis ini |
-| 02 | `02-design-system/` | Design tokens (DTCG JSON + CSS variables), pedoman visual, komponen inti | PRD |
-| 03 | `03-ux-spec.md` | Information architecture, user flow, spesifikasi layar dan state | PRD, 02 |
-| 04 | `04-technical-design.md` | Arsitektur, Input Contract, data model, pipeline, scoring engine, API & events, keamanan | PRD |
-| 05 | `05-test-strategy.md` | Strategi dan rencana pengujian, test case, edge case, traceability ke FR | PRD, 04 |
-| 06 | `06-ci-cd.md` | Branching, pipeline GitLab CI, quality gates, environment dedicated server, deployment, migrasi DB, backup/DR, release & rollback | 04, 05 |
-
-Konvensi ID yang dipakai di semua dokumen: `D-` keputusan, `I-` inkonsistensi, `G-` gap, `Q-` pertanyaan, `FR-<AREA>-nnn` functional requirement, `NFR-<CAT>-nn`, `BR-<AREA>-nn` business rule, `TC-<AREA>-nnn` test case, `EC-nn` edge case, `QG-nn` quality gate.
+Lihat [README](README.md).

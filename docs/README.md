@@ -1,91 +1,86 @@
 # Dokumentasi MesinProspek (MSP)
 
-Dokumentasi produk & engineering untuk **MesinProspek — Sales Intelligence Engine (Sellable MVP)**.
+Dokumentasi produk & engineering untuk **MesinProspek — Sales Intelligence Engine**. Versi **0.2 (lean)**.
 
-> **Status crawler: PAUSED.** Website Acquisition & Crawler Engine tidak dibangun di MVP. Engine intelligence bersifat source-agnostic dan menerima input dari **dataset yang sudah ada** dan **upload customer** melalui Input Contract. Lihat `00-analisis-dokumen-awal.md` §6 dan D-01.
+## Prinsip
+
+1. **KISS.** Pilih solusi paling sederhana yang bekerja. Komponen baru hanya ditambahkan bila ada masalah nyata yang memerlukannya.
+2. **DRY.** Satu sumber kebenaran per hal. Dokumen lain merujuk, tidak menyalin ulang.
+3. **Make it work → make it right → make it fast.** Fase **F1** (work), **F2** (right), **F3** (fast). Hanya F1 yang dirinci.
+
+Kondisi saat ini:
+- **Crawler PAUSED.** Input = dataset JSON-LD yang sudah ada + data wilayah GeoAPI.
+- **Pembangun** = agent AI (maks. 8 paralel) diorkestrasi Claude. Founder menyetujui gerbang fase.
+- **Isu hukum** ditangani tim legal, di luar dokumen ini.
 
 ## Peta dokumen
 
-| No | Dokumen | Untuk siapa | Isi |
-|---|---|---|---|
-| 00 | [Analisis dokumen awal](00-analisis-dokumen-awal.md) | Founder, Product, Tech lead | Inkonsistensi, gap, dampak pause crawler, register keputusan, pertanyaan terbuka |
-| 01 | [PRD](01-prd.md) | Semua | Persona, scope per release, FR/NFR/BR ber-ID, metrik, release gate |
-| 02 | [Design system & tokens](02-design-system/README.md) | Design, Frontend | Design tokens (DTCG JSON + CSS variables), pedoman visual, komponen inti |
-| 03 | [UX spec](03-ux-spec.md) | Design, Frontend, Product | Information architecture, user flow, spesifikasi layar dan state, copy |
-| 04 | [Technical design](04-technical-design.md) | Engineering | Arsitektur, Input Contract, data model, pipeline, scoring, API & event, keamanan |
-| 05 | [Test strategy & plan](05-test-strategy.md) | QA, Engineering | Strategi, level test, test case, edge case, traceability, entry/exit criteria |
-| 06 | [CI/CD](06-ci-cd.md) | Engineering, DevOps | Branching, pipeline GitLab CI, quality gate, environment, deployment, migrasi, rollback |
-| 07 | [Delivery plan](07-delivery-plan.md) | Founder, Product, Tech lead | Roadmap, epic & backlog ber-ID, rencana sprint MVP 0/MVP 1, milestone, DoR/DoD, RACI |
-| 08 | [Engineering standards](08-engineering-standards.md) | Engineering | Standar kode Go & Next.js, struktur repo, kontrak API, DB & migrasi, error/logging, keamanan, code review |
-| 09 | [Runbook operasional](09-runbook-operasional.md) | DevOps, Ops, Engineering | Deploy & rollback, backup/restore, alert playbook, insiden & notifikasi PDP, operasi data |
-
-**Urutan baca:** 00 → 01 → (02, 03) untuk design/frontend, (04, 05, 06, 08) untuk engineering, 07 untuk perencanaan, 09 untuk operasi.
-
-**Dokumen sumber (di luar repo):** *Sellable MVP Documentation Pack v1.2 — Intelligence Domains* (baseline produk) dan *MSP Website Acquisition & Crawler Engine Spec v1.0* (PAUSED).
-
-## Konvensi ID
-
-| Prefix | Arti | Didefinisikan di |
+| No | Dokumen | Isi |
 |---|---|---|
-| `D-nn` | Keputusan (Proposed/Accepted/Open) | 00 §7, 04 §ADR |
-| `I-nn` / `G-nn` / `Q-nn` | Inkonsistensi / gap / pertanyaan terbuka | 00 |
-| `PER-nn` | Persona | 01 §3 |
-| `FR-<AREA>-nnn` | Functional requirement. AREA ∈ AUTH, DATA, ICP, SRCH, PROF, INTL, GEO, SEG, EXP, AI, MON, BILL, AUD, OPS, RPT | 01 §8 |
-| `NFR-<CAT>-nn` | Non-functional requirement | 01 §10 |
-| `BR-<AREA>-nn` | Business rule | 01 §9 |
-| `OBJ-n` / `RG-n` | Tujuan produk / release gate | 01 §4, §12 |
-| `SCR-nn` / `FLOW-nn` | Layar / user flow | 03 |
-| `ADR-nn` | Architecture decision record | 04 |
-| `TC-<AREA>-nnn` / `EC-nn` | Test case / edge case data | 05 |
-| `QG-nn` | Quality gate CI/CD | 06 |
-| `STD-<AREA>-nn` | Aturan engineering standards | 08 |
+| 00 | [Analisis dokumen awal](00-analisis-dokumen-awal.md) | Temuan atas dokumen awal + register keputusan |
+| 01 | [PRD](01-prd.md) | **Sumber kebenaran requirement**: scope F1, aturan skor/opportunity/wilayah, credit |
+| 02 | [Design system & tokens](02-design-system/README.md) | Brand Forest & Mint, tokens (DTCG + CSS), komponen |
+| 03 | [UX spec](03-ux-spec.md) | Layar F1, alur, state, copy |
+| 04 | [Technical design](04-technical-design.md) | Arsitektur, data model, pipeline, API |
+| 05 | [Test strategy](05-test-strategy.md) | Apa yang diuji, di mana, dan kapan |
+| 06 | [CI/CD](06-ci-cd.md) | Pipeline GitLab, deploy ke dedicated server, backup |
+| 07 | [Delivery plan](07-delivery-plan.md) | Paket kerja untuk agent AI dan gerbang fase |
+| 08 | [Engineering standards](08-engineering-standards.md) | Aturan coding Go & Next.js yang esensial |
+| 09 | [Runbook](09-runbook-operasional.md) | Prosedur operasi & alert |
 
-## Konvensi teknis (Proposed, berlaku untuk semua dokumen)
-
-Ringkasan default dari D-11, D-12, D-14, D-18, D-19, D-21 beserta pilihan tooling. Detail dan alasannya ada di `04-technical-design.md` (ADR) dan `06-ci-cd.md`.
+## Stack F1
 
 | Area | Pilihan |
 |---|---|
-| Repo | Monorepo. Host kode + CI + registry: **GitLab CE self-hosted** (D-18). Repo GitHub saat ini dapat di-mirror (Q-08). |
-| Frontend | Next.js (App Router) + TypeScript (strict), Tailwind CSS yang membaca design tokens, komponen di atas Radix primitives, TanStack Query. Next.js hanya untuk UI. API Go disajikan di origin yang sama (`/api`) lewat Traefik. Client TS di-generate dari OpenAPI (openapi-typescript + openapi-fetch) |
-| Backend | **Go** (D-21; versi stabil terbaru, minimal 1.26). Satu binary `cmd/msp` dengan subcommand `api`, `worker`, `migrate`, `tool` (utilitas ops). `net/http` + **oapi-codegen** (contract-first), **pgx v5 + sqlc**, migrasi **goose**, log `slog` JSON. Modular monolith (D-11) dengan batas modul via `internal/` + `depguard` |
-| Worker & antrean | **River** (antrean berbasis Postgres: retry, backoff, unique job, periodic job, enqueue transaksional, sekaligus outbox event/webhook). Redis hanya untuk cache, rate limit, dan counter fair-use |
-| Database | PostgreSQL 16+ dengan PostGIS, `pg_trgm`, `unaccent`. Full-text search Postgres (MVP) |
-| Storage | S3-compatible self-hosted: **SeaweedFS** (gateway S3; alternatif Garage) untuk export, upload, raw snapshot. MinIO community tidak dipakai karena repo-nya sudah diarsipkan. |
-| Kontrak | OpenAPI 3.1 (`contracts/openapi/`; subset yang didukung generator, lihat spike Sprint 0, 04 TQ-18), JSON Schema untuk event, webhook, dan Input Contract (`contracts/events/`, `contracts/input/`) |
-| JS tooling | Node 24 LTS, pnpm workspaces, Turborepo, ESLint, Prettier |
-| Go tooling | gofmt/goimports, golangci-lint (termasuk gosec, staticcheck, depguard), govulncheck, sqlc, oapi-codegen. Build `CGO_ENABLED=0` → image distroless/static |
-| Test | `go test` (+ `-race`, fuzzing native), rapid (property-based), golden file, Schemathesis, Vitest + Testing Library, Playwright + axe-core, k6 |
-| CI/CD | **GitLab CI** (runner Docker self-hosted), GitLab Container Registry. Deploy staging → production via job manual pada tag rilis terproteksi. **Tanpa GitHub** (D-18). |
-| Hosting | **Dedicated server** di data center Indonesia (D-19): Docker Compose di belakang Traefik, PostgreSQL + PostGIS self-managed (replika + pgBackRest PITR), Redis, SeaweedFS (S3). Provisioning dengan Ansible. Secret: SOPS + age. |
-| Observability | OpenTelemetry → Prometheus/Grafana/Loki/Tempo (self-hosted), log JSON terstruktur, error tracking GlitchTip (kompatibel Sentry SDK) |
-| Versioning | Aplikasi SemVer `vX.Y.Z` · API `/v1` · skor `priority-X.Y.Z` · geo `geo-X.Y.Z` · prompt AI `brief-X.Y.Z` · snapshot `ds-YYYY.MM.n` · design tokens SemVer paket |
+| Repo & CI/CD | Monorepo di **GitLab CE self-hosted** + GitLab CI (D-18). Tanpa GitHub |
+| Backend | **Go** (D-21). Satu binary `msp`. `net/http` + **oapi-codegen** (kontrak OpenAPI), **pgx + sqlc**, migrasi **goose**, antrean **River** (di atas Postgres) |
+| Frontend | **Next.js** + TypeScript + Tailwind (membaca design tokens) + Radix. Client API di-generate dari OpenAPI |
+| Auth | **Ory Kratos** self-hosted (D-20) |
+| Database | **PostgreSQL 16 + PostGIS + pg_trgm** |
+| File (export) | Disk lokal lewat interface `storage`. S3 di F3 |
+| AI | **Claude**, fallback ke API **OpenAI-compatible** (D-15) |
+| Wilayah | **GeoAPI** (`geoapi.mcpke.dev`) di-sync ke PostGIS. Peta: vector tiles GeoAPI + basemap OpenStreetMap |
+| Hosting | **2 dedicated server** di Indonesia (D-19, D-26): `prod` (aplikasi + DB) dan `ops` (GitLab, runner, staging, monitoring). Docker Compose + Caddy (TLS otomatis) |
+| Backup | **pgBackRest** (WAL kontinu) ke object storage S3-compatible off-site di Indonesia |
+| Secret | Variabel CI terproteksi GitLab → file `.env` di server (izin 600) |
+| Observability | Log JSON (`slog`), endpoint `/metrics` → Prometheus + Grafana + alert (email/Telegram) |
 
-### Struktur monorepo (target)
+**Sengaja tidak dipakai di F1:** Redis, PgBouncer, object storage internal, server kedua/HA, blue/green deploy, Ansible, SOPS, image signing/SBOM, mutation testing, dan mesin search terpisah. Masing-masing baru ditambahkan bila ada kebutuhan nyata (F2/F3).
+
+## Kosakata teknis bersama
+
+Semua dokumen memakai nama-nama ini persis.
+
+| Hal | Nama |
+|---|---|
+| Binary & subcommand | `msp api`, `msp worker`, `msp migrate`, `msp tool import <file.jsonl[.gz]>`, `msp tool geo-sync`, `msp tool rescore` |
+| Format dataset | JSON Lines: satu objek JSON-LD schema.org per baris |
+| Antrean River | `import`, `score`, `export`, `webhook`, `ai` |
+| Service Compose (prod & staging) | `caddy`, `web`, `api`, `worker`, `kratos`, `postgres` |
+| Service Compose (server ops) | `gitlab`, `gitlab-runner`, `prometheus`, `alertmanager`, `grafana` |
+| Environment | `local` (laptop, Docker Compose), `staging` (server ops), `production` (server prod) |
+| API | Prefix `/api/v1` · health `/healthz` (proses hidup) dan `/readyz` (DB siap) · metrik `/metrics` (internal) |
+| Env var | Prefix `MSP_`, mis. `MSP_DATABASE_URL`, `MSP_ANTHROPIC_API_KEY`, `MSP_LLM_FALLBACK_BASE_URL`, `MSP_LLM_FALLBACK_API_KEY`, `MSP_LLM_FALLBACK_MODEL`, `MSP_GEOAPI_BASE_URL`, `MSP_STORAGE_DIR`, `MSP_ENCRYPTION_KEY` |
+| Image | `<registry>/msp/api:<git-sha>`, `<registry>/msp/web:<git-sha>`. Rilis = tag Git `vX.Y.Z` |
+| Versi model | Skor `priority-X.Y.Z`, wilayah `geo-X.Y.Z`, prompt AI `brief-X.Y.Z` |
+
+## Struktur monorepo
 
 ```
 MesinProspek/
 ├─ apps/
-│  ├─ web/                 Next.js (UI customer + ops console)
-│  └─ api/                 Go module: cmd/msp (api|worker|migrate), internal/<modul>, db/migrations, db/queries
+│  ├─ api/            Go: cmd/msp, internal/<modul>, db/migrations, db/queries
+│  └─ web/            Next.js
 ├─ packages/
-│  ├─ design-tokens/       Sumber: docs/02-design-system/tokens → build CSS/Tailwind/TS
-│  ├─ ui/                  Komponen React
-│  └─ api-client/          Client TS hasil generate OpenAPI
-├─ contracts/
-│  ├─ openapi/             openapi.yaml
-│  ├─ events/              JSON Schema event & webhook
-│  └─ input/               JSON Schema Input Contract
-├─ data/
-│  ├─ taxonomy/            Taksonomi industri & mapping kategori
-│  └─ reference/           Daftar platform domain, webmail, pola telepon
-├─ infra/
-│  ├─ docker/              docker-compose lokal
-│  └─ ansible/             Inventory, role, playbook (staging & production)
+│  ├─ design-tokens/  build dari docs/02-design-system/tokens
+│  └─ api-client/     client TS hasil generate OpenAPI
+├─ contracts/openapi.yaml
+├─ data/              taksonomi kategori, pola URL (sosial, link aggregator, subdomain gratis)
+├─ deploy/            docker-compose.*.yml, Caddyfile, skrip bootstrap server
 ├─ docs/
-└─ .gitlab-ci.yml          Pipeline CI/CD (GitLab)
+└─ .gitlab-ci.yml
 ```
 
-## Status dokumen
+## Konvensi ID
 
-Semua dokumen di folder ini berstatus **Draft v0.1**. Keputusan berlabel *Proposed* menjadi default kerja sampai dikonfirmasi. Ubah statusnya di register keputusan (00 §7) saat keputusan diambil.
+`D-` keputusan · `Q-` pertanyaan terbuka · `FR-` / `BR-` / `NFR-` requirement (PRD) · `TC-` test · `WP-` paket kerja · `RB-` / `AL-` runbook & alert.
