@@ -9,7 +9,7 @@
 | Tanggal | 2026-10-10 |
 | Basis | `04-technical-design.md` (ADR-06/07/18/20/21/22, §2, §12–§18), `06-ci-cd.md` (§3, §6, §7, §9–§14), `01-prd.md` (NFR-AVAIL-01/02, NFR-PRIV-*, BR-PRIV-03, FR-AUD-003..005, FR-OPS-*, R-08), `05-test-strategy.md` (§3.25, TC-OPS-007/011/015/016) |
 | Keputusan | D-18 (GitLab CE self-hosted), D-19 (dedicated server di DC Indonesia), D-21 (Go, binary `msp`) |
-| Audience | On-call engineer, Maintainer, DevOps, operator ops console, DPO/PIC pelindungan data |
+| Audience | Peran internal PRD §8.1.2 (Ops Engineer on-call, Data Steward, Privacy & Billing, Ops Admin), Maintainer, DevOps, DPO/PIC pelindungan data |
 | Status | Draft. Semua perintah **ilustratif**; nama final mengikuti `infra/ansible/`, 04, dan 06 |
 
 > Konvensi: `RB-nn` = prosedur (RB-0x akses, RB-1x–3x rutin, RB-4x backup/DR, RB-5x insiden). `AL-nn` = alert playbook. `Q-RB-nn` = pertanyaan terbuka (§10). Placeholder ditulis `<…>`. Jam dalam WIB (UTC+7); DB, log, dan timeline insiden memakai UTC + WIB. Perintah dijalankan dari laptop admin yang terhubung WireGuard kecuali disebut lain. Perubahan konfigurasi selalu lewat MR → pipeline (06 §11.3). Perintah manual di runbook ini hanya untuk diagnosis, mitigasi darurat, atau break-glass, dan wajib ditindaklanjuti MR adopsi atau dikembalikan ≤ 2 hari kerja (06 §11.4).
@@ -46,19 +46,22 @@ Berlaku untuk production (`app-01`/`app-02`, `db-01`, `db-02`, `stor-01`, `ops-0
 
 ### 1.3 Peran
 
+Peran ops console mengikuti **PRD §8.1.2** (nama sama persis; otorisasi per endpoint di 04 §11.5/§15.2). Satu orang boleh memegang beberapa peran; semua akun internal wajib MFA dan setiap aksi diaudit.
+
 | Peran | Tanggung jawab | Default |
 |---|---|---|
-| On-call primary | Ack alert, triage, menjalankan AL/RB, deklarasi insiden, containment awal | Rotasi |
-| On-call secondary | Backup ack, diagnosis paralel, scribe bila primary menjadi IC | Rotasi |
+| **Ops Engineer (on-call)** — primary | Ack alert, triage, menjalankan AL/RB, deklarasi insiden, containment awal; di ops console: dashboard, feature flag & kill switch, redrive DLQ, akses support read-only | Rotasi |
+| Ops Engineer (on-call) — secondary | Backup ack, diagnosis paralel, scribe bila primary menjadi IC | Rotasi |
+| **Data Steward** | Merge review, koreksi data (FR-OPS-009), triase laporan data, **review laporan validasi snapshot (QG-34) dan laporan regresi model**; meminta publish/re-publish/reject/aktivasi lewat issue rilis (eksekusi oleh Maintainer di pipeline, 06 §10) | Data-intel lead |
+| **Privacy & Billing** | Suppression, permintaan subjek data (DSR), grant/refund credit, ubah plan | Ops internal (MFA) bersama DPO |
+| **Ops Admin** | Semua permission ops console + kelola akun & peran internal, Source Registry | Tech lead |
 | Incident Commander (IC) | Memimpin SEV1/SEV2: prioritas, keputusan, delegasi. IC tidak mengetik perintah bila ada orang lain | Tech lead; sementara primary sampai diserahkan |
 | Comms lead | Update internal, customer (§7.4), dan founder | Founder/Product (SEV1), IC (SEV2) |
 | Scribe | Timeline di issue insiden (UTC + WIB, aksi, pelaku, bukti) | Secondary |
-| Maintainer | Satu-satunya yang menjalankan job production (deploy, rollback, publish, activate, infra apply) dan memegang kunci age/break-glass | Tech lead + 1 engineer senior (Q-CI-07) |
+| Maintainer (peran GitLab, bukan peran ops console) | Satu-satunya yang menjalankan job production (deploy, rollback, publish/re-publish/reject snapshot, activate/rollback versi, infra apply) dan memegang kunci age/break-glass | Tech lead + 1 engineer senior (Q-CI-07) |
 | DPO / PIC pelindungan data | Penilaian PDP, keputusan notifikasi bersama hukum, korespondensi subjek data/lembaga/tenant, register DSR | `<nama>` |
 | Konsultan hukum | Validasi kewajiban dan isi notifikasi PDP (BR-PRIV-03), tenggat DSR | `<firma>` (eksternal) |
 | Founder | Keputusan bisnis: PITR (06 §14.3), aktivasi lokasi DR, komunikasi publik, kompensasi | `<nama>` |
-| Data owner | Rilis snapshot dan model (tag `ds-*`, `priority-*`, `geo-*`, `brief-*`, `angle-*`) | Data-intel lead |
-| Operator ops console | Suppression, DSR, merge review, grant credit, koreksi data, akses support | Ops internal (MFA) |
 
 ### 1.4 Matriks eskalasi (isi sebelum closed beta)
 
@@ -115,11 +118,12 @@ Port internal di bawah adalah default upstream/contoh; nilai final ada di invent
 |---|---|---|---|---|
 | traefik | `msp-core` (Q-RB-03) | Traefik v3 | 80, 443 | File provider `/opt/traefik/dynamic/msp.yml`; ACME Let's Encrypt |
 | web (2 replika) | `msp-blue` / `msp-green` | `msp-web@<digest>` | 3000 | UI saja |
-| api (2 replika) | `msp-<warna>` | `msp-backend@<digest> api` | 8080 (`/healthz`, `/readyz`) | Service Traefik `api-<warna>@docker` |
-| worker-pipeline / -scoring / -export / -webhook / -ai / -maintenance | `msp-<warna>` | `worker --queues=<q>` | — | `MaxWorkers` 32/8/4/32/16/8. Client River memakai pool langsung kecil ke `db-primary.internal:5432` (04 §17.4). `worker-webhook` di network terisolasi (hanya smokescreen, PgBouncer lokal, `db-primary.internal:5432`, Redis) |
-| `msp-migrate-<versi>` | one-off | `migrate up` | — | Dijalankan `deploy.yml`, langsung ke `db-primary.internal:5432` (`msp_owner`), lalu dihapus |
+| api (2 replika) | `msp-<warna>` | `msp-backend@<digest> api` | 8080 (`/healthz`, `/readyz`) | Service Traefik `api-<warna>@docker`. `/readyz` = DB primary + versi skema (tanpa Redis, 04 §11.5). DB: `msp_app` + `msp_ops` via PgBouncer, replica `db-02` langsung |
+| worker-pipeline / -scoring / -export / -webhook / -ai / -maintenance | `msp-<warna>` | `worker --queues=<q>` | — | `MaxWorkers` 32/8/4/32/16/8. Query domain lewat PgBouncer lokal (`worker-pipeline`: `MSP_DATABASE_URL_PIPELINE_FILE`/`msp_pipeline`; lainnya: `MSP_DATABASE_URL_APP_FILE`/`msp_app`; `worker-maintenance` juga `MSP_DATABASE_URL_OPS_FILE`/`msp_ops`). Client River memakai pool langsung kecil ke `db-primary.internal:5432` (`MSP_DATABASE_URL_DIRECT_FILE`/`msp_river`). Pemetaan kanonik 04 §17.4. `worker-webhook` di network terisolasi (hanya smokescreen, PgBouncer lokal, `db-primary.internal:5432`, Redis) |
+| `msp-migrate-<versi>` | one-off | `migrate up` | — | Dijalankan `deploy.yml`, langsung ke `db-primary.internal:5432` (`MSP_DATABASE_URL_MIGRATE_FILE`/`msp_owner`), lalu dihapus |
+| `msp-tool-<aksi>` | one-off | `tool <aksi>` | — | Dijalankan `tool-job.yml` dari pipeline; via PgBouncer lokal (`msp_pipeline` untuk rilis data/model/prompt, `msp_ops` untuk aksi ops) |
 | kratos | `msp-core` | Ory Kratos (D-20 Open) | 4433 public / 4434 admin | Admin API tidak pernah lewat Traefik |
-| pgbouncer | `msp-core` | PgBouncer (transaction mode) | 6432 (lokal) | Hanya untuk `api`; upstream `db-primary.internal:5432`; di-reload saat failover (RB-42) |
+| pgbouncer | `msp-core` | PgBouncer (transaction mode) | 6432 (lokal) | Semua query domain `api` (`msp_app`, `msp_ops`), worker (`msp_app`, `msp_pipeline`, `msp_ops`), dan `msp tool`; **bukan** untuk client River, `migrate`, atau read replica (koneksi langsung, 04 §17.4). Upstream `db-primary.internal:5432`; di-reload saat failover (RB-42) |
 | redis | `msp-core` | Redis (TLS + ACL, `maxmemory` 8 GB) | 6379 | Cache/rate limit saja; tidak di-backup. Down → rate limit in-process + fair-use dari Postgres (AL-16) |
 | unbound | `msp-core` | Resolver DNS | 53 | Satu-satunya egress DNS; menyajikan record internal `db-primary.internal` (diubah `db-failover.yml`) |
 | smokescreen | `msp-core` | Egress proxy | 4750 | ACL role `webhook`, `ai`, `mail` |
@@ -195,19 +199,26 @@ URL internal (`grafana.<ops-domain>`, `gitlab.<ops-domain>`, `glitchtip.<ops-dom
 
 ### 3.1 Least privilege
 
-| Akses | On-call engineer | Maintainer | Operator ops console | Engineer lain |
-|---|:-:|:-:|:-:|:-:|
-| WireGuard (peer personal) | ✓ | ✓ | ✓ | ✓ (staging) |
-| SSH host prod (akun bernama, sudo tercatat auditd) | ✓ diagnosis | ✓ | — | — |
-| Docker di app host (setara root) | ✓ restart/diagnosis | ✓ | — | — |
-| DB `msp_readonly_replica` di `db-02` (alasan dicatat di issue) | ✓ | ✓ | — | — |
-| `sudo -u postgres` di host DB (replikasi, pgBackRest, `pg_stat_*`), **tanpa** membaca data tenant | ✓ | ✓ | — | — |
-| Write DB manual (`msp_owner`/superuser) | — | Break-glass (RB-01) | — | — |
-| Job production (deploy, rollback, publish, activate, apply infra) | — | ✓ | — | — |
-| Ops console: flag, DLQ | ✓ | ✓ | ✓ | — |
-| Ops console: suppression, DSR, grant credit, koreksi data, akses support | — | ✓ | ✓ | — |
-| Dekripsi SOPS production | — | ✓ | — | — (encrypt saja) |
-| Grafana, Loki, GlitchTip production | ✓ | ✓ | Dashboard ops | Baca |
+Kolom peran internal = PRD §8.1.2 (04 §15.2). **Maintainer** adalah peran GitLab (job production), bukan peran ops console; Maintainer memakai ops console lewat peran internal yang ditugaskan kepadanya (biasanya Ops Admin atau Ops Engineer).
+
+| Akses | Ops Engineer (on-call) | Data Steward | Privacy & Billing | Ops Admin | Maintainer | Engineer lain |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|
+| WireGuard (peer personal) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ (staging) |
+| SSH host prod (akun bernama, sudo tercatat auditd) | ✓ diagnosis | — | — | — | ✓ | — |
+| Docker di app host (setara root) | ✓ restart/diagnosis | — | — | — | ✓ | — |
+| DB `msp_readonly_replica` di `db-02` (alasan dicatat di issue) | ✓ | — | — | — | ✓ | — |
+| `sudo -u postgres` di host DB (replikasi, pgBackRest, `pg_stat_*`), **tanpa** membaca data tenant | ✓ | — | — | — | ✓ | — |
+| Write DB manual (`msp_owner`/superuser) | — | — | — | — | Break-glass (RB-01) | — |
+| Job production (deploy, rollback, publish/re-publish/reject snapshot, activate/rollback versi, apply infra) | — | — | — | — | ✓ | — |
+| Ops console: dashboard data/pipeline/intelligence/cost, status snapshot & versi model (read-only) | ✓ | ✓ | ✓ | ✓ | via peran | — |
+| Ops console: feature flag & kill switch, redrive DLQ, re-run stage | ✓ | — | — | ✓ | via peran | — |
+| Ops console: merge review, koreksi data, triase laporan data, review laporan validasi snapshot | — | ✓ | — | ✓ | via peran | — |
+| Ops console: suppression, DSR | — | — | ✓ | ✓ | via peran | — |
+| Ops console: grant/refund credit, ubah plan | — | — | ✓ | ✓ | via peran | — |
+| Ops console: akses support read-only ke data tenant (alasan wajib, RB-02) | ✓ | ✓ | ✓ | ✓ | via peran | — |
+| Ops console: kelola akun & peran internal, Source Registry | — | — | — | ✓ | via peran | — |
+| Dekripsi SOPS production | — | — | — | — | ✓ | — (encrypt saja) |
+| Grafana, Loki, GlitchTip production | ✓ | Dashboard ops | Dashboard ops | Dashboard ops | ✓ | Baca |
 
 Akses DB manusia di production hanya `msp_readonly_replica` dengan alasan tercatat (06 §3.1); grant untuk tabel diagnosis non-tenant (`river_job`, `goose_db_version`) = Q-RB-22. Mutasi data tenant hanya lewat fitur aplikasi/ops console yang teraudit, bukan SQL. Ops console memakai akun internal + MFA dengan audience terpisah; pembatasan ke WireGuard = Q-RB-24.
 
@@ -281,8 +292,8 @@ sudo -u postgres psql msp -v ON_ERROR_STOP=1     # BEGIN; <statement>; <verifika
 
 - **Tujuan:** memberi/mencabut akses sesuai §3.1. **Kapan:** anggota bergabung, berganti peran, atau keluar. **Prasyarat:** persetujuan Tech lead; offboarding Maintainer dikerjakan Maintainer lain.
 
-1. **Onboarding:** MR ke role `users` (akun + SSH key personal) dan `wireguard` (peer) → tag `infra-*`; akun GitLab dengan 2FA; akun ops console dengan MFA; masuk rotasi setelah shadowing.
-2. **Offboarding (hari yang sama):** blokir user GitLab; cabut sesi ops console ("logout semua sesi"); hapus peer WireGuard dan akun host via MR + tag `infra-*` (darurat: `sudo wg set wg0 peer <pubkey> remove` di `ops-01`, lalu MR adopsi).
+1. **Onboarding:** MR ke role `users` (akun + SSH key personal) dan `wireguard` (peer) → tag `infra-*`; akun GitLab dengan 2FA; akun ops console dengan MFA + peran internal sesuai tugas (grant oleh Ops Admin, `PUT /v1/ops/staff/{user_id}/roles`, teraudit); masuk rotasi setelah shadowing.
+2. **Offboarding (hari yang sama):** blokir user GitLab; cabut peran internal dan sesi ops console ("logout semua sesi"); hapus peer WireGuard dan akun host via MR + tag `infra-*` (darurat: `sudo wg set wg0 peer <pubkey> remove` di `ops-01`, lalu MR adopsi).
 3. Bila Maintainer: rotasi kunci age (`sops updatekeys`), SSH deploy, token bot, kredensial break-glass (RB-20); perbarui §1.4 dan `.sops.yaml`.
 
 - **Verifikasi:** akses ditolak di semua jalur; job `drift` bersih. **Rollback:** pencabutan keliru dipulihkan lewat MR yang sama. **Audit:** issue `access-change`.
@@ -291,7 +302,7 @@ sudo -u postgres psql msp -v ON_ERROR_STOP=1     # BEGIN; <statement>; <verifika
 
 ## 4. Prosedur rutin
 
-Aksi `msp tool <aksi>` di production selalu berjalan sebagai container one-off `msp-backend@<digest> tool …` yang dipicu pipeline (runner `deploy`, playbook `tool-job.yml`), bukan dari shell interaktif (06 §10). Aksi ops console memakai endpoint `/v1/ops/*` (04 §11.5): akun internal + MFA, audience sesi terpisah, selalu diaudit. Contoh `curl` di bawah memakai cookie sesi ops `<sesi-ops>`; UI ops console adalah jalur utama.
+Aksi `msp tool <aksi>` di production selalu berjalan sebagai container one-off `msp-backend@<digest> tool …` yang dipicu pipeline (runner `deploy`, playbook `tool-job.yml`), bukan dari shell interaktif (06 §10). Aksi ops console memakai endpoint `/v1/ops/*` (04 §11.5): akun internal + MFA, audience sesi terpisah, otorisasi per peran internal (§1.3), selalu diaudit. Publish/re-publish/reject snapshot dan aktivasi/rollback versi skor, geo, atau prompt **tidak** punya endpoint ops: hanya job manual Maintainer di pipeline protected tag (`ds-*`, `priority-*`, `geo-*`, `brief-*`, `angle-*`) yang menjalankan `msp tool` (06 §10); ops console hanya menampilkan status, riwayat, dan laporannya. Contoh `curl` di bawah memakai cookie sesi ops `<sesi-ops>`; UI ops console adalah jalur utama.
 
 ### RB-10 — Deploy production normal (06 §6)
 
@@ -392,7 +403,7 @@ ssh app-01 'docker compose -p msp-green up -d --no-recreate --scale worker-expor
 ### RB-15 — Re-drive job River `discarded` (DLQ, FR-OPS-002)
 
 - **Tujuan:** memproses ulang job yang kehabisan percobaan setelah penyebabnya diperbaiki. **Kapan:** AL-06, laporan user (export gagal), pemulihan pasca-insiden.
-- **Prasyarat:** akun ops console; penyebab sudah diketahui.
+- **Prasyarat:** ops console dengan peran Ops Engineer atau Ops Admin; penyebab sudah diketahui.
 
 1. Ops console → Pipeline Health → DLQ (`GET /v1/ops/dlq`). Kelompokkan per `queue`, `kind`, error terakhir.
 2. Klasifikasi: (a) transient (timeout DB/jaringan) → redrive; (b) bug → tunggu fix ter-deploy, lalu redrive; (c) data buruk/non-retryable → jangan redrive, catat (perbaikan di mapping/snapshot berikutnya).
@@ -433,27 +444,28 @@ sum by (http_status, error_code) (count_over_time({service="worker-webhook", env
 ### RB-17 — Publish & rollback snapshot dataset `ds-YYYY.MM.n` (06 §10.2, 04 §4.2)
 
 - **Tujuan:** menerbitkan snapshot baru dengan gate QG-34, atau kembali ke snapshot sebelumnya. **Kapan:** rilis data terjadwal (kadens Q-03, default kuartalan) atau koreksi massal; snapshot lama tidak pernah diedit.
-- **Prasyarat:** data owner (Maintainer); file + manifest dengan sha256 per file dan tag lisensi (BR-PRIV-04).
+- **Prasyarat:** Maintainer (menjalankan job pipeline); Data Steward (meninjau laporan validasi); file + manifest dengan sha256 per file dan tag lisensi (BR-PRIV-04).
 
-1. Ops mengunggah file mentah + manifest ke bucket landing production (`msp-snapshots/<source>/<versi>/`, kredensial tanpa hak overwrite/delete).
+1. Ops mengunggah file mentah + manifest ke bucket landing production (`msp-snapshots/<source>/<versi>/`, kredensial tanpa hak overwrite/delete) dengan AWS CLI v2 sebagai klien S3 (06 §1.5).
 2. MR manifest `data/snapshots/ds-….yaml` → merge.
-3. Maintainer membuat tag `ds-YYYY.MM.n` → pipeline: [1] register + checksum → [2] validasi (production, `VALIDATING`) → [3] rehearsal staging (sampel tanpa kontak pribadi) → [4] gate QG-34 → [5] job manual **`publish`** → [6] recompute skor stale → [7] verifikasi.
-4. Selama pipeline run (≤ 12 jam, NFR-PERF-07), pantau Pipeline Health (AL-04/05). `pipeline.publish` off menahan langkah 5.
-5. Setelah publish: pantau fan-out re-skor (antrean `scoring` prioritas 4, maks 4 berjalan) dan Data Health (evidence coverage ≥ 95%).
+3. Maintainer membuat tag `ds-YYYY.MM.n` → pipeline: [1] register + checksum (`msp tool snapshot-load`) → [2] validasi (production, `VALIDATING`) → [3] rehearsal staging (sampel tanpa kontak pribadi) → [4] gate **QG-34** → [5] job manual **`publish`** (`msp tool snapshot-publish`) atau [5'] job manual **`reject`** (`msp tool snapshot-reject`) → [6] recompute skor stale → [7] verifikasi.
+4. Data Steward meninjau laporan validasi dan hasil QG-34 di ops console (read-only, `GET /v1/ops/snapshots/{id}/report`), lalu mencatat rekomendasi publish/reject di issue rilis data. Ambang dan aksi (Blokir / Wajib catatan) **hanya** dari tabel QG-34 di 06 §10.2 — jangan memakai angka dari sumber lain. Cek "Wajib catatan" yang gagal → tulis penjelasan di anotasi tag; cek "Blokir" yang gagal → reject, atau waiver 06 §8.3.
+5. Selama pipeline run (≤ 12 jam, NFR-PERF-07), pantau Pipeline Health (AL-04/05). `pipeline.publish` off menahan langkah pipeline [5].
+6. Setelah publish: pantau fan-out re-skor (antrean `scoring` prioritas 4, maks 4 berjalan) dan Data Health (evidence coverage ≥ 95%).
 
 ```bash
-aws --endpoint-url https://<s3-internal>:8333 s3 cp ./ds-2026.11.1/ s3://msp-snapshots/<source>/ds-2026.11.1/ --recursive
+aws --endpoint-url https://<s3-internal>:8333 s3 cp ./ds-2026.11.1/ s3://msp-snapshots/<source>/ds-2026.11.1/ --recursive   # AWS CLI v2, 06 §1.5
 git tag -a ds-2026.11.1 -m "Snapshot <source> 2026-11 #1 (issue #<n>)" && git push origin ds-2026.11.1
 ```
 
 - **Verifikasi:** event `snapshot.published`; Data Health per snapshot sesuai gate; tidak ada lonjakan stale yang tidak di-recompute.
-- **Rollback:** snapshot immutable dan ID entity stabil. Rollback = **re-publish** snapshot sebelumnya (`SUPERSEDED → PUBLISHED`, 04 §4.2): job manual `republish` di pipeline tag `ds-*` snapshot tersebut (Maintainer, alasan wajib, teraudit) → recompute skor stale + rebuild projection (06 §10.2, §14.4). Partisi observation snapshot sebelumnya masih online (`observation_online_snapshots: 2`); bila sudah diarsip, partisi dipasang kembali dari Parquet lebih dulu.
-- **Audit:** aktor = user GitLab yang menjalankan `publish`; override gate wajib alasan (audit).
+- **Rollback:** snapshot immutable dan ID entity stabil. Rollback = **re-publish** snapshot sebelumnya (`SUPERSEDED → PUBLISHED`, 04 §4.2): job manual `republish` di pipeline tag `ds-*` snapshot tersebut (Maintainer, alasan wajib, teraudit) → recompute skor stale + rebuild projection (06 §10.2, §14.4). Permintaan re-publish dari ops console/Data Steward diajukan lewat issue; tidak ada tombol atau endpoint re-publish di ops console. Partisi observation snapshot sebelumnya masih online (`observation_online_snapshots: 2`); bila sudah diarsip, partisi dipasang kembali dari Parquet lebih dulu.
+- **Audit:** aktor = user GitLab yang menjalankan `publish`/`republish`/`reject` + `audit_log` dari `msp tool`; waiver gate wajib issue `qg-waiver` (06 §8.3).
 
 ### RB-18 — Aktivasi & rollback versi skor (`priority-X.Y.Z`), geo (`geo-X.Y.Z`), prompt (`brief-X.Y.Z`, `angle-X.Y.Z`)
 
 - **Tujuan:** mengaktifkan versi model/konfigurasi yang sudah ter-deploy (status `draft`) secara terkontrol (06 §10.3–§10.4). **Kapan:** versi baru lulus MR (QG-23); rollback bila Intelligence Health, feedback, atau alert memburuk.
-- **Prasyarat:** kode versi sudah di production; issue rilis model dengan approval data-intel + product.
+- **Prasyarat:** kode versi sudah di production; issue rilis model dengan approval data-intel (Data Steward) + product; Maintainer untuk job pipeline. Ops console hanya menampilkan status versi, riwayat aktivasi, dan epoch `RETAINED` (`GET /v1/ops/model-versions`, read-only); aktivasi dan rollback **tidak** dilakukan dari ops console.
 
 | Langkah | Skor & geo | Prompt AI |
 |---|---|---|
@@ -462,11 +474,12 @@ git tag -a ds-2026.11.1 -m "Snapshot <source> 2026-11 #1 (issue #<n>)" && git pu
 | Approval | Justifikasi product bila transisi band > 15% sampel atau overlap top-50 < 70% | Data-intel + product |
 | Aktivasi | Job manual `activate` → `msp tool score-model-activate` (geo: `msp tool geo-activate`) → recompute bertahap, epoch atomik | Job manual `activate` → `msp tool prompt-activate --version <versi>` (registry versi 04 §13.2, teraudit). Flag tidak dipakai untuk memilih versi |
 | Pantau | Intelligence Health; AL-05, AL-07 | AL-08, AL-09, feedback 👍/👎, biaya per brief |
-| Rollback | `msp tool score-model-activate --to <versi-sebelumnya>` (geo: `geo-activate --to`): aktifkan kembali epoch versi sebelumnya (disimpan selama bake 7 hari); setelah bake, versi lama direproduksi dari snapshot + versi | `msp tool prompt-activate --version <versi-sebelumnya>`; kill switch `ai.generation` sebagai upaya terakhir |
+| Rollback | Job manual `rollback` di pipeline tag versi tersebut → `msp tool score-model-activate --to <versi-sebelumnya>` (geo: `geo-activate --to`): aktifkan kembali epoch `RETAINED` versi sebelumnya (disimpan selama bake 7 hari sejak aktivasi, 04 §7.9), lalu epoch yang stale di-recompute dengan versi lama; setelah bake = aktivasi versi lama + recompute penuh (versi lama direproduksi dari snapshot + versi) | Job manual di pipeline tag → `msp tool prompt-activate --version <versi-sebelumnya>`; kill switch `ai.generation` sebagai upaya terakhir |
 
 ```bash
 git tag -a priority-1.3.0 -m "Model skor 1.3.0 (issue #<n>)" && git push origin priority-1.3.0
-# rollback dalam masa bake (ilustratif)
+# yang dijalankan job manual pipeline (runner deploy) saat rollback dalam masa bake (ilustratif);
+# dari laptop Maintainer hanya sebagai break-glass bila GitLab mati (RB-01)
 ansible-playbook -i infra/ansible/inventories/production infra/ansible/playbooks/tool-job.yml -e tool_args="score-model-activate --to priority-1.2.0"
 ansible-playbook -i infra/ansible/inventories/production infra/ansible/playbooks/tool-job.yml -e tool_args="prompt-activate --version brief-1.0.0"
 ```
@@ -475,7 +488,7 @@ ansible-playbook -i infra/ansible/inventories/production infra/ansible/playbooks
 
 ### RB-19 — AI kill switch & feature flag (FR-OPS-007, 04 §18.3, 06 §13)
 
-- **Tujuan:** mematikan kapabilitas bermasalah ≤ 1 menit tanpa deploy. **Kapan:** langkah containment pertama untuk masalah yang terlokalisasi. **Prasyarat:** akun ops console + MFA (on-call atau ops).
+- **Tujuan:** mematikan kapabilitas bermasalah ≤ 1 menit tanpa deploy. **Kapan:** langkah containment pertama untuk masalah yang terlokalisasi. **Prasyarat:** ops console + MFA dengan peran Ops Engineer (on-call) atau Ops Admin.
 
 | Flag | Efek bila off | Pakai saat |
 |---|---|---|
@@ -483,9 +496,9 @@ ansible-playbook -i infra/ansible/inventories/production infra/ansible/playbooks
 | `export.create` | Export baru ditolak; job berjalan tetap selesai | Bug export, stor-01 bermasalah, AL-20 |
 | `webhook.delivery` | Delivery di-snooze (tetap `PENDING`, nyalakan ≤ 24 jam) | Masalah egress sisi MSP, AL-18 (scope WORKSPACE) |
 | `upload.create` | Upload baru ditolak | Bug parser, stor-01 bermasalah |
-| `pipeline.publish` | Snapshot tidak dapat di-publish | Gate meragukan, insiden DB |
+| `pipeline.publish` | Snapshot tidak dapat di-publish atau di-re-publish (job pipeline menolak) | Gate meragukan, insiden DB |
 | `dns.lookup` | Verifikasi email → UNKNOWN (bukan INVALID) | Unbound/DNS publik bermasalah |
-| `search.include_private` | Toggle private prospect disembunyikan | Bug union private prospect |
+| `search.include_private` | Private prospect ("Dari upload Anda") tidak ikut search; search hanya global dan filter sumber disembunyikan (default **on**: private prospect ikut search, 04 §10.9) | Bug union private prospect |
 | `scoring.bulk_rescore` | Fan-out re-skor ditunda | Backlog, beban DB, p95 search |
 | `unlock.enabled` | Unlock kontak langsung ditolak `503 FEATURE_DISABLED` (unlock via export/webhook dikendalikan flag masing-masing) | Bug unlock/ledger, AL-20 |
 | `maintenance.read_only` | Default **off**; bila **on**: semua write API → `503 MAINTENANCE_READ_ONLY`, banner UI, worker hanya memproses antrean `maintenance`; baca tetap jalan | PITR (RB-41), failover/switchover (RB-42/43), DR (RB-46) |
@@ -608,12 +621,12 @@ sudo -u postgres pgbackrest --stanza=msp expire
 ### RB-25 — Pemrosesan suppression (FR-AUD-003, NFR-PRIV-02 ≤ 24 jam, 04 §15.7)
 
 - **Tujuan:** menghapus person/contact point dari semua projection dan sistem hilir ≤ 24 jam (target operasional ≤ 1 jam). **Kapan:** DSR hapus/keberatan (RB-26), permintaan langsung, atau keputusan ops.
-- **Prasyarat:** operator ops console; dasar permintaan tercatat (nomor DSR/tiket).
+- **Prasyarat:** ops console dengan peran Privacy & Billing atau Ops Admin; dasar permintaan tercatat (nomor DSR/tiket).
 
 1. Ops console → Suppression → tambah (`POST /v1/ops/suppressions`): jenis (contact point email/telepon, person, establishment), nilai (disimpan sebagai `value_hash`), alasan, rujukan DSR. T0 = `created_at`. Nilai mentah tidak ditulis di tiket.
 2. Sistem menjalankan rantai propagasi dalam satu transaksi + job: global layer `suppressed=true` (RLS langsung menyembunyikan) → projection `prospect_search` + cache profil/facet → AI artifact `INVALIDATED` → delivery `PENDING/RETRYING` yang memuat subjek `CANCELLED` → file export **aktif** yang memuat subjek (via `action.distribution_log`) dibuat ulang tanpa record itu, link lama dicabut, pemilik diberi notifikasi → event **`suppression.applied`** (tanpa nilai kontak) ke setiap workspace yang pernah menerima record lewat export/webhook.
 3. Pantau detail suppression: sweep per jam mengisi `propagated_at` bila kebocoran = 0.
-4. Verifikasi propagasi: (a) subjek tidak muncul di search/profil dari workspace sintetis `msp-synthetic-monitor` (cari dengan nama usaha, bukan nilai kontak); (b) file export aktif terkait sudah dibuat ulang; (c) event `suppression.applied` terkirim ke workspace penerima; (d) `msp_suppression_leak_count` = 0.
+4. Verifikasi propagasi: (a) subjek tidak muncul di search/profil dari workspace pemantauan production `msp-synthetic-monitor` (06 §3.3; cari dengan nama usaha, bukan nilai kontak); (b) file export aktif terkait sudah dibuat ulang; (c) event `suppression.applied` terkirim ke workspace penerima; (d) `msp_suppression_leak_count` = 0.
 5. Data upload tenant tidak di-suppress otomatis (tenant = pengendali). Teruskan ke tenant (RB-26 langkah 5); nilai yang sama di global layer tetap di-suppress.
 6. Snapshot berikutnya: laporan validasi menunjukkan `SUPPRESSED_VALUE` untuk nilai yang cocok.
 7. Catat `propagated_at − created_at` di DSR/tiket, lalu tutup.
@@ -628,11 +641,11 @@ max(msp_suppression_propagation_lag_seconds)   # katalog metrik 04 §16.3
 
 ### RB-26 — Permintaan subjek data / DSR (FR-AUD-004, FR-OPS-008, 04 §15.8)
 
-- **Tujuan:** memenuhi hak akses, koreksi, hapus, dan keberatan subjek data dalam tenggat. **Kapan:** DSR masuk lewat form/email. **Prasyarat:** operator ops console; DPO untuk penolakan dan penerusan ke tenant.
+- **Tujuan:** memenuhi hak akses, koreksi, hapus, dan keberatan subjek data dalam tenggat. **Kapan:** DSR masuk lewat form/email. **Prasyarat:** ops console dengan peran Privacy & Billing atau Ops Admin; DPO untuk penolakan dan penerusan ke tenant.
 - **Status:** `RECEIVED → VERIFYING → IN_PROGRESS → [FORWARDED_TO_TENANT] → COMPLETED | REJECTED`.
 
-1. **Intake:** form publik (captcha + verifikasi email) atau email ops → `ops.data_subject_request`. Pengakuan penerimaan otomatis ≤ 1 hari kerja; untuk intake email, ops membuat record di hari yang sama.
-2. **Verifikasi identitas** pemohon (verifikasi email; kepemilikan nomor telepon lewat OTP/panggilan balik; prosedur dokumen ditetapkan bersama hukum). Jangan mengonfirmasi ada/tidaknya data sebelum terverifikasi.
+1. **Intake:** form publik (captcha) atau email ops → `ops.data_subject_request`. Pengakuan penerimaan otomatis ≤ 1 hari kerja; untuk intake email, ops membuat record di hari yang sama.
+2. **Verifikasi identitas** pemohon (FR-AUD-004, 04 §15.8): (a) **OTP email** lewat SMTP provider email transaksional (form publik mengirim OTP otomatis; untuk intake email, ops memicu OTP dari ops console); (b) pemohon yang **hanya punya kontak telepon** → ops memverifikasi **manual lewat panggilan balik** ke nomor yang tercatat untuk subjek (bukan nomor yang diberikan pemohon), lalu mencatat waktu, petugas, dan hasilnya di DSR. MVP **tidak** memakai provider SMS/WhatsApp; jangan mengirim OTP lewat SMS/WA pribadi. Prosedur dokumen tambahan ditetapkan bersama hukum. Jangan mengonfirmasi ada/tidaknya data sebelum terverifikasi.
 3. **Cari subjek** via `value_hash` di ops console. Hasil: global layer (person/contact point) dan kecocokan di upload tenant (hanya workspace ID + jumlah, bukan isi).
 4. **Eksekusi per tipe:** akses → laporan data (field, sumber/snapshot, tujuan pemrosesan) lewat kanal aman; koreksi → laporan data → RB-29; hapus/keberatan → RB-25 + penghapusan nilai P1 dari global layer.
 5. **Data upload tenant:** status `FORWARDED_TO_TENANT`, beri tahu Owner/Admin workspace (notifikasi + email), dieksekusi atas instruksi tenant (BR-PRIV-02).
@@ -643,7 +656,7 @@ max(msp_suppression_propagation_lag_seconds)   # katalog metrik 04 §16.3
 
 ### RB-27 — Penutupan workspace (FR-AUD-005, 04 §15.8)
 
-- **Tujuan:** menghapus data tenant setelah masa tenggang 30 hari dan melakukan pseudonimisasi audit/ledger. **Kapan:** workspace `PENDING_DELETION`; eksekusi hari ke-30. **Prasyarat:** operator ops (pantau), DPO (pengecualian).
+- **Tujuan:** menghapus data tenant setelah masa tenggang 30 hari dan melakukan pseudonimisasi audit/ledger. **Kapan:** workspace `PENDING_DELETION`; eksekusi hari ke-30. **Prasyarat:** Privacy & Billing atau Ops Admin (pantau), DPO (pengecualian).
 
 1. Owner menutup workspace → `PENDING_DELETION`: akses diblokir, delivery webhook berhenti; Owner masih dapat membatalkan. Permintaan lewat support → konfirmasi bahwa pemohon adalah Owner.
 2. Hari ke-30: job `purge_workspace` (antrean `maintenance`) memanggil handler purge setiap modul (semua tabel tenant), menghapus prefix `{workspace_id}/` di object storage, key Redis `ws:{id}:*`, dan sesi → verifikasi hitungan = 0 → `audit(workspace.purged)`.
@@ -661,7 +674,7 @@ ssh app-01 'docker exec <redis> redis-cli --tls <opsi-tls> --user <acl> --scan -
 ### RB-28 — Grant & refund credit manual (FR-BILL-006, 04 §14)
 
 - **Tujuan:** menambah credit atau mengoreksi tagihan. **Kapan:** invoice manual lunas (MVP 1), kompensasi insiden, refund otomatis gagal.
-- **Prasyarat:** operator ops; dasar tercatat (nomor invoice/issue). Grant di atas `<N>` credit butuh persetujuan ops kedua (usulan).
+- **Prasyarat:** ops console dengan peran Privacy & Billing atau Ops Admin; dasar tercatat (nomor invoice/issue). Grant di atas `<N>` credit butuh persetujuan pemegang peran kedua (usulan).
 
 1. Ops console → Workspaces → `<wsp_…>` → Credit grants (`POST /v1/ops/workspaces/{id}/credit-grants`): meter (`credit`/`ai_credit`), jumlah, kind (`TOPUP`/`ADJUSTMENT`), `expires_at` (BR-CRED-06: akhir siklus atau +12 bulan), alasan, `Idempotency-Key`.
 2. Refund manual untuk operasi tertentu (refund otomatis gagal): `POST /v1/ops/workspaces/{id}/credit-refunds` atau `msp tool credit-refund` dengan rujukan `usage_event` (`use_…`), alasan, dan `Idempotency-Key` (04 §3.1, §11.5); transaksi refund tertaut ke usage event sehingga rekonsiliasi tetap 0. Grant `ADJUSTMENT` hanya untuk kompensasi yang tidak terkait satu operasi.
@@ -678,7 +691,7 @@ curl -fsS -X POST "https://app.<domain>/api/v1/ops/workspaces/<wsp_id>/credit-gr
 
 ### RB-29 — Koreksi data oleh ops (FR-OPS-009, 04 §5.6)
 
-- **Tujuan:** memperbaiki claim yang salah. **Kapan:** laporan user (FR-DATA-014) atau DSR koreksi di antrean FR-OPS-008. **Prasyarat:** operator ops console; bukti pendukung.
+- **Tujuan:** memperbaiki claim yang salah. **Kapan:** laporan user (FR-DATA-014) atau DSR koreksi di antrean FR-OPS-008. **Prasyarat:** ops console dengan peran Data Steward atau Ops Admin; bukti pendukung.
 
 1. Buka `ops.data_issue_report` di ops console (Laporan data). Validasi bukti (sumber resmi, konfirmasi bisnis); jangan mengoreksi berdasarkan klaim yang belum terverifikasi.
 2. Keputusan (`PATCH /v1/ops/data-reports`): koreksi (field, nilai baru, catatan bukti), merge/split (FR-OPS-005), atau tolak.
@@ -751,7 +764,7 @@ ssh db-01 'sudo -u postgres psql -Atc "SELECT last_archived_time, failed_count, 
 4. Provision host target dan restore lewat `pitr-restore.yml` (role `postgres`, versi PGDG sama; 06 §11.1).
 5. Restore dari repo1 (lebih cepat) atau repo2 (bila repo1 tidak tersedia). Restore ±200 GB ±15–30 menit + replay WAL.
 6. Verifikasi di host baru sebelum dialihkan: versi goose = production, policy RLS ada, hitungan baris tabel kunci wajar, data rusak tidak ada.
-7. Alihkan aplikasi ke host baru dengan mekanisme yang sama seperti failover (RB-42 langkah 4: pindahkan `db-primary.internal`, reload PgBouncer di app host, restart worker). Fence primary lama. Matikan `maintenance.read_only` setelah smoke lulus.
+7. Alihkan aplikasi ke host baru dengan mekanisme yang sama seperti failover (RB-42 langkah 4: pindahkan `db-primary.internal`, reload PgBouncer di app host, restart worker agar pool langsung River tersambung ulang). Fence primary lama. Matikan `maintenance.read_only` setelah smoke di `msp-synthetic-monitor` lulus.
 8. Bangun ulang `db-02` sebagai standby dari primary baru (`rebuild-standby.yml`); jalankan full backup (timeline baru).
 9. Rekonsiliasi pasca-`T`: jalankan rekonsiliasi ledger (AL-20), periksa job River yang hilang (export/webhook/AI in-flight → user me-retry; hold konsisten pada `T`), objek S3 yang dibuat setelah `T` menjadi orphan (bersihkan kemudian), beri tahu customer yang aksinya hilang (§7.4).
 
@@ -774,7 +787,7 @@ sudo -u postgres psql msp -Atc "SELECT pg_is_in_recovery(), (SELECT max(version_
 1. Nyalakan `maintenance.read_only` (write gagal rapi dengan 503 + banner) dan matikan writer berat (`pipeline.publish`, `scoring.bulk_rescore`).
 2. **Fence `db-01`** agar tidak kembali sebagai primary kedua (split brain): matikan via IPMI, atau stop Postgres + blok 5432 dengan nftables.
 3. Catat posisi `db-02` (estimasi RPO): `pg_last_wal_replay_lsn()`, `pg_last_xact_replay_timestamp()`.
-4. Jalankan `db-failover.yml` (pipeline atau laptop Maintainer via RB-01): promote `db-02`; pindahkan record `db-primary.internal` → `db-02` (Unbound/hosts di setiap app host) dan variabel `db_primary_host` di inventory; **reload PgBouncer lokal** di setiap app host; **restart container worker** agar pool langsung River (`MSP_DATABASE_URL_DIRECT_FILE` → `db-primary.internal:5432`) tersambung ulang; arahkan `MSP_DATABASE_URL_REPLICA_FILE` sementara ke primary (rehydrate + restart `api`); ubah `pg1-host` pgBackRest. URL database lain tidak dirender ulang karena memakai nama.
+4. Jalankan `db-failover.yml` (pipeline atau laptop Maintainer via RB-01): promote `db-02`; pindahkan record `db-primary.internal` → `db-02` (Unbound/hosts di setiap app host) dan variabel `db_primary_host` di inventory; **reload PgBouncer lokal** di setiap app host (semua query domain: `MSP_DATABASE_URL_APP_FILE`, `_PIPELINE_FILE`, `_OPS_FILE`); **restart container worker** agar pool langsung River (`MSP_DATABASE_URL_DIRECT_FILE`, `msp_river` → `db-primary.internal:5432`) tersambung ulang; arahkan `MSP_DATABASE_URL_REPLICA_FILE` sementara ke primary (rehydrate + restart `api`); ubah `pg1-host` pgBackRest. URL database lain (termasuk `MSP_DATABASE_URL_MIGRATE_FILE`) tidak dirender ulang karena memakai nama `db-primary.internal` (pemetaan 04 §17.4).
 5. `pgbackrest check` dari primary baru, lalu full backup. Matikan `maintenance.read_only` setelah smoke write lulus.
 6. Kapasitas: tanpa replika, search/profil membaca primary. Pantau AL-02 dan beban `db-02`; tunda fan-out re-skor sampai standby baru ada.
 
@@ -785,7 +798,7 @@ sudo -u postgres psql -c "SELECT pg_promote(wait => true, wait_seconds => 60);"
 sudo -u postgres pgbackrest --stanza=msp check && sudo -u postgres pgbackrest --stanza=msp --type=full backup
 ```
 
-- **Verifikasi:** `SELECT pg_is_in_recovery()` = `f` di `db-02`; smoke write (workspace sintetis); worker River memproses; WAL archive berjalan; rekonsiliasi ledger manual lulus (transaksi yang belum terreplikasi hilang, job idempoten bisa berjalan ulang).
+- **Verifikasi:** `SELECT pg_is_in_recovery()` = `f` di `db-02`; `/readyz` hijau di api dan worker; smoke write non-billable di workspace `msp-synthetic-monitor` (06 §3.3); worker River memproses; WAL archive berjalan; rekonsiliasi ledger manual lulus (transaksi yang belum terreplikasi hilang, job idempoten bisa berjalan ulang).
 - **Abort:** bila `db-01` ternyata pulih sebelum promote, batalkan dan cabut fence.
 - **Audit:** issue insiden; perubahan inventory lewat MR adopsi.
 
@@ -812,7 +825,7 @@ ssh db-01 'sudo -u postgres /usr/lib/postgresql/16/bin/pg_rewind --target-pgdata
 - **Tujuan:** memastikan salinan off-site sehat dan memulihkan objek/bucket. **Kapan:** cek mingguan, AL-15, objek terhapus, `stor-01` rusak. **Prasyarat:** SSH `stor-01`; kredensial S3 lokal & off-site (SOPS).
 - **Cek mingguan:** lag `weed filer.sync` (log/metrik) ≤ 1 jam (usulan); bandingkan jumlah objek + checksum sampel per bucket lokal vs off-site; verifikasi sha256 manifest snapshot.
 
-1. **Objek/prefix terhapus:** salin balik dari off-site ke bucket lokal dengan klien S3, lalu verifikasi checksum.
+1. **Objek/prefix terhapus:** salin balik dari off-site ke bucket lokal dengan AWS CLI v2 (klien S3 generik, profil & setelan checksum di 06 §1.5), lalu verifikasi checksum.
 2. **Volume rusak:** `volume.fsck` untuk menemukan objek hilang; single node tanpa replika lokal → pulihkan objek dari off-site.
 3. **`stor-01` hilang:** matikan `export.create` dan `upload.create`; WAL tetap ke repo2 (repo1 gagal → AL-12). Provision `stor-01` baru (`site.yml --limit stor-01`), sinkron balik dari off-site dengan prioritas: `msp-uploads` → `msp-tiles` → bucket audit → `msp-snapshots` → `msp-evidence`. `msp-exports` tidak dipulihkan (lifecycle 24 jam; user export ulang). Repo1 pgBackRest dibuat ulang dengan full backup baru.
 
@@ -1028,7 +1041,7 @@ groups:
 #### AL-16 — Redis down (degraded mode)
 
 - **Alert & ambang:** `RedisDown` — `redis_up == 0` selama 2 menit *(usulan)*. Ticket SEV3.
-- **Dampak:** mode degradasi. Cache sesi (TTL 60 s), profil, dan facet miss → beban DB naik. Antrean River **tidak** terpengaruh (Postgres). Rate limit fail-open ke limiter in-process per replika api dengan batas lebih rendah; counter fair-use dibaca dari Postgres (`usage.profile_view`), sehingga kuota tetap ditegakkan (04 §11.1, §14.4).
+- **Dampak:** mode degradasi. Cache sesi (TTL 60 s), profil, dan facet miss → beban DB naik. Antrean River **tidak** terpengaruh (Postgres). `/readyz` **tidak** bergantung pada Redis (04 §11.5, 06 §5.2, 08 STD-OBS-09), sehingga container api/worker tetap healthy, Traefik tidak mengeluarkan api dari rotasi, dan deploy tidak gagal; status Redis hanya terlihat di detail `/healthz` dan metrik `redis_up`. Rate limit fail-open ke limiter in-process per replika api dengan batas lebih rendah; counter fair-use dibaca dari Postgres (`usage.profile_view`), sehingga kuota tetap ditegakkan (04 §11.1, §14.4).
 - **Diagnosis cepat:** `docker compose -p msp-core ps redis`, log OOM (`maxmemory` 8 GB, eviction), sertifikat TLS, password ACL setelah rotasi.
 - **Mitigasi:** `docker compose -p msp-core restart redis` (tidak ada data yang perlu dipulihkan); pantau AL-01/AL-02.
 - **Eskalasi:** menyebabkan 5xx → SEV2. **RB:** RB-20 (bila ACL).
@@ -1253,7 +1266,7 @@ Severity · durasi (deteksi → pulih) · IC · penulis · tanggal review · pes
 | Bulanan | Review SLO & error budget; retro DORA; review biaya (server, off-site, LLM, email) | Tech lead | Notulen |
 | Bulanan | Jendela patch/reboot OS (RB-22); sampel audit akses support (RB-02) dan log break-glass | Maintainer / DPO | Issue |
 | Bulanan | Inventaris sertifikat internal; metrik suppression/DSR (lag, jumlah, tenggat) | On-call / DPO | Laporan |
-| Kuartalan | **Review akses**: anggota GitLab & Maintainer, peer WireGuard, akun host, akun ops console, role DB, token (06 §15.1) | Tech lead + DPO | Checklist |
+| Kuartalan | **Review akses**: anggota GitLab & Maintainer, peer WireGuard, akun host, akun ops console + peran internal (PRD §8.1.2), role DB, token (06 §15.1) | Tech lead + DPO | Checklist |
 | Kuartalan | Alert drill RG-5 di staging (`alert-drill`, TC-OPS-007); restore backup GitLab (06 §7.1) | On-call | Laporan drill |
 | Kuartalan | Rotasi 90 hari: password role DB, kunci S3, Redis, SSH deploy, API key LLM/email (RB-20) | Maintainer | Issue `secret-rotation` |
 | Kuartalan | Uji dekripsi salinan offline kunci age dan passphrase pgBackRest/LUKS (§3.4) | 2 Maintainer | Catatan (tanpa nilai) |
@@ -1309,6 +1322,10 @@ SELECT id, kind, attempt, max_attempts, errors[array_length(errors,1)]->>'error'
 ```bash
 # SeaweedFS (stor-01)
 weed shell -master=stor-01:9333     # lock | cluster.ps | volume.list | volume.fsck | volume.vacuum | fs.ls /buckets | fs.du /buckets/<b> | s3.bucket.list | unlock
+
+# Klien S3 = AWS CLI v2 (06 §1.5), lokal ke S3 gateway SeaweedFS atau off-site
+aws --endpoint-url https://<s3-internal>:8333 s3 ls s3://msp-snapshots/<source>/
+aws --endpoint-url https://<offsite-s3> s3 ls s3://msp-uploads/<prefix>/ --recursive --summarize
 
 # nftables & WireGuard
 sudo nft list ruleset | less                       # aturan egress (DOCKER-USER/forward), counter drop
@@ -1379,6 +1396,10 @@ amtool --alertmanager.url=http://localhost:9093 silence add alertname=<nama> --d
 | DSR | Permintaan subjek data (akses, koreksi, hapus, keberatan) |
 | Purge / pseudonimisasi | Penghapusan data tenant hari ke-30 / penggantian identitas aktor dengan HMAC |
 | T0 | Saat kegagalan pelindungan data pribadi diketahui; awal hitung mundur 3×24 jam |
+| `msp-synthetic` | Workspace data uji di **staging** (Schemathesis, smoke/E2E pasca-deploy staging, rehearsal rilis data/model); boleh ditulis dan di-reset (06 §3.3) |
+| `msp-synthetic-monitor` | Workspace pemantauan sintetis di **production** (smoke pasca-deploy, `synthetic-load`, verifikasi suppression, smoke pasca-failover); tanpa credit, dikecualikan dari metrik produk/billing, tidak pernah berisi data customer (06 §3.3) |
+| Ops Engineer / Data Steward / Privacy & Billing / Ops Admin | Peran internal ops console (PRD §8.1.2, §1.3, 04 §15.2). Berbeda dari Maintainer (peran GitLab untuk job production) |
+| Epoch `RETAINED` | Epoch skor aktif terakhir versi model/geo sebelumnya, disimpan 7 hari (bake) untuk rollback cepat (04 §7.9, RB-18) |
 
 ---
 
@@ -1394,7 +1415,7 @@ ID `Q-RB-nn` bersifat lokal di dokumen ini. Setelah diputuskan, pindahkan ke reg
 | Q-RB-04 | PgBouncer hanya di `db-01` (04 §2.2): saat `db-01` mati, PgBouncer ikut mati. Endpoint primary saat failover belum didefinisikan | **Ditutup:** PgBouncer di setiap app host → `db-primary.internal`; `db-failover.yml` memindahkan nama, me-reload PgBouncer, dan me-restart worker (RB-42, 04 §17.4/§17.6, 06 D-19.3) | 04 §2.2, 06 §11.6 |
 | Q-RB-05 | Playbook/inventory yang dirujuk runbook tetapi belum ada di 06 §11.1: `os-patch.yml`, `db-rebuild-standby.yml`, `pitr-restore.yml`, inventory `dr`, tag `certs` | **Ditutup:** `os-patch-rolling.yml`, `rebuild-standby.yml`, `pitr-restore.yml`, `inventories/dr` ada di 06 §11.1. Tag `certs` tetap usulan | 06 §11.1 |
 | Q-RB-06 | Aksi ops/`tool` yang belum ada: bulk DLQ redrive, rollback `score-model-activate`, aktivasi `geo-X.Y.Z`, laporan `ledger-reconcile` per workspace, `audit-verify` | **Sebagian ditutup:** `dlq-redrive` (bulk), `score-model-activate --to`, `geo-activate`, `prompt-activate`, `ledger-reconcile`, `credit-refund` di 04 §3.1/§11.5. `audit-verify` masih terbuka | 04 §3.1, 06 §10.3, Q-CI-11 |
-| Q-RB-07 | Rollback snapshot = publish ulang snapshot sebelumnya, tetapi state machine 04 §4.2 tidak punya transisi `SUPERSEDED → PUBLISHED` | **Ditutup:** transisi `SUPERSEDED → PUBLISHED` (re-publish, ops-only, teraudit, memicu recompute + rebuild projection) di 04 §4.2; RB-17, 06 §10.2 | 04 §4.2, 06 §10.2 |
+| Q-RB-07 | Rollback snapshot = publish ulang snapshot sebelumnya, tetapi state machine 04 §4.2 tidak punya transisi `SUPERSEDED → PUBLISHED` | **Ditutup:** transisi `SUPERSEDED → PUBLISHED` (re-publish hanya lewat job `republish` di pipeline tag `ds-*` oleh Maintainer, teraudit, memicu recompute + rebuild projection; tanpa endpoint ops) di 04 §4.2; RB-17, 06 §10.2 | 04 §4.2, 06 §10.2 |
 | Q-RB-08 | Perilaku degraded tidak terdefinisi: rate limit & counter fair-use saat Redis down; tidak ada kill switch untuk unlock | **Ditutup:** rate limit fail-open ke limiter in-process (batas lebih rendah), fair-use dari Postgres (04 §11.1, §14.4); kill switch `unlock.enabled` (04 §18.3) | 04 §14.4, §18.3, 05 §3.18 |
 | Q-RB-09 | Threshold & metrik usulan belum ada di 04 §16.4: AL-03, AL-06, AL-09 (80% + waktu reset budget harian), AL-14 tren, AL-15..19, AL-22..24, interpretasi burn-rate 6 jam; metrik baru `msp_ai_briefs_total`, `msp_webhook_attempts_total`, `msp_suppression_propagation_lag_seconds`, `msp_tenant_guard_violations_total` | **Ditutup:** ambang usulan + metrik baru tercantum di 04 §16.3–§16.4 dengan rujukan AL-ID; kalibrasi setelah data beta | 04 §16.3–16.4 |
 | Q-RB-10 | Tidak ada mode maintenance/read-only API untuk PITR, switchover, atau DR | **Ditutup:** flag `maintenance.read_only` (write → `503 MAINTENANCE_READ_ONLY`, 04 §18.3, §11.2) | 04 §18.3 |

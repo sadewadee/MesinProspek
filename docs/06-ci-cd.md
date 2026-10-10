@@ -76,7 +76,7 @@
 | **D-19** | **Hosting & runtime = dedicated server di DC Indonesia** (dedicated: Accepted; stack: Proposed; = ADR-18) | Residensi (D-14), biaya |
 | D-19.1 | Topologi: `app-01` (kelak `app-02`), `db-01` (primary), `db-02` (hot standby + read replica), `stor-01` (SeaweedFS, Tang #2), `ops-01` (GitLab, registry, monitoring, Tang #1, WireGuard utama), `ci-01` (runner), `stg-01` (staging), `dr-01` (target drill/DR, boleh sewa per jam) | Selaras 04 §2.2 |
 | D-19.2 | **Docker Engine + Docker Compose** + **Traefik v3** (Let's Encrypt). Deploy **blue/green** dengan *weighted service* Traefik (canary 10% → 100%). | Sederhana untuk 1–2 app server |
-| D-19.3 | **PostgreSQL 16 + PostGIS** bare metal (PGDG), streaming replication ke `db-02`, failover manual via playbook. Primary selalu dirujuk lewat nama internal **`db-primary.internal`** (Unbound/hosts di app host). **PgBouncer berjalan di setiap app host** (lokal, transaction mode, hanya untuk trafik request `api`) dan menunjuk `db-primary.internal:5432`; client River di worker dan `msp migrate` terhubung langsung ke `db-primary.internal:5432` dengan pool kecil khusus, fallback River `PollOnly` (04 §17.4). Failover = pindahkan nama + reload PgBouncer + restart worker (§11.6) | Patroni saat ada node ketiga |
+| D-19.3 | **PostgreSQL 16 + PostGIS** bare metal (PGDG), streaming replication ke `db-02`, failover manual via playbook. Primary selalu dirujuk lewat nama internal **`db-primary.internal`** (Unbound/hosts di app host). **PgBouncer berjalan di setiap app host** (lokal, transaction mode) dan menunjuk `db-primary.internal:5432`; semua query domain lewat PgBouncer (`api`: `MSP_DATABASE_URL_APP_FILE` + `MSP_DATABASE_URL_OPS_FILE`; worker tenant: `APP`; `worker-pipeline`: `PIPELINE`; `msp tool`: `PIPELINE`/`OPS`). Koneksi **langsung** ke `db-primary.internal:5432` hanya untuk client River di setiap worker (`MSP_DATABASE_URL_DIRECT_FILE`, role `msp_river`, pool kecil; fallback River `PollOnly`) dan `msp migrate` (`MSP_DATABASE_URL_MIGRATE_FILE`, role `msp_owner`); `api` membaca replica `db-02` langsung (`MSP_DATABASE_URL_REPLICA_FILE`). Pemetaan kanonik: 04 §17.4. Failover = pindahkan nama + reload PgBouncer + restart worker (§11.6) | Patroni saat ada node ketiga |
 | D-19.4 | **Redis** di `app-01` (opsional: cache, rate limit, counter; bukan sumber kebenaran). Object storage **SeaweedFS** (master + volume + filer + S3 gateway, Apache-2.0) di `stor-01`. Alternatif: **Garage**. | Antrean job ada di Postgres (River, ADR-06). MinIO community edition sudah diarsipkan (tanpa binary/image sejak Okt 2025). |
 | D-19.5 | **Ansible**: hardening OS, user, nftables, **WireGuard** (akses admin/SSH; endpoint utama `ops-01`, endpoint cadangan `app-01` khusus peer admin), fail2ban, unattended security upgrades, Docker, layanan. Disk **LUKS** dengan unlock Clevis **SSS 1-of-2** atas Tang di `ops-01` dan `stor-01` (fallback dropbear-initramfs, lalu konsol out-of-band IPMI/KVM provider sebagai break-glass). | Satu alat untuk provisioning, konfigurasi, dan deploy |
 | D-19.6 | Secret: **SOPS + age** di repo, didekripsi Ansible saat deploy ke **tmpfs** (ADR-22). Kredensial deploy di **GitLab CI/CD variables masked + protected**, di-scope per environment. | Tanpa cloud secret manager |
@@ -85,7 +85,7 @@
 | D-19.9 | Zona jaringan `edge/prod`, `data/prod`, `ops`, `ci`, `stg` (VLAN + nftables). Port publik hanya 80/443 + UDP WireGuard cadangan (`app-01`, peer admin saja) dan UDP WireGuard utama (`ops-01`). | Blast radius kecil |
 | D-19.10 | Docker Swarm/k3s **bukan** bagian MVP. Ditinjau bila > 2 app server atau dibutuhkan autoscaling. | Hindari kompleksitas dini |
 | **D-21** | **Backend = Go** (Accepted). Frontend tetap Next.js + TypeScript (Node 24, pnpm, Turborepo). | Keputusan founder |
-| D-21.1 | `apps/api/` = satu Go module. Binary statis **`cmd/msp`** dengan subcommand `api`, `worker`, `migrate`, dan `tool …` (04 §3.1). Aksi `tool` yang dipanggil pipeline (`healthcheck` untuk healthcheck container distroless, `snapshot-publish`, `score-model-activate`, `score-reproduce`; §10) sudah tercantum di 04 §3.1. | Satu image, beda command per container |
+| D-21.1 | `apps/api/` = satu Go module. Binary statis **`cmd/msp`** dengan subcommand `api`, `worker`, `migrate`, dan `tool …` (04 §3.1). Aksi `tool` yang dipanggil pipeline (`healthcheck` untuk healthcheck container distroless; `snapshot-load`, `snapshot-publish`, `snapshot-reject`, `score-model-activate`, `geo-activate`, `prompt-activate`, `score-reproduce`; §10) sudah tercantum di 04 §3.1. Aksi rilis data/model hanya ada sebagai `msp tool` di pipeline protected tag; tidak ada endpoint ops API padanannya (04 §11.5). | Satu image, beda command per container |
 | D-21.2 | Akses DB: **sqlc** (query di `apps/api/db/queries/`, kode hasil generate di `apps/api/internal/db/<modul>db/`), driver pgx v5 (ADR-26) | Query SQL eksplisit, type-safe |
 | D-21.3 | Migrasi: **goose** (SQL di `apps/api/db/migrations/`, di-embed ke binary, dijalankan `msp migrate up`; ADR-26) | Migrasi ikut image yang sama (build once) |
 | D-21.4 | Job queue + outbox: **River** (Postgres-backed, ADR-06/07). Tabel River dimigrasi oleh `msp migrate up` (rivermigrate) sebelum migrasi aplikasi. | Transaksional dengan data, tanpa broker terpisah |
@@ -131,6 +131,7 @@ Migrasi ke alternatif cukup murah: logika pipeline berada di `scripts/ci/`, `scr
 | Docs, Ansible | markdownlint-cli2, lychee; ansible-lint, yamllint, Molecule (role kritis) | QG-21, QG-22 |
 | Build, metrik CI, web perf | BuildKit rootless (tanpa runner privileged); gitlab-ci-pipelines-exporter → Prometheus; Lighthouse CI nightly (proxy lab NFR-PERF-03) | §5.1, §16.3 |
 | Feature flag | `platform.feature_flag` (04 §18.3) + registry di repo | Audit wajib (FR-OPS-007). Fitur feature flag GitLab tidak dipakai. |
+| Klien S3 (operasional) | **AWS CLI v2** (`aws s3`/`aws s3api`) sebagai klien S3 generik ke S3 gateway SeaweedFS (`--endpoint-url https://<s3-internal>:8333`) dan off-site S3-compatible (`--endpoint-url https://<offsite-s3>`), path-style. Bila S3 gateway belum mendukung checksum integritas default AWS CLI baru, setel `request_checksum_calculation = when_required` dan `response_checksum_validation = when_required` di profil (diverifikasi saat PoC, 04 TQ-17). Dipasang di image `ci-tools`, runner `deploy`, dan laptop Maintainer; dipakai runbook `09` (RB-17, RB-44). `weed shell` hanya untuk administrasi cluster SeaweedFS | Satu klien S3 yang sama untuk SeaweedFS dan off-site; tanpa klien vendor-spesifik |
 
 Python hanya muncul sebagai runtime alat pihak ketiga yang dijalankan dalam container (Ansible, Semgrep, Schemathesis), bukan di kode aplikasi.
 
@@ -272,7 +273,7 @@ Label dibaca dari `$CI_MERGE_REQUEST_LABELS`. Setelah label ditambahkan, job ter
 | `vX.Y.Z` | semantic-release (`release:cut`, token bot Maintainer) | Pipeline rilis production (§6) |
 | `design-tokens-vX.Y.Z` | `release:cut` bila versi paket tokens berubah | Penanda SemVer paket (tanpa deploy) |
 | `infra-YYYY.MM.DD.n` | Maintainer | Apply Ansible production (§11.2) |
-| `ds-YYYY.MM.n` | Maintainer (data owner) | Pipeline publish snapshot (§10.2) |
+| `ds-YYYY.MM.n` | Maintainer (setelah review laporan validasi oleh Data Steward, PRD §8.1.2) | Pipeline publish snapshot (§10.2) |
 | `priority-X.Y.Z`, `geo-X.Y.Z`, `brief-X.Y.Z`, `angle-X.Y.Z` | Maintainer | Pipeline aktivasi versi di production (§10.3–§10.4) |
 
 Seri `0.x` dipakai selama MVP 0 dan closed beta. `v1.0.0` = rilis MVP 1 yang lolos RG-1 s.d. RG-7 (QG-32).
@@ -313,6 +314,13 @@ MVP **tidak** memakai preview environment per MR. Penggantinya: (1) Storybook st
 
 Binary **menolak start** bila `MSP_ENV ∈ {staging, production}` dan auth stub, `--dev-bootstrap`, atau flag `chaos.*` aktif (diuji unit test).
 
+**Workspace sintetis (nama tetap, jangan dipertukarkan):**
+
+| Workspace | Environment | Dipakai untuk | Aturan |
+|---|---|---|---|
+| `msp-synthetic` | staging (dan seed local/CI) | Data uji: Schemathesis, smoke & E2E pasca-deploy staging, isolasi tenant (deployed, bersama workspace kedua), rehearsal rilis data/model | Boleh ditulis dan di-reset; data sintetis saja. Workspace E2E per run (`e2e-<pipeline_id>`) terpisah dan dibersihkan harian |
+| `msp-synthetic-monitor` | production | Pemantauan sintetis: smoke pasca-deploy (§6.4, §14.6), `synthetic-load` saat canary/bake (§6.3), verifikasi propagasi suppression (`09` RB-25), smoke pasca-failover/PITR (`09` RB-41/42) | Workspace internal tanpa credit, dikecualikan dari metrik produk dan billing. Default read-only; tulis hanya aksi non-billable yang dibersihkan sendiri (mis. buat & hapus list) saat smoke write. Tidak pernah memuat data customer |
+
 ### 3.4 Local dev (`infra/docker/compose.yml`)
 
 Service: `postgres` (`postgis/postgis:16-3.5`, pin digest), `redis`, `seaweedfs` (`weed server -s3`: master + volume + filer + S3 dalam satu container; init bucket `msp-snapshots`, `msp-uploads`, `msp-exports`, `msp-tiles`), `mailpit`, `kratos` (bila D-20 = Ory Kratos; default lokal auth stub), `smokescreen`, `migrate` (`msp migrate up`, lalu exit; service lain `depends_on: service_completed_successfully`), `api` dan `worker` (live reload via `air` atau `go run`), `web` (`next dev`), `webhook-sink`.
@@ -343,7 +351,7 @@ Service: `postgres` (`postgis/postgis:16-3.5`, pin digest), `redis`, `seaweedfs`
 | Zona | Host | Inbound yang diizinkan (nftables) |
 |---|---|---|
 | edge/prod | `app-01` (`app-02`) | 80/443 publik → Traefik. UDP 51821 publik = endpoint WireGuard cadangan (hanya peer admin/Maintainer; dari tunnel ini hanya SSH ke host prod). SSH hanya dari subnet WireGuard dan IP privat `ops-01` |
-| data/prod | `db-01`, `db-02`, `stor-01` | 5432 dari app host (PgBouncer lokal app host untuk `api`; koneksi langsung client River di worker dan `migrate` ke `db-primary.internal`; replica `db-02`); Tang #2 di `stor-01` dari semua host prod + `ops-01`; 8333 (S3 gateway SeaweedFS) dari app host; scrape exporter dari `ops-01`; SSH dari WireGuard/`ops-01` |
+| data/prod | `db-01`, `db-02`, `stor-01` | 5432 dari app host (PgBouncer lokal app host untuk semua query domain `api`/worker/`msp tool`; koneksi langsung client River di worker dan `migrate` ke `db-primary.internal`; `api` langsung ke replica `db-02`; 04 §17.4); Tang #2 di `stor-01` dari semua host prod + `ops-01`; 8333 (S3 gateway SeaweedFS) dari app host; scrape exporter dari `ops-01`; SSH dari WireGuard/`ops-01` |
 | ops | `ops-01` | UDP 51820 publik (WireGuard utama). Tang #1 dari host prod + `stor-01`. GitLab, registry, Grafana hanya dari WireGuard dan zona privat |
 | ci | `ci-01` | Tanpa inbound publik. Outbound: internet (proxy modul/paket) + `ops-01`. **Tidak** punya rute ke zona prod/stg |
 | stg | `stg-01` | 443 dari WireGuard. SSH dari WireGuard/`ops-01` |
@@ -465,8 +473,8 @@ Job `deploy:staging` (runner `deploy`, `resource_group: staging`, `environment: 
 
 1. Verifikasi tanda tangan cosign + attestation SBOM dengan `infra/keys/cosign.pub` (QG-28).
 2. Materialisasi secret SOPS → **tmpfs** `/run/msp/<warna>/` (ADR-22).
-3. Pull image by digest → **`msp migrate up`** sebagai container one-off (role `msp_owner`, advisory lock goose, expand-only). Gagal → deploy berhenti, warna lama tetap melayani.
-4. Start warna baru (worker, api, web) → tunggu healthcheck (`msp tool healthcheck` → `/readyz`: DB, Redis, versi skema ≥ minimum yang dibutuhkan binary).
+3. Pull image by digest → **`msp migrate up`** sebagai container one-off (`MSP_DATABASE_URL_MIGRATE_FILE`, role `msp_owner`, langsung ke `db-primary.internal:5432`, advisory lock goose, expand-only). Gagal → deploy berhenti, warna lama tetap melayani.
+4. Start warna baru (worker, api, web) → tunggu healthcheck (`msp tool healthcheck` → `/readyz`: DB primary terjangkau lewat pool domain + versi skema ≥ minimum yang dibutuhkan binary; untuk container worker juga client River berjalan). **Redis tidak termasuk readiness**: Redis down = mode degradasi (04 §11.1, §14.4; `09` AL-16), statusnya hanya muncul sebagai detail informatif `/healthz` dan metrik `redis_up`, sehingga deploy tidak gagal karena Redis.
 5. Hentikan worker warna lama (SIGTERM → River soft stop) → alihkan 100% traffic Traefik → smoke → hentikan api/web warna lama.
 6. Catat deployment (GitLab environment), anotasi Grafana, release GlitchTip `msp@sha-<short>`.
 
@@ -474,10 +482,10 @@ Job `deploy:staging` (runner `deploy`, `resource_group: staging`, `environment: 
 
 | Suite | Isi | Gate |
 |---|---|---|
-| Smoke | Health, login user sintetis, search, profil, export kecil, webhook test, egress/nftables (05) | QG-29 |
+| Smoke | Health, login user sintetis, search, profil, export kecil, webhook test, egress/nftables (05), di workspace `msp-synthetic` (§3.3) | QG-29 |
 | E2E penuh | Playwright seluruh suite (chromium, 4 shard) + axe | QG-29, QG-16 |
-| Kontrak | Schemathesis terhadap API staging (`--checks all`, workspace sintetis khusus) | QG-29 |
-| Isolasi tenant (deployed) | Dua workspace sintetis, akses silang via HTTP → 404/403; tanpa kebocoran di list/search/export/webhook | QG-29, QG-09 |
+| Kontrak | Schemathesis terhadap API staging (`--checks all`, workspace `msp-synthetic`, §3.3) | QG-29 |
+| Isolasi tenant (deployed) | Dua workspace sintetis staging (`msp-synthetic` + workspace kedua), akses silang via HTTP → 404/403; tanpa kebocoran di list/search/export/webhook | QG-29, QG-09 |
 | Traceability | Penanda TC di laporan JUnit vs katalog 05 §6 | QG-37 |
 | DAST | ZAP baseline nightly dan pada kandidat rilis (§5.4, §7), tidak per commit | QG-30 |
 
@@ -566,7 +574,7 @@ Dua project Compose per host: `msp-blue` dan `msp-green`. Masing-masing berisi w
 
 ### 6.4 Verifikasi pasca-deploy
 
-Otomatis: smoke production (read-only, workspace sintetis) → commit status `production-deployed` → tag registry `vX.Y.Z` ditambahkan ke digest yang sama (kemudahan, bukan untuk deploy) → release GlitchTip `msp@vX.Y.Z` → anotasi Grafana → notifikasi. Checklist manual ada di §14.6.
+Otomatis: smoke production (read-only, workspace `msp-synthetic-monitor`, §3.3) → commit status `production-deployed` → tag registry `vX.Y.Z` ditambahkan ke digest yang sama (kemudahan, bukan untuk deploy) → release GlitchTip `msp@vX.Y.Z` → anotasi Grafana → notifikasi. Checklist manual ada di §14.6.
 
 ### 6.5 Jendela deploy & freeze
 
@@ -655,7 +663,7 @@ Tahap: **MR** · **main** · **rc** = kandidat rilis (§5.4) · **rel** = pipeli
 | QG-31 | Performa kandidat rilis | rc | Search p95 ≤ 800 ms & p99 ≤ 2 s; profil p95 ≤ 500 ms; 50 VU; error < 1%; export 10.000 baris ≤ 2 menit | Ya (minor/major) | NFR-PERF-01, -02, -04 |
 | QG-32 | Bukti release gate | rel (major, `v1.0.0`) | Issue Release Readiness memuat bukti RG-1 s.d. RG-7, ditutup product + tech lead | Ya | PRD §12.1 |
 | QG-33 | Kesehatan canary/bake | rel | Tidak ada pelanggaran sinyal §6.3 | Ya (rollback otomatis) | NFR-AVAIL-01, NFR-PERF-01/02 |
-| QG-34 | Validasi snapshot dataset | data | Threshold §10.2 | Ya (publish) | FR-DATA-001, NFR-DATA-01 |
+| QG-34 | Validasi snapshot dataset | data | Tabel QG-34 di §10.2 (satu-satunya tabel ambang; 04 §4.2, 05, dan `09` merujuk ke sana) | Ya (publish), per baris sesuai kolom "Aksi" | FR-DATA-001, NFR-DATA-01 |
 | QG-35 | Drill restore | sch (bulanan) | RPO ≤ 15 menit, RTO ≤ 4 jam, drill terakhir ≤ 35 hari | Ya (rilis minor/major berikutnya) | NFR-AVAIL-02 |
 | QG-36 | Perubahan infrastruktur | infra | `--check --diff` staging & production terlampir; apply production hanya dari tag `infra-*` | Ya | §11 |
 | QG-37 | Traceability TC | main | Tidak ada TC P0 berotomasi tanpa test; tidak ada test yang merujuk TC tak dikenal (05 §3.2) | Ya | DoD §12.2 |
@@ -712,7 +720,7 @@ Rename tabel, perubahan tipe, dan split kolom mengikuti pola yang sama. View kom
 | M-4 | `msp migrate up` menyetel `lock_timeout = '5s'` dan `statement_timeout` default per sesi. Override per file wajib dijustifikasi. Gagal karena lock → ulangi deploy | Kode `migrate`, review |
 | M-5 | Backfill = job River (batched, idempotent, resumable, terpantau). Pengecualian: tabel referensi < 10.000 baris | Review |
 | M-6 | Tabel tenant baru: `ENABLE` + `FORCE ROW LEVEL SECURITY` + policy berbasis `workspace_id` **di migrasi yang sama** dengan `CREATE TABLE`; index diawali `workspace_id` (04 §5) | `check_rls.sql` (QG-11) |
-| M-7 | Role per 04 §5.8: `msp_owner` (DDL, hanya `migrate`), `msp_app` (`NOBYPASSRLS`), `msp_pipeline`, `msp_ops`, `msp_readonly_replica`. Grant eksplisit di migrasi. Runtime tidak pernah memakai `msp_owner`. | Ansible + test isolasi |
+| M-7 | Role per 04 §5.8: `msp_owner` (DDL, hanya `migrate`), `msp_app` (`NOBYPASSRLS`), `msp_pipeline`, `msp_ops`, `msp_river` (client River, hanya schema `river`), `msp_readonly_replica`. Grant eksplisit di migrasi. Runtime tidak pernah memakai `msp_owner`. | Ansible + test isolasi |
 | M-8 | Satu runner migrasi pada satu waktu: goose session locker (advisory lock Postgres) | Kode `migrate` |
 | M-9 | Versi goose berurutan (`goose -s`), tanpa *out-of-order*. Konflik nomor antar MR diselesaikan dengan rebase dan renumber | QG-11 |
 | M-10 | Upgrade library River yang membawa migrasi skema River diperlakukan sebagai migrasi biasa (MR sendiri, expand-only, dicek di staging) | Review, Renovate tanpa automerge |
@@ -735,7 +743,7 @@ Rename tabel, perubahan tipe, dan split kolom mengikuti pola yang sama. View kom
 |---|---|---|
 | local | Service `migrate` di compose (`msp migrate up`) | `.env` |
 | ci | `go run ./cmd/msp migrate up` sebelum integration test; job `db:migrations` dari DB kosong; API service E2E dengan `--dev-bootstrap` | Service container |
-| staging / production | Container one-off `msp-backend@<digest> migrate up` di app host (playbook `deploy.yml`), langsung ke `db-primary.internal:5432` (bukan lewat PgBouncer transaction mode), sebelum warna baru di-start | `msp_owner` dari SOPS → tmpfs |
+| staging / production | Container one-off `msp-backend@<digest> migrate up` di app host (playbook `deploy.yml`), langsung ke `db-primary.internal:5432` (bukan lewat PgBouncer transaction mode), sebelum warna baru di-start | `MSP_DATABASE_URL_MIGRATE_FILE` (`msp_owner`) dari SOPS → tmpfs |
 | production + `db-contract` | Sama, didahului `pgbackrest backup --type=incr` sebagai titik pemulihan tambahan | — |
 
 ### 9.6 PostGIS & ekstensi
@@ -748,7 +756,7 @@ Rename tabel, perubahan tipe, dan split kolom mengikuti pola yang sama. View kom
 
 ## 10. Rilis data & model
 
-Kode yang mendukung versi baru di-deploy dulu (versi terdaftar, belum aktif). **Aktivasi** dilakukan lewat pipeline tag terlindungi yang namanya sama dengan versinya. Langkah berat berjalan sebagai container one-off `msp-backend@<digest> tool <aksi>` di host environment terkait, dipicu runner `deploy`. Aktor audit = user GitLab yang menjalankan job manual (FR-AUD-001).
+Kode yang mendukung versi baru di-deploy dulu (versi terdaftar, belum aktif). **Publish dan aktivasi** dilakukan **hanya** lewat pipeline tag terlindungi yang namanya sama dengan versinya (`ds-*`, `priority-*`, `geo-*`, `brief-*`, `angle-*`), oleh Maintainer, setelah gate lolos (QG-34 untuk snapshot; QG-24/QG-25 untuk model/prompt). Langkah berat berjalan sebagai container one-off `msp-backend@<digest> tool <aksi>` (`snapshot-load`, `snapshot-publish`, `snapshot-reject`, `score-model-activate`, `geo-activate`, `prompt-activate`) di host environment terkait, dipicu runner `deploy`. Tidak ada endpoint ops API untuk aksi ini: ops console hanya menampilkan status, riwayat, dan laporan validasi/regresi (read-only, 04 §11.5); permintaan publish/re-publish/rollback dari Data Steward diajukan di issue rilis dan dieksekusi lewat job pipeline. Aktor audit = user GitLab yang menjalankan job manual (FR-AUD-001).
 
 ### 10.1 Registry versi & reproducibility (NFR-DATA-01)
 
@@ -770,32 +778,36 @@ ops unggah file mentah + manifest ke bucket landing production → MR manifest `
  → Maintainer membuat tag ds-YYYY.MM.n → pipeline tag:
    [1] register + checksum  [2] validasi (prod, VALIDATING)  [3] rehearsal staging (sampel)
    [4] gate QG-34  [5] job manual `publish` (Maintainer)  [6] recompute skor stale  [7] verifikasi
+   (alternatif [5']: job manual `reject` → REJECTED)
 ```
 
 | Langkah | Detail |
 |---|---|
-| 1. Register | Manifest: sumber, `captured_at`, periode referensi, tag lisensi (BR-PRIV-04), checksum per file. Checksum tidak cocok → berhenti. |
+| 1. Register | `msp tool snapshot-load` mendaftarkan manifest: sumber, `captured_at`, periode referensi, tag lisensi (BR-PRIV-04), checksum per file. Checksum tidak cocok → berhenti. Versi sudah terdaftar → `SNAPSHOT_VERSION_EXISTS` (04 §11.2). |
 | 2. Validasi | Lifecycle 04 §4.2 (`VALIDATING`): parsing Input Contract, laporan validasi (jumlah baris, reject per alasan, fill-rate per field, delta vs snapshot aktif). Data tetap di zona production. |
-| 3. Rehearsal staging | Sampel terstratifikasi (wilayah × kategori) tanpa person/kontak pribadi, bila lisensi mengizinkan (Q-05). Pipeline normalize → resolve → verify → skor → geo. Diukur: ER golden metrics, distribusi skor vs snapshot sebelumnya, durasi (ekstrapolasi ke NFR-PERF-07). |
-| 4. Gate QG-34 | Threshold di bawah. Laporan dilampirkan ke pipeline dan `msp-evidence`. |
-| 5. Publish | Job manual (Maintainer) → `msp tool snapshot-publish` (setara `/v1/ops/snapshots/{id}/publish`, 04 §11) → pointer snapshot aktif diganti atomik. Kill switch `pipeline.publish` (04 §18.3) dapat menahan langkah ini. |
+| 3. Rehearsal staging | Sampel terstratifikasi (wilayah × kategori) tanpa person/kontak pribadi, bila lisensi mengizinkan (Q-05), di workspace `msp-synthetic`. Pipeline normalize → resolve → verify → skor → geo. Diukur: ER golden metrics, distribusi skor vs snapshot sebelumnya, durasi (ekstrapolasi ke NFR-PERF-07). |
+| 4. Gate QG-34 | Tabel di bawah dievaluasi ke `validation_report.gates[]` (04 §4.5). Laporan dilampirkan ke pipeline dan `msp-evidence`, dan tampil read-only di ops console untuk ditinjau Data Steward. |
+| 5. Publish | Job manual (Maintainer, setelah review Data Steward tercatat di issue rilis) → `msp tool snapshot-publish` → swap projection + pointer snapshot aktif diganti atomik. Job menolak bila ada cek "Blokir" yang gagal tanpa waiver §8.3, atau bila cek "Wajib catatan" gagal tanpa catatan di anotasi tag. Kill switch `pipeline.publish` (04 §18.3) dapat menahan langkah ini. |
+| 5'. Reject | Job manual `reject` (Maintainer, alasan wajib) → `msp tool snapshot-reject` → `REJECTED` (QG-34 gagal tanpa waiver, atau atas rekomendasi Data Steward). |
 | 6. Recompute | Skor yang lebih tua dari input ditandai stale dan di-recompute (FR-INTL-011, 04 §7.9). |
 | 7. Verifikasi | Dashboard Data Health per snapshot (FR-OPS-001): evidence coverage ≥ 95%, rasio verifikasi, stale, kandidat duplikat. |
 
-**Threshold QG-34 (default awal, dikalibrasi setelah Q-01/Q-02):**
+**Tabel QG-34 — satu-satunya sumber ambang validasi snapshot** (04 §4.2, 05, dan `09` RB-17 merujuk tabel ini; default awal, dikalibrasi setelah Q-01/Q-02 lewat MR yang mengubah tabel ini). Aksi **Blokir** = job `publish` menolak kecuali ada waiver §8.3 (alasan teraudit). Aksi **Wajib catatan** = publish boleh berjalan bila anotasi tag `ds-*` memuat penjelasan untuk cek tersebut. Persentase dihitung terhadap jumlah baris yang diterima (`rows.received`) kecuali disebut lain.
 
-| Cek | Threshold |
-|---|---|
-| Baris reject tanpa alasan | 0 |
-| Reject rate total | ≤ 5% (2–5% → wajib catatan di deskripsi tag) |
-| Fill-rate `source_record_id` / nama / kategori sumber | 100% / ≥ 99% / ≥ 95% |
-| Alamat atau koordinat | ≥ 95% |
-| `source_record_id` duplikat | 0 |
-| Penurunan fill-rate field apa pun vs snapshot aktif | ≤ 10 poin persentase (lebih → wajib catatan) |
-| Perubahan jumlah record vs snapshot aktif | −10% s.d. +30% (di luar → wajib catatan) |
-| Establishment ber-koordinat yang terpetakan ke kelurahan | ≥ 90% (FR-DATA-009) |
-| Tag lisensi | Ada |
-| ER golden set pada rehearsal | Precision ≥ 98%, recall ≥ 90% |
+| Cek | Ambang lolos | Aksi bila dilanggar |
+|---|---|---|
+| Baris reject tanpa alasan | 0 | Blokir |
+| Reject rate total (semua alasan) | < 2% | 2–5% → Wajib catatan; > 5% → Blokir |
+| Baris gagal parse (`UNPARSEABLE_ROW`) | ≤ 1% | Blokir |
+| Fill-rate `source_record_id` / nama / kategori sumber | 100% / ≥ 99% / ≥ 95% | Blokir |
+| Alamat atau koordinat terisi | ≥ 95% | Blokir |
+| Koordinat di luar Indonesia (`OUT_OF_COUNTRY`), dari baris berkoordinat | ≤ 1% | Blokir |
+| `source_record_id` duplikat dalam snapshot | Kemunculan ke-2 dst. **di-reject per baris** (`DUP_SOURCE_RECORD_ID`) dan import tetap berjalan; rate baris duplikat ≤ 0,5% | Blokir bila rate > 0,5% |
+| Penurunan fill-rate field kanonik mana pun vs snapshot aktif | ≤ 10 poin persentase | Blokir (satu ambang, tanpa pita peringatan) |
+| Perubahan jumlah record valid vs snapshot aktif | −10% s.d. +30% | Wajib catatan |
+| Establishment ber-koordinat yang terpetakan ke kelurahan | ≥ 90% (FR-DATA-009) | Blokir |
+| Tag lisensi (minimal `internal_processing`, 04 §4.1) | Ada | Blokir |
+| ER golden set pada rehearsal | Precision ≥ 98%, recall ≥ 90% | Blokir |
 
 **Rollback:** snapshot immutable dan ID entity stabil (FR-DATA-007). Rollback = **re-publish** snapshot sebelumnya (`SUPERSEDED → PUBLISHED`, 04 §4.2): job manual `republish` (Maintainer, alasan wajib, teraudit) di pipeline tag `ds-*` snapshot tersebut → `msp tool snapshot-publish` → recompute skor stale + rebuild projection. Kill switch `pipeline.publish` juga menahan re-publish.
 
@@ -809,10 +821,10 @@ ops unggah file mentah + manifest ke bucket landing production → MR manifest `
 | 4. Recompute offline (staging) | `msp tool score-reproduce` menghitung versi lama & baru pada sampel staging (ICP/preset Offering representatif) | — |
 | 5. Laporan regresi | Distribusi skor per band, matriks transisi band (HOT/WARM/COLD/UNSCORED), pergeseran per faktor, overlap top-50 per ICP sampel, perubahan coverage. Geo: distribusi metrik area, jumlah area coverage LOW, perubahan peringkat territory. Determinisme: hitung 2× → hash identik | QG-24 |
 | 6. Approval | Job manual `activate` (Maintainer) setelah approval data-intel + product tercatat di issue rilis model. Bila transisi band > 15% sampel atau overlap top-50 < 70%, product wajib menulis justifikasi. | QG-24 |
-| 7. Aktivasi | `msp tool score-model-activate` (geo: `msp tool geo-activate`) → versi `active` → recompute bertahap (epoch baru diaktifkan atomik, ADR-16; NFR-PERF-05). Epoch versi lama disimpan selama bake 7 hari. | — |
+| 7. Aktivasi | `msp tool score-model-activate` (geo: `msp tool geo-activate`) → versi `active` → recompute bertahap (epoch baru diaktifkan atomik, ADR-16; NFR-PERF-05). Per `(workspace, ICP)`, epoch aktif terakhir versi lama menjadi `RETAINED` dan disimpan selama **bake 7 hari** sejak aktivasi; epoch antara lainnya dihapus ≥ 1 jam setelah digantikan (04 §7.9). Status versi & epoch `RETAINED` tampil read-only di ops console. | — |
 | 8. Pantau | Intelligence Health (FR-OPS-003): distribusi per versi, feedback skor (FR-INTL-010) | — |
 
-**Rollback:** `msp tool score-model-activate --to <versi-sebelumnya>` (geo: `geo-activate --to`) mengaktifkan kembali epoch versi sebelumnya (tersimpan selama bake), teraudit. Setelah bake, versi lama tetap dapat direproduksi dari snapshot + versi.
+**Rollback:** job manual `rollback` di pipeline tag versi tersebut → `msp tool score-model-activate --to <versi-sebelumnya>` (geo: `geo-activate --to`) mengaktifkan kembali epoch `RETAINED` versi sebelumnya secara atomik (tersimpan selama bake), teraudit; epoch yang stale lalu di-recompute dengan versi lama (04 §7.9). Setelah bake, rollback = aktivasi versi lama + recompute penuh; versi lama tetap dapat direproduksi dari snapshot + versi.
 
 ### 10.4 Prompt AI (`brief-X.Y.Z`, `angle-X.Y.Z`)
 
@@ -824,7 +836,7 @@ ops unggah file mentah + manifest ke bucket landing production → MR manifest `
 | 4. Aktivasi | Job manual `activate` (Maintainer) → `msp tool prompt-activate --version <versi>` mengubah versi aktif di registry (04 §13.2), teraudit. Feature flag **tidak** dipakai untuk memilih versi prompt; flag AI hanya kill switch `ai.generation`. Cache brief berbasis hash input **termasuk** versi prompt (FR-AI-003) | — |
 | 5. Pantau | Kegagalan AI, feedback 👍/👎 (FR-AI-007), biaya per brief. Alert AI failure > 5% (RG-5) | — |
 
-**Rollback:** `msp tool prompt-activate --version <versi-sebelumnya>` (teraudit). Kill switch `ai.generation` (FR-AI-006) sebagai upaya terakhir.
+**Rollback:** job manual di pipeline tag versi tersebut → `msp tool prompt-activate --version <versi-sebelumnya>` (teraudit; tidak ada jalur ops API). Kill switch `ai.generation` (FR-AI-006) sebagai upaya terakhir.
 
 ---
 
@@ -1021,8 +1033,8 @@ Langkah tercepat untuk kapabilitas bermasalah: kill switch (`ai.generation`, `ex
 
 | Artefak | Rollback |
 |---|---|
-| Snapshot dataset | Re-publish snapshot sebelumnya (`SUPERSEDED → PUBLISHED`) + recompute (§10.2) |
-| Versi skor/geo | `msp tool score-model-activate --to <versi>` / `geo-activate --to <versi>`: aktifkan kembali epoch versi sebelumnya (tersimpan selama bake 7 hari) |
+| Snapshot dataset | Re-publish snapshot sebelumnya (`SUPERSEDED → PUBLISHED`) lewat job manual `republish` di pipeline tag `ds-*` snapshot itu + recompute (§10.2); tidak ada jalur ops API |
+| Versi skor/geo | `msp tool score-model-activate --to <versi>` / `geo-activate --to <versi>` (job pipeline tag): aktifkan kembali epoch `RETAINED` versi sebelumnya (tersimpan selama bake 7 hari, 04 §7.9); setelah bake = recompute penuh |
 | Versi prompt | `msp tool prompt-activate --version <versi-sebelumnya>`; kill switch `ai.generation` bila perlu |
 
 ### 14.5 Incident
@@ -1047,7 +1059,7 @@ Peran: incident commander, komunikasi, scribe. Mulai dengan containment (kill sw
 ### 14.6 Checklist verifikasi pasca-deploy
 
 - [ ] Semua container warna aktif *healthy*; Traefik hanya merujuk warna aktif
-- [ ] Smoke production lulus (workspace sintetis)
+- [ ] Smoke production lulus (workspace `msp-synthetic-monitor`)
 - [ ] 5xx dan p95 search/profil dalam threshold (§6.3) selama 30 menit
 - [ ] Worker: antrean River normal, tidak ada lonjakan job discarded, rasio gagal < 5%; worker warna lama sudah berhenti
 - [ ] Log container migrasi bersih; versi goose = versi yang diharapkan
@@ -1064,7 +1076,7 @@ Peran: incident commander, komunikasi, scribe. Mulai dengan containment (kill sw
 
 | Kontrol | Penerapan |
 |---|---|
-| Image job di-pin | Setiap `image:`/`services:` memakai `@sha256:<digest>`. Tool non-Go (sqlc, golangci-lint, squawk, oasdiff, Spectral, ajv, gitleaks, Trivy, syft, cosign, OSV-Scanner, Semgrep, Schemathesis, ansible, sops, age, commitlint, k6) dibundel dalam image **`ci-tools`** dari `ci/images/tools/Dockerfile` (versi di-pin + checksum, diperbarui Renovate). Tool Go di-pin lewat directive `tool` di `go.mod`. |
+| Image job di-pin | Setiap `image:`/`services:` memakai `@sha256:<digest>`. Tool non-Go (sqlc, golangci-lint, squawk, oasdiff, Spectral, ajv, gitleaks, Trivy, syft, cosign, OSV-Scanner, Semgrep, Schemathesis, ansible, sops, age, commitlint, k6, AWS CLI v2) dibundel dalam image **`ci-tools`** dari `ci/images/tools/Dockerfile` (versi di-pin + checksum, diperbarui Renovate). Tool Go di-pin lewat directive `tool` di `go.mod`. |
 | Toolchain Go | `GOTOOLCHAIN=local` di CI (tidak mengunduh toolchain otomatis); versi image Go = directive `toolchain` di `go.mod` (cek parity). `GOFLAGS=-mod=readonly`, `go mod verify`, verifikasi checksum via `GOSUMDB`. |
 | `include:` CI | Hanya `include: local`. Template eksternal tidak dipakai. |
 | Tanpa unduhan liar | Larangan `curl \| sh`/`wget \| bash` di job (dicek `ci:lint`) |
@@ -1198,8 +1210,11 @@ backend:test:
     - { name: $POSTGIS_IMAGE, alias: postgres, variables: { POSTGRES_USER: msp_owner, POSTGRES_PASSWORD: ci, POSTGRES_DB: msp } }
   variables:
     MSP_ENV: ci
-    MSP_DATABASE_URL_DIRECT: postgres://msp_owner:ci@postgres:5432/msp?sslmode=disable   # migrate (nilai dummy CI)
+    MSP_DATABASE_URL_MIGRATE: postgres://msp_owner:ci@postgres:5432/msp?sslmode=disable  # migrate (nilai dummy CI; MSP_ENV=ci boleh tanpa _FILE)
     MSP_DATABASE_URL_APP: postgres://msp_app:ci@postgres:5432/msp?sslmode=disable        # NOBYPASSRLS
+    MSP_DATABASE_URL_PIPELINE: postgres://msp_pipeline:ci@postgres:5432/msp?sslmode=disable
+    MSP_DATABASE_URL_OPS: postgres://msp_ops:ci@postgres:5432/msp?sslmode=disable
+    MSP_DATABASE_URL_DIRECT: postgres://msp_river:ci@postgres:5432/msp?sslmode=disable   # client River (CI tanpa PgBouncer)
   script:
     - cd apps/api && go run ./cmd/msp migrate up
     - go tool gotestsum --junitfile report.xml -- -race -tags=integration -coverpkg=./... -coverprofile=cover.out ./...  # QG-05
@@ -1220,16 +1235,16 @@ db:migrations:
   extends: .go
   needs: []
   services: [{ name: $POSTGIS_IMAGE, alias: postgres, variables: { POSTGRES_USER: msp_owner, POSTGRES_PASSWORD: ci, POSTGRES_DB: msp } }]
-  variables: { MSP_DATABASE_URL_DIRECT: "postgres://msp_owner:ci@postgres:5432/msp?sslmode=disable" }
+  variables: { MSP_DATABASE_URL_MIGRATE: "postgres://msp_owner:ci@postgres:5432/msp?sslmode=disable" }
   rules:
     - <<: *if-mr
       changes: { paths: [apps/api/db/**/*, apps/api/sqlc.yaml, apps/api/internal/db/**/*], compare_to: refs/heads/main }
   script:                                                                                    # QG-11
     - cd apps/api && ../../scripts/ci/check_goose_versions db/migrations origin/main
     - go run ./cmd/msp migrate up
-    - pg_dump --schema-only --no-owner "$MSP_DATABASE_URL_DIRECT" | ../../scripts/ci/normalize_dump | diff -u db/schema.sql -
+    - pg_dump --schema-only --no-owner "$MSP_DATABASE_URL_MIGRATE" | ../../scripts/ci/normalize_dump | diff -u db/schema.sql -
     - sqlc diff && sqlc vet
-    - psql "$MSP_DATABASE_URL_DIRECT" -v ON_ERROR_STOP=1 -f ../../scripts/ci/check_rls.sql
+    - psql "$MSP_DATABASE_URL_MIGRATE" -v ON_ERROR_STOP=1 -f ../../scripts/ci/check_rls.sql
     - git diff --name-only --diff-filter=A origin/main -- db/migrations | xargs -r squawk
     - ../../scripts/ci/check_migration_phase --labels "$CI_MERGE_REQUEST_LABELS"
 
@@ -1363,7 +1378,7 @@ deploy:production:
             name: "msp-migrate-{{ msp_version }}"
             image: "{{ backend_image }}"
             command: ["migrate", "up"]
-            env: { MSP_DATABASE_URL_DIRECT_FILE: /run/secrets/database_url_migrate }
+            env: { MSP_DATABASE_URL_MIGRATE_FILE: /run/secrets/database_url_migrate }   # msp_owner, langsung db-primary.internal:5432 (04 §17.4)
             mounts: [{ type: bind, read_only: true, source: "{{ secrets_root }}/{{ color_new }}/database_url_migrate", target: /run/secrets/database_url_migrate }]
             networks: [{ name: msp-backend }]
             detach: false                          # tunggu selesai; exit code ≠ 0 → rescue
@@ -1414,21 +1429,28 @@ x-backend: &backend
     MSP_ENV: "{{ msp_env }}"
     MSP_VERSION: "{{ msp_version }}"
     OTEL_RESOURCE_ATTRIBUTES: "msp.color={{ color_new }}"
-    MSP_DATABASE_URL_APP_FILE: /run/secrets/database_url_app        # via PgBouncer lokal app host
-  secrets: [database_url_app, redis_url, webhook_secret_master_keys]
-  healthcheck: { test: ["CMD", "/msp", "tool", "healthcheck"], interval: 10s, retries: 3 }
-x-worker: &worker                                  # client River: koneksi langsung, pool kecil khusus (04 §17.4)
+    MSP_REDIS_URL_FILE: /run/secrets/redis_url
+  healthcheck: { test: ["CMD", "/msp", "tool", "healthcheck"], interval: 10s, retries: 3 }   # → /readyz (DB + skema [+ River]; tanpa Redis)
+# Pemetaan URL ↔ role ↔ jalur = 04 §17.4 (kanonik). Container hanya menerima secret URL miliknya.
+x-worker: &worker                                  # worker tenant: query domain via PgBouncer + client River langsung
   <<: *backend
-  environment:
+  environment: &worker-env
     <<: *backend-env
-    MSP_DATABASE_URL_DIRECT_FILE: /run/secrets/database_url_direct  # db-primary.internal:5432 (LISTEN/NOTIFY, leader election)
-  secrets: [database_url_app, database_url_direct, redis_url, webhook_secret_master_keys]
+    MSP_DATABASE_URL_APP_FILE: /run/secrets/database_url_app        # msp_app, via PgBouncer lokal app host
+    MSP_DATABASE_URL_DIRECT_FILE: /run/secrets/database_url_direct  # msp_river, db-primary.internal:5432 (LISTEN/NOTIFY, leader election)
+  secrets: [database_url_app, database_url_direct, redis_url]
 services:
   api:
     <<: *backend
     command: ["api"]
     deploy: { replicas: 2 }
     networks: [edge, backend]
+    environment:
+      <<: *backend-env
+      MSP_DATABASE_URL_APP_FILE: /run/secrets/database_url_app          # msp_app, via PgBouncer lokal
+      MSP_DATABASE_URL_OPS_FILE: /run/secrets/database_url_ops          # msp_ops, via PgBouncer lokal (handler /v1/ops/* saja)
+      MSP_DATABASE_URL_REPLICA_FILE: /run/secrets/database_url_replica  # msp_readonly_replica, langsung db-02:5432
+    secrets: [database_url_app, database_url_ops, database_url_replica, redis_url, webhook_secret_master_keys]   # master key: rotate-secret (04 §15.4)
     labels:
       - traefik.enable=true
       - traefik.http.services.api-{{ color_new }}.loadbalancer.server.port=8080
@@ -1437,12 +1459,33 @@ services:
   worker-pipeline:
     <<: *worker
     command: ["worker", "--queues=pipeline"]
+    environment:                                   # tanpa URL msp_app: role pipeline tidak menyentuh tabel tenant
+      <<: *backend-env
+      MSP_DATABASE_URL_PIPELINE_FILE: /run/secrets/database_url_pipeline  # msp_pipeline, via PgBouncer lokal
+      MSP_DATABASE_URL_DIRECT_FILE: /run/secrets/database_url_direct      # msp_river, langsung
+    secrets: [database_url_pipeline, database_url_direct, redis_url]
     stop_grace_period: 15m                         # River soft stop; job wajib resumable
     networks: [backend]
+  worker-webhook:
+    <<: *worker
+    command: ["worker", "--queues=webhook"]
+    secrets: [database_url_app, database_url_direct, redis_url, webhook_secret_master_keys]   # satu-satunya worker yang mendekripsi secret webhook
+    networks: [webhook-net]                        # egress hanya via smokescreen (04 §12.5)
+  worker-maintenance:
+    <<: *worker
+    command: ["worker", "--queues=maintenance"]
+    environment:
+      <<: *worker-env
+      MSP_DATABASE_URL_OPS_FILE: /run/secrets/database_url_ops      # msp_ops: job propagasi suppression, DSR
+    secrets: [database_url_app, database_url_ops, database_url_direct, redis_url]
+  # worker-scoring, worker-export, worker-ai: <<: *worker dengan --queues masing-masing
 secrets:
   database_url_app: { file: "/run/msp/{{ color_new }}/database_url_app" }
+  database_url_ops: { file: "/run/msp/{{ color_new }}/database_url_ops" }
+  database_url_pipeline: { file: "/run/msp/{{ color_new }}/database_url_pipeline" }
+  database_url_replica: { file: "/run/msp/{{ color_new }}/database_url_replica" }
   database_url_direct: { file: "/run/msp/{{ color_new }}/database_url_direct" }
-  # … redis_url, webhook_secret_master_keys
+  # … redis_url, webhook_secret_master_keys; database_url_migrate hanya di-mount ke container one-off migrate (§17.2)
 ```
 
 ---
