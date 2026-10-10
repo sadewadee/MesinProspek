@@ -269,14 +269,14 @@ Implements: FR-MON-001, FR-DATA-007, FR-INTL-011, BR-CRED-05.
 | 4 | SCR-05 | — | Gagal → status + refund otomatis + "Coba lagi" | BR-CRED-05 | ID prospek tetap; tidak ada entity duplikat (FR-DATA-007). |
 
 ### FLOW-09 — Laporkan data salah
-Implements: FR-DATA-014, FR-OPS-008.
+Implements: FR-DATA-014, FR-OPS-008, FR-OPS-009.
 
 | # | Layar | Aksi user | Respons sistem | FR/BR | Gagal / edge |
 |---|---|---|---|---|---|
 | 1 | SCR-05/06 | Menu "…" pada claim → "Laporkan data", atau dari bar aksi | SCR-23 dengan claim terisi | FR-DATA-014 | Dari bar aksi (tanpa claim) → user memilih field. |
 | 2 | SCR-23 | Pilih jenis masalah; opsional nilai yang benar + catatan | Validasi | — | "Ini data pribadi saya" → diarahkan ke SCR-25 (FR-AUD-004). |
 | 3 | SCR-23 | Kirim | Toast "Laporan terkirim"; entri timeline; chip "Dilaporkan · sedang ditinjau" pada claim | FR-DATA-014 | Laporan sama dari user yang sama masih terbuka → tampilkan statusnya, bukan form baru. |
-| 4 | SCR-36 | (Ops) triase | Perubahan status terlihat di chip claim | FR-OPS-008 | — |
+| 4 | SCR-36 | (Ops) triase; bila laporan benar → "Koreksi nilai" | Perubahan status terlihat di chip claim. Nilai koreksi tampil dengan sumber "Koreksi tim MesinProspek" di evidence drawer. Skor terkait dihitung ulang. | FR-OPS-008, FR-OPS-009 | Koreksi ditolak bila nilai baru gagal validasi format (BR-NORM) |
 
 ### FLOW-10 — Undang anggota workspace
 Implements: FR-AUTH-002..005, FR-BILL-003, FR-AUD-001.
@@ -810,7 +810,7 @@ Semua layar ops: desktop ≥ `breakpoint.lg`, `density.compact`, banner lingkung
 | SCR-33 Merge review | "Apakah dua record ini bisnis yang sama?" | Antrean (alasan bernilai tinggi, skor fuzzy, umur); tampilan berdampingan: nama, alias, alamat, koordinat + jarak, telepon, domain, kategori, sumber; identifier cocok (ikon cek + `color.status.success.*`) / bertentangan (ikon silang + `color.status.danger.*`); peta mini | Gabung · Company sama, cabang berbeda · Pisahkan · Lewati (shortcut G/C/P/L); undo 10 detik; riwayat keputusan per entity | FR-DATA-004, FR-OPS-005, BR-ER-04..06 |
 | SCR-34 Dataset import | "Apakah snapshot ini layak diterbitkan?" | Daftar snapshot (versi, tipe, sumber, tanggal pengambilan, periode referensi, lisensi, status: Validasi / Siap ditinjau / Diterbitkan / Ditolak); detail: laporan validasi, reject per alasan (unduh sampel), fill-rate per field + delta, mapping Input Contract | Import, Terbitkan, Tolak (alasan) | FR-DATA-001, FR-DATA-008 |
 | SCR-35 Privasi | "Apakah permintaan privasi tertangani tepat waktu?" | Tab Suppression list (tipe, nilai ter-mask, alasan, sumber tiket, pembuat, status propagasi per projection) dan tab Permintaan subjek data (no. ref, jenis, diterima, sisa SLA, status, penanggung jawab) | Verifikasi identitas, cari entity, suppress, koreksi, buat laporan akses, tutup dengan template | FR-AUD-003, FR-AUD-004, FR-OPS-008, NFR-PRIV-02 |
-| SCR-36 Laporan data | "Data mana yang dilaporkan salah oleh user?" | Antrean: claim, jenis masalah, workspace pelapor, jumlah laporan untuk entity yang sama, umur, status (Baru · Ditinjau · Diterima · Ditolak · Selesai) | Ubah status + catatan; buka merge review (duplikat); buat suppression (privasi); tandai untuk snapshot berikutnya | FR-DATA-014, FR-OPS-008 |
+| SCR-36 Laporan data | "Data mana yang dilaporkan salah oleh user?" | Antrean: claim, jenis masalah, workspace pelapor, jumlah laporan untuk entity yang sama, umur, status (Baru · Ditinjau · Diterima · Ditolak · Selesai) | Ubah status + catatan; **Koreksi nilai** (form nilai baru + alasan → membuat evidence `ops_correction` yang menang atas data dataset sampai ada observasi lebih baru, memicu hitung ulang skor, tercatat di audit); buka merge review (duplikat); buat suppression (privasi); tandai untuk snapshot berikutnya | FR-DATA-014, FR-OPS-008, FR-OPS-009 |
 | SCR-37 Tenant & kredit | "Bagaimana kondisi akun pelanggan?" | Daftar workspace (plan, seat terpakai, saldo, dibuat, aktif terakhir, status); detail: plan & entitlement, ledger, anggota (read-only) | Beri kredit (FLOW-24), ubah plan, "Akses support read-only" (alasan wajib → sesi baca dengan banner "Mode support — <tenant> — tercatat di audit"; tanpa impersonation) | FR-OPS-006, FR-BILL-006 |
 | SCR-38 Feature flag & kill switch | "Fitur mana yang aktif untuk siapa?" | Bagian kill switch di atas (AI, ekspor, webhook, upload) dengan toggle besar + status; tabel flag (nama, cakupan global/tenant, nilai, diubah oleh/kapan) | Ubah (konfirmasi + alasan); override per tenant | FR-OPS-007, FR-AI-006 |
 | SCR-39 Log audit internal | "Siapa (internal) melakukan apa?" | Sama dengan SCR-22, lintas tenant, filter jenis aktor (ops/support/sistem) | Filter + detail entri; tanpa edit/hapus | FR-AUD-001 |
@@ -1617,4 +1617,5 @@ Asumsi berlaku sebagai default desain sampai diputuskan. Kolom *Pemilik keputusa
 | BILL | FR-BILL-001..007 | SCR-14, SCR-21, header, SCR-37 | FLOW-06, FLOW-24 |
 | AUD | FR-AUD-001..005 | SCR-22, SCR-25, SCR-35, SCR-39, SCR-18 | FLOW-22 |
 | OPS | FR-OPS-001..008 | SCR-30..38 | FLOW-20..24 |
+| OPS | FR-OPS-009 | SCR-36 | FLOW-09 |
 | V1/V1.5/V2 | FR-SRCH-009/010, FR-GEO-006..008, FR-PROF-011, FR-MON-002..004, FR-EXP-007, FR-BILL-008, FR-AUTH-007, FR-RPT-001 | SCR-50..59 | — |

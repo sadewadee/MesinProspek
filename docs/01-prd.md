@@ -87,7 +87,7 @@ MesinProspek adalah platform **sales intelligence multi-tenant** untuk penjual B
 
 | Release | Tema | Isi utama | Tidak dimasukkan |
 |---|---|---|---|
-| **MVP 0** (internal alpha) | Canonical intelligence | Import dataset snapshot, normalisasi, ER/dedupe, verifikasi, evidence, area reference data, klasifikasi industri, skor (quality, contactability, commercial, geo, ICP fit engine), opportunity v0, priority score, ops console dasar | UI customer lengkap |
+| **MVP 0** (internal alpha; memakai workspace internal + ICP/Offering fixture yang dibuat ops untuk menguji engine) | Canonical intelligence | Import dataset snapshot, normalisasi, ER/dedupe, verifikasi, evidence, area reference data, klasifikasi industri, skor (quality, contactability, commercial, geo, ICP fit engine), opportunity v0, priority score, ops console dasar | UI customer lengkap |
 | **MVP 1** (closed beta → early paid) | Sellable workflow | Auth & workspace, Offering & ICP, search, profil, location intelligence view & territory ranking, list/segment/tag/note/assign, unlock & credits, export, webhook, AI brief (+ sales angle P1), manual refresh, audit, suppression, upload customer | CRM native, signals, watch |
 | **V1** | Recurring value | Signals (diff snapshot), watch & alert, refresh terjadwal, compare (prospek & area), market opportunity report, NL search, satu integrasi CRM, pembayaran self-serve, API key | Enterprise suite |
 | **V1.5** | Team workflow | Bobot skor kustom per tenant, territory management, kolaborasi, analytics tim | CRM penuh |
@@ -128,7 +128,7 @@ MesinProspek adalah platform **sales intelligence multi-tenant** untuk penjual B
 | FR-AUTH-003 | Undang anggota via email dengan role Owner, Admin, Manager, Member, atau Viewer. Undangan kedaluwarsa dalam 7 hari. | P0 | MVP1 | Role diterapkan segera setelah undangan diterima. |
 | FR-AUTH-004 | Permission sesuai matriks RBAC (§8.1.1), ditegakkan di server. | P0 | MVP1 | Request API di luar permission → 403 dan tercatat di audit. |
 | FR-AUTH-005 | Manajemen sesi: idle timeout 12 jam, logout semua sesi, cabut sesi saat user dikeluarkan. | P0 | MVP1 | User yang dikeluarkan kehilangan akses ≤ 1 menit. |
-| FR-AUTH-006 | MFA wajib untuk akun internal (ops), opsional untuk user tenant. | P0 | MVP1 | Login ops tanpa MFA ditolak. |
+| FR-AUTH-006 | MFA wajib untuk akun internal (ops), opsional untuk user tenant. | P0 | MVP0 (ops) / MVP1 (tenant) | Login ops tanpa MFA ditolak. |
 | FR-AUTH-007 | API key per workspace (scoped, hashed, dapat dicabut). | P1 | V1 | Key hanya ditampilkan sekali. Key dicabut → 401. |
 | FR-AUTH-008 | SSO (SAML/OIDC) untuk Enterprise. | P2 | V2 | — |
 | FR-AUTH-009 | Agency client workspace (sub-workspace). | P2 | V2 | — |
@@ -171,10 +171,10 @@ MesinProspek adalah platform **sales intelligence multi-tenant** untuk penjual B
 | FR-DATA-008 | Import data referensi wilayah: kode wilayah Kemendagri, batas wilayah (wajib untuk peta choropleth FR-GEO-002; tanpa batas, peta turun ke titik/cluster + tampilan tabel), dan populasi per kelurahan/desa beserta periode referensi. Crosswalk ke kode BPS bila diperlukan. | P0 | MVP0 | Setiap metrik populasi memiliki `reference_period` dan `source`. |
 | FR-DATA-009 | Penetapan area: setiap Establishment dipetakan ke kelurahan/desa melalui point-in-polygon (bila ada batas) atau pencocokan alamat, dengan `geo_confidence`. | P0 | MVP0 | ≥ 90% establishment ber-koordinat terpetakan ke kelurahan. |
 | FR-DATA-010 | Digital presence lite: klasifikasi nilai website (domain sendiri / subdomain platform gratis / profil sosial / link aggregator / link pesan / tidak ada) dan klasifikasi email (domain sendiri / webmail gratis). | P0 | MVP0 | Unit test klasifikasi lulus untuk daftar pola (SDD). |
-| FR-DATA-011 | Lookup DNS (MX, SPF) untuk domain milik company → petunjuk penyedia email dan tool marketing. | P1 | MVP1 | Hasil DNS di-cache dengan TTL dan dicatat sebagai evidence. |
+| FR-DATA-011 | Identifikasi penyedia dari DNS: host MX → penyedia email (mis. Google Workspace, Microsoft 365) dan include SPF → tool email marketing. Memakai cache DNS yang sama dengan pengecekan MX untuk status verifikasi di FR-DATA-005 (FR-DATA-005 hanya menentukan ada/tidaknya MX). | P1 | MVP1 | Hasil DNS di-cache dengan TTL dan dicatat sebagai evidence. |
 | FR-DATA-012 | **Upload customer** CSV/XLSX (≤ 50.000 baris per file di MVP 1): mapping kolom, preview validasi, proses async, pencocokan ke entity global (link, bukan merge), laporan match-rate. Data upload privat untuk workspace. Baris yang tidak cocok dengan entity global menjadi **prospek privat** workspace: tampil di search workspace tersebut dengan label "Dari upload Anda" dan dinilai dengan aturan yang sama. | P0 | MVP1 | Data upload tidak pernah terbaca workspace lain. Laporan menampilkan matched/new/rejected. |
 | FR-DATA-013 | Diff antar snapshot → change record (input untuk signal). | P1 | V1 | Change record merujuk kedua snapshot. |
-| FR-DATA-014 | User dapat melaporkan data salah ("Laporkan data") dari profil. Laporan masuk antrean ops. | P1 | MVP1 | Laporan tercatat dengan claim yang dirujuk. |
+| FR-DATA-014 | User dapat melaporkan data salah ("Laporkan data") dari profil. Laporan masuk antrean ops. | P0 | MVP1 | Laporan tercatat dengan claim yang dirujuk. |
 
 ### 8.3 ICP — Offering & Ideal Customer Profile
 
@@ -233,7 +233,7 @@ MesinProspek adalah platform **sales intelligence multi-tenant** untuk penjual B
 | FR-INTL-007 | **Opportunity detection** sesuai katalog v0 (Lampiran B): gap fact global + relevansi per Offering, lengkap dengan rationale, evidence_ids, dan confidence. | P0 | MVP0 | MVP-07. Setiap opportunity bisa dibuka ke evidence. |
 | FR-INTL-008 | **Priority score** per (workspace, ICP, establishment) + rollup company, beserta breakdown, versi, coverage, dan band. | P0 | MVP0 | MVP-06. Deterministik untuk input + versi yang sama. |
 | FR-INTL-009 | Versioning model skor. Perubahan konfigurasi → versi baru + job recompute. Versi lama tetap tersimpan untuk audit/perbandingan. | P0 | MVP0 | Skor lama dapat direproduksi dari versi + snapshot. |
-| FR-INTL-010 | **Feedback user**: opportunity "Relevan / Tidak relevan (+alasan)", skor "Terlalu tinggi / Terlalu rendah". | P0 | MVP1 | Tersedia sebagai metrik di ops console. |
+| FR-INTL-010 | **Feedback user**: opportunity "Relevan / Tidak relevan (+alasan)", skor "Terlalu tinggi / Terlalu rendah". | P0 | MVP1 | Feedback tersimpan per workspace/versi model, dan agregat acceptance rate tersedia lewat laporan ops sederhana. Dashboard lengkap ada di FR-OPS-003 (P1). |
 | FR-INTL-011 | Skor yang lebih tua dari input-nya ditandai **stale** dan diantrekan untuk recompute. | P0 | MVP0 | Badge stale tampil sampai recompute selesai. |
 | FR-INTL-012 | Signal detection dari change record (katalog signal V1). | P1 | V1 | — |
 
