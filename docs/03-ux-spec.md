@@ -45,11 +45,11 @@
 | SCR-05 | Wilayah (peringkat + peta + drilldown) | `/areas` | Admin, Member | FR-GEO-01, FR-INTL-03, FR-DATA-04 |
 | SCR-06 | List & pencarian tersimpan | `/lists`, `/lists/[id]` | Admin, Member | FR-ACT-01, FR-SRCH-02 |
 | SCR-07 | Export (dialog unlock & export + riwayat) | `/exports` | Admin, Member | FR-ACT-03, FR-BILL-01 |
-| SCR-08 | Pengaturan › ICP & anggota | `/settings/icp`, `/settings/members` | Admin (Member: lihat ICP) | FR-ICP-02, FR-AUTH-02 |
+| SCR-08 | Pengaturan › ICP & anggota | `/settings/icp`, `/settings/members` | Admin (Member: lihat ICP) | FR-ICP-02, FR-AUTH-02, FR-BILL-01 (seat) |
 | SCR-09 | Pengaturan › Webhook | `/settings/webhooks` | Admin | FR-ACT-04 |
-| SCR-10 | Pengaturan › Credit & pemakaian | `/settings/usage` | Admin | FR-BILL-01 |
-| SCR-11 | Ops › Workspace, credit & audit | `/ops/workspaces`, `/ops/audit` | Ops | FR-OPS-01, FR-OPS-02, FR-BILL-01 |
-| SCR-12 | Ops › Data & kontrol (import, kesehatan data, flag, suppression) | `/ops/imports`, `/ops/health`, `/ops/flags`, `/ops/suppression` | Ops | FR-OPS-01, FR-DATA-01, -04, FR-PRIV-02 |
+| SCR-10 | Pengaturan › Plan, credit & pemakaian | `/settings/usage` | Admin | FR-BILL-01 |
+| SCR-11 | Ops › Workspace, plan, credit & audit | `/ops/workspaces`, `/ops/plans`, `/ops/audit` | Ops | FR-OPS-01, FR-OPS-02, FR-BILL-01 |
+| SCR-12 | Ops › Data & kontrol (import, kesehatan data, flag, pengaturan AI, suppression) | `/ops/imports`, `/ops/health`, `/ops/flags`, `/ops/ai`, `/ops/suppression` | Ops | FR-OPS-01, FR-DATA-01, -04, FR-ACT-05, FR-PRIV-02 |
 
 ### 2.3 Role (FR-AUTH-02; server tetap menegakkan, akses lewat URL di luar role → DITOLAK)
 
@@ -57,8 +57,8 @@
 |---|:-:|:-:|:-:|
 | Search, profil, wilayah, unlock, list/tag/catatan, export, kirim ke webhook, AI brief | ✓ | ✓ | — |
 | Pilih ICP aktif | ✓ | ✓ | — |
-| Kelola ICP, anggota, endpoint webhook; lihat pemakaian credit | ✓ | — | — |
-| Console ops (grant credit, flag, suppression, audit) | — | — | ✓ (MFA) |
+| Kelola ICP, anggota, endpoint webhook; lihat plan & pemakaian credit | ✓ | — | — |
+| Console ops (grant credit, plan, pengaturan AI, flag, suppression, audit) | — | — | ✓ (MFA) |
 
 ---
 
@@ -103,12 +103,12 @@
 | 3 | SCR-04 | Brief tampil per bagian. Tiap kalimat punya rujukan fakta `[n]` yang membuka evidence | Label "Dibuat AI dari data profil ini" |
 | 4 | SCR-04 | Gagal validasi → sistem membuat ulang sekali secara otomatis. Bila masih gagal → error, tidak ditagih | Kill switch aktif → state FITUR DIMATIKAN |
 
-### FLOW-05 — Ops import dataset (FR-DATA-01, PER-04)
+### FLOW-05 — Ops import & pembaruan dataset (FR-DATA-01, PER-04)
 
 | # | Layar / alat | Langkah | Catatan |
 |---|---|---|---|
-| 1 | CLI | Ops menjalankan `msp tool import --observed-at <YYYY-MM-DD> <file.jsonl.gz>` (bila area belum ada: `msp tool geo-sync`, laporannya di output CLI) | `--observed-at` = tanggal pengambilan dataset, **wajib** (dasar freshness, BR-TRUST-02). Import ulang file yang sama tidak membuat duplikat |
-| 2 | SCR-12 Import | Job `import` tampil di riwayat: tanggal pengambilan, status, progres, lalu laporan baru / berubah / tidak berubah / ditolak (per alasan) | Laporan tampil di layar saja (tanpa unduhan) |
+| 1 | CLI | Ops menjalankan `msp tool import --country ID --observed-at <YYYY-MM-DD> <file.jsonl.gz>` (bila area belum ada: `msp tool geo-sync --country ID`, laporannya di output CLI) | Dataset global; F1 hanya memproses negara aktif `ID` (D-28). `--observed-at` = tanggal pengambilan dataset, **wajib** (dasar freshness, BR-TRUST-02). Pembaruan berkala = import ulang file terbaru dengan `--observed-at` baru; tidak membuat duplikat |
+| 2 | SCR-12 Import | Job `import` tampil di riwayat: negara, tanggal pengambilan, status, progres, lalu laporan baru / berubah / tidak berubah / ditolak (per alasan) / dilewati (negara lain) | Laporan tampil di layar saja (tanpa unduhan). "Dilewati (negara lain)" bukan error |
 | 3 | SCR-12 Import | Penetapan wilayah + job `score` berjalan → status "Skor diperbarui" | Customer melihat banner MENGHITUNG bila skor ICP-nya berubah |
 | 4 | SCR-12 Kesehatan | Cek jumlah prospek, % terisi per field, % terpetakan wilayah | Target ≥ 98% terpetakan (FR-DATA-04). Di bawah target → indikator peringatan |
 
@@ -209,8 +209,8 @@
 |---|---|
 | Pertanyaan | "Siapa tim saya dan target apa yang kami kejar?" |
 | ICP | Daftar ICP (nama, Offering, jumlah prospek cocok). Buat/ubah memakai form langkah 1–2 SCR-02. Simpan → MENGHITUNG. Member: hanya lihat & pilih ICP aktif |
-| Anggota | Tabel anggota (nama, email, role, status undangan) · Undang (email + role) · ubah role · keluarkan · kirim ulang undangan |
-| State khusus | Admin terakhir tidak bisa diturunkan atau dikeluarkan. DITOLAK untuk Member di tab Anggota |
+| Anggota | "Seat 4 dari 5 terpakai · plan Growth" (seat terpakai = anggota + undangan tertunda) · tabel anggota (nama, email, role, status undangan) · Undang (email + role) · ubah role · keluarkan · kirim ulang / batalkan undangan |
+| State khusus | Admin terakhir tidak bisa diturunkan atau dikeluarkan. Seat plan penuh → tombol Undang nonaktif + tooltip; bila server tetap menolak (`SEAT_LIMIT`) → copy "Seat penuh" (§7). DITOLAK untuk Member di tab Anggota |
 
 ### SCR-09 — Pengaturan › Webhook
 
@@ -222,33 +222,35 @@
 | Kirim prospek | Dari SCR-03/04/06 (maks. 100 prospek): pilih endpoint → dialog seperti SCR-07. Kirim gratis; prospek yang belum di-unlock di-unlock dulu (n credit) |
 | State khusus | URL ke IP privat/internal ditolak (copy §7). Uji gagal → kode respons + saran. FITUR DIMATIKAN |
 
-### SCR-10 — Pengaturan › Credit & pemakaian
+### SCR-10 — Pengaturan › Plan, credit & pemakaian
 
 | | |
 |---|---|
 | Pertanyaan | "Credit kami terpakai untuk apa?" |
-| Isi | Saldo credit & AI credit (= jumlah ledger, FR-BILL-01) · plan & kuota (info saja, acuan `10-bisnis.md` §3) · tabel ledger: tanggal, jenis (Grant / Debit / Refund), jumlah, oleh, objek (prospek / brief), filter per bulan |
-| State khusus | KOSONG: "Belum ada pemakaian." Info: "Penambahan credit dilakukan oleh tim MesinProspek" + kontak |
+| Isi | **Plan** (hanya baca, diatur ops di SCR-11): nama, harga/bulan, seat terpakai/maks., credit & AI credit per bulan, tanggal grant bulanan berikutnya · saldo credit & AI credit (= jumlah ledger, FR-BILL-01) · tabel ledger: tanggal, jenis (Grant bulanan / Grant manual / Debit / Refund), jumlah, oleh ("Sistem" untuk grant bulanan), objek (prospek / brief), filter per bulan |
+| State khusus | KOSONG: "Belum ada pemakaian." Workspace tanpa plan: "Belum ada plan — hubungi tim MesinProspek." Info: "Perubahan plan dan penambahan credit dilakukan oleh tim MesinProspek" + kontak |
 
-### SCR-11 — Ops › Workspace, credit & audit
+### SCR-11 — Ops › Workspace, plan, credit & audit
 
 | | |
 |---|---|
 | Pertanyaan | "Customer mana yang perlu dilayani, dan siapa melakukan apa?" |
-| Workspace | Tabel: nama, plan, anggota, saldo credit/AI, aktivitas terakhir. Detail: ledger + form **Grant credit** (jenis, jumlah, alasan wajib) + refund manual per debit (BR-CRED-01) |
+| Workspace | Tabel: nama, plan, anggota/seat, saldo credit/AI, aktivitas terakhir. Detail: **Plan** (pilih dari plan aktif; kuota plan baru dipakai pada grant awal siklus berikutnya, kebutuhan segera → Grant credit) + ledger (grant bulanan tercatat "Sistem") + form **Grant credit** (jenis, jumlah, alasan wajib) + refund manual per debit (BR-CRED-01) |
+| Plan | Tabel: nama, harga tampilan (Rp), seat, credit/bulan, AI credit/bulan, aktif, jumlah workspace pemakai. Buat/ubah lewat form (semua field wajib, angka ≥ 0). Tidak ada hapus: plan dinonaktifkan (tidak bisa dipilih lagi; workspace yang sudah memakainya tetap). Simpan perubahan → konfirmasi "Dipakai N workspace, berlaku mulai grant berikutnya". Harga hanya tampilan; pembayaran tetap manual (FR-BILL-01) |
 | Audit | Tabel append-only (FR-OPS-02): waktu, aktor, workspace, aksi, objek. Filter jenis/aktor/workspace/tanggal. Tanpa edit maupun hapus |
-| State khusus | Grant ganda dicegah idempotency (tombol nonaktif saat proses). Hanya akun ops dengan MFA |
+| State khusus | Grant ganda dicegah idempotency (tombol nonaktif saat proses). Ganti plan workspace dan ubah plan masuk audit. Hanya akun ops dengan MFA |
 
 ### SCR-12 — Ops › Data & kontrol
 
 | | |
 |---|---|
 | Pertanyaan | "Apakah data sehat dan sistem terkendali?" |
-| Import | Riwayat job `import`: file, tanggal pengambilan (`--observed-at`), waktu, status, baru/berubah/tidak berubah/ditolak per alasan. Laporan tampil di layar (FR-DATA-01) |
+| Import | Riwayat job `import`: file, negara (`--country`), tanggal pengambilan (`--observed-at`), waktu, status, baru/berubah/tidak berubah/ditolak per alasan, dilewati (negara lain). Laporan tampil di layar (FR-DATA-01) |
 | Kesehatan data | Jumlah prospek · % terisi per field (telepon, `url`, `sameAs`, jam buka, rating, `geo`) · % terpetakan kelurahan (target ≥ 98%) · distribusi band · versi model aktif |
 | Flag | Toggle AI / export / webhook + alasan wajib → banner FITUR DIMATIKAN di app customer |
+| Pengaturan AI | Form (FR-ACT-05, D-29): provider utama (Claude / OpenAI-compatible) + model utama · fallback aktif/nonaktif + base URL (HTTPS) + model · status API key per provider "Terpasang" / "Belum diset" (hanya status; key adalah secret server, tidak bisa dilihat atau diubah di UI). **Uji koneksi**: prompt uji tanpa data prospek ke provider utama & fallback memakai nilai di form → OK/gagal + latensi + pesan error, tanpa AI credit. Simpan → berlaku untuk brief baru ≤ 60 s tanpa redeploy; tercatat di audit (nilai lama → baru). Kill switch tetap di Flag |
 | Suppression | Cari / tambah / hapus nilai (telepon, URL) + alasan (FR-PRIV-02). Efek: hilang dari tampilan, export, dan webhook |
-| State khusus | Semua aksi tulis masuk audit. Persentase di bawah target ditandai ikon + teks "Di bawah target" |
+| State khusus | Semua aksi tulis masuk audit. Persentase di bawah target ditandai ikon + teks "Di bawah target". Pengaturan AI: API key provider terpilih belum diset → Simpan nonaktif + "API key belum diset di server" |
 
 ---
 
@@ -406,6 +408,8 @@ Nada: lugas, sopan, tanpa menyalahkan user. Istilah produk mengikuti PRD: *credi
 | WhatsApp | "Kemungkinan WhatsApp karena nomor seluler. Belum dikonfirmasi." |
 | Export gagal | "Export gagal diproses. Layanan penyimpanan tidak merespons. Kontak yang sudah di-unlock tetap terbuka; coba lagi tanpa biaya. [Coba lagi] · Kode 7F3A21C0" |
 | URL webhook ditolak | "URL tidak dapat dipakai. Alamat ini mengarah ke jaringan privat atau internal. Gunakan URL HTTPS publik." |
+| Seat penuh | "Seat plan Growth sudah terpakai 5 dari 5. Keluarkan anggota atau batalkan undangan, atau hubungi tim MesinProspek untuk menambah seat." |
+| Pengaturan AI disimpan (ops) | "Pengaturan AI disimpan. Brief baru memakai model ini dalam 1 menit." |
 
 ---
 

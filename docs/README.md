@@ -62,7 +62,7 @@ Semua dokumen memakai nama-nama ini persis.
 | Hitung ulang | Rantai tunggal: metrik wilayah → opportunity → skor. Otomatis setelah import, setelah geo-sync, dan saat ICP disimpan (ICP itu saja). `msp tool rescore` manual hanya setelah versi model/bobot berubah |
 | Target Makefile (lokal = CI) | `make generate` (oapi-codegen, client TS, sqlc, design tokens), `make lint`, `make test` |
 | Format dataset | JSON Lines: satu objek JSON-LD schema.org per baris |
-| Antrean River | `import`, `score`, `export`, `webhook`, `ai` |
+| Antrean River | `import`, `score`, `export`, `webhook`, `ai`, `billing` (grant bulanan) |
 | Service Compose (production & staging) | `caddy`, `web`, `api`, `worker`, `kratos`, `postgres` |
 | Service Compose (ops, di server yang sama) | `gitlab`, `gitlab-runner`, `prometheus`, `alertmanager`, `grafana`, `node-exporter`. Uptime dipantau layanan eksternal |
 | Environment | `local` (laptop, Docker Compose), `staging` dan `production` (keduanya di satu server, project Compose terpisah) |
@@ -70,8 +70,8 @@ Semua dokumen memakai nama-nama ini persis.
 | Direktori Compose di server | `/opt/msp` (production), `/opt/msp-staging` (staging), `/opt/ops` (GitLab, runner, monitoring) |
 | Menjalankan tool di server | `docker compose run --rm worker msp <subcommand>` |
 | Backup | pgBackRest stanza `msp` |
-| Rute HTTP | API `/api/v1` · Kratos `/.ory/*` · health `/healthz` (proses hidup) dan `/readyz` (DB siap) · metrik `/metrics` di listener internal `:9090` (allowlist IP + basic auth) |
-| Env var | Prefix `MSP_`, mis. `MSP_DATABASE_URL`, `MSP_ANTHROPIC_API_KEY`, `MSP_LLM_FALLBACK_BASE_URL`, `MSP_LLM_FALLBACK_API_KEY`, `MSP_LLM_FALLBACK_MODEL`, `MSP_GEOAPI_BASE_URL`, `MSP_STORAGE_DIR`, `MSP_ENCRYPTION_KEY` |
+| Rute HTTP | API `/api/v1` · Kratos `/.ory/*` · health `/healthz` (proses hidup) dan `/readyz` (DB siap) · metrik `/metrics` di listener internal `:9090`, hanya lewat network Docker (tidak di-route Caddy) |
+| Env var | Prefix `MSP_`, mis. `MSP_DATABASE_URL`, `MSP_ANTHROPIC_API_KEY`, `MSP_LLM_FALLBACK_API_KEY`, `MSP_GEOAPI_BASE_URL`, `MSP_STORAGE_DIR`, `MSP_ENCRYPTION_KEY`. Env hanya untuk secret & pengaturan proses; model AI dan plan ada di DB (setting ops) |
 | Image | `<registry>/msp/api:<git-sha>`, `<registry>/msp/web:<git-sha>`. Rilis = tag Git `vX.Y.Z` |
 | Versi model | Skor `priority-X.Y.Z`, wilayah `geo-X.Y.Z`, prompt AI `brief-X.Y.Z` |
 
@@ -87,7 +87,7 @@ MesinProspek/
 │  ├─ ui/             komponen React (Radix + tokens)
 │  └─ api-client/     client TS hasil generate OpenAPI
 ├─ contracts/openapi.yaml
-├─ data/              taksonomi kategori, pola URL (sosial, link aggregator, subdomain gratis)
+├─ data/              negara (countries.yaml), taksonomi kategori, pola URL (sosial, link aggregator, subdomain gratis)
 ├─ deploy/            docker-compose.*.yml, Caddyfile, skrip bootstrap server
 ├─ docs/
 └─ .gitlab-ci.yml

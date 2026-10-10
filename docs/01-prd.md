@@ -106,7 +106,7 @@ Dataset mencakup **seluruh dunia** dan **diperbarui berkala** (Q-02, Q-03 terjaw
 |---|---|---|
 | **AUTH** | | |
 | FR-AUTH-01 | Daftar/login via **Ory Kratos**: email + password, login Google, verifikasi email (D-20) | Tanpa verifikasi email, data tidak bisa diakses |
-| FR-AUTH-02 | Workspace dibuat saat daftar. Admin bisa mengundang anggota. Role: **Admin** (kelola anggota, ICP, webhook, lihat usage) dan **Member** (pakai fitur) | Aksi di luar role → 403 |
+| FR-AUTH-02 | Workspace dibuat saat daftar. Admin bisa mengundang anggota, dibatasi seat plan (anggota aktif + undangan tertunda; tanpa plan = 1 seat). Role: **Admin** (kelola anggota, ICP, webhook, lihat usage) dan **Member** (pakai fitur) | Aksi di luar role → 403; undangan melebihi seat ditolak |
 | FR-AUTH-03 | Akun internal ops wajib MFA (TOTP) | Login ops tanpa MFA ditolak |
 | **DATA** | | |
 | FR-DATA-01 | Import file dataset JSON-LD lewat `msp tool import`. Hanya negara aktif (`--country ID` di F1) yang diproses. Upsert berdasarkan `google_place_id`. Record mentah disimpan sebagai evidence. Hasilnya laporan: baru, berubah, tidak berubah, ditolak (per alasan) | Import ulang file yang sama tidak membuat duplikat |
@@ -137,7 +137,7 @@ Dataset mencakup **seluruh dunia** dan **diperbarui berkala** (Q-02, Q-03 terjaw
 | FR-BILL-01 | Satu ledger dengan dua meter: `credit` dan `ai_credit` (grant, debit, refund), idempotent. **Plan** (nama, harga tampilan, seat, credit & AI credit bulanan) dikelola dari halaman ops (D-29); credit bulanan diberikan otomatis tiap awal siklus sesuai plan workspace; ops juga bisa memberi credit manual. Pembayaran tetap manual di F1. Saldo terlihat di workspace | Saldo = jumlah ledger per meter |
 | **OPS** | | |
 | FR-OPS-01 | Halaman ops: daftar workspace + grant credit, pengaturan plan dan AI (provider/model/fallback), riwayat import, ringkasan kesehatan data (jumlah prospek, % terisi per field, % terpetakan wilayah), feature flag (AI, export, webhook), suppression list | Hanya akun ops |
-| FR-OPS-02 | Audit log append-only untuk login, undang anggota, unlock, export, webhook, grant credit, flag, suppression | Tidak ada update/delete |
+| FR-OPS-02 | Audit log append-only untuk login, undang anggota, unlock, export, webhook, grant credit, plan, pengaturan AI, flag, suppression | Tidak ada update/delete |
 | **PRIV** | | |
 | FR-PRIV-01 | Isolasi data per workspace di database (row-level security) | Test lintas workspace lulus |
 | FR-PRIV-02 | Nilai kontak di suppression list disembunyikan dari tampilan, export, dan webhook. Prospek yang kontaknya ter-suppress tidak bisa di-unlock dan tidak ditagih | — |
