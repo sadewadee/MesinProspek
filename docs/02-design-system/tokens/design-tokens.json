@@ -1,0 +1,2283 @@
+{
+  "$description": "MesinProspek design tokens v0.1.0 — format DTCG (nilai warna hex, dimensi string px). Sumber kebenaran; build CSS dengan build.py.",
+  "base": {
+    "$description": "Primitive tokens. Jangan dipakai langsung di komponen; pakai token semantik.",
+    "color": {
+      "$type": "color",
+      "white": {
+        "$value": "#ffffff"
+      },
+      "black": {
+        "$value": "#000000"
+      },
+      "slate": {
+        "50": {
+          "$value": "#f8fafc"
+        },
+        "100": {
+          "$value": "#f1f5f9"
+        },
+        "200": {
+          "$value": "#e2e8f0"
+        },
+        "300": {
+          "$value": "#cbd5e1"
+        },
+        "400": {
+          "$value": "#94a3b8"
+        },
+        "500": {
+          "$value": "#64748b"
+        },
+        "600": {
+          "$value": "#475569"
+        },
+        "700": {
+          "$value": "#334155"
+        },
+        "800": {
+          "$value": "#1e293b"
+        },
+        "900": {
+          "$value": "#0f172a"
+        },
+        "950": {
+          "$value": "#020617"
+        }
+      },
+      "indigo": {
+        "50": {
+          "$value": "#eef2ff"
+        },
+        "100": {
+          "$value": "#e0e7ff"
+        },
+        "200": {
+          "$value": "#c7d2fe"
+        },
+        "300": {
+          "$value": "#a5b4fc"
+        },
+        "400": {
+          "$value": "#818cf8"
+        },
+        "500": {
+          "$value": "#6366f1"
+        },
+        "600": {
+          "$value": "#4f46e5"
+        },
+        "700": {
+          "$value": "#4338ca"
+        },
+        "800": {
+          "$value": "#3730a3"
+        },
+        "900": {
+          "$value": "#312e81"
+        },
+        "950": {
+          "$value": "#1e1b4b"
+        }
+      },
+      "green": {
+        "50": {
+          "$value": "#f0fdf4"
+        },
+        "100": {
+          "$value": "#dcfce7"
+        },
+        "200": {
+          "$value": "#bbf7d0"
+        },
+        "300": {
+          "$value": "#86efac"
+        },
+        "400": {
+          "$value": "#4ade80"
+        },
+        "500": {
+          "$value": "#22c55e"
+        },
+        "600": {
+          "$value": "#16a34a"
+        },
+        "700": {
+          "$value": "#15803d"
+        },
+        "800": {
+          "$value": "#166534"
+        },
+        "900": {
+          "$value": "#14532d"
+        },
+        "950": {
+          "$value": "#052e16"
+        }
+      },
+      "amber": {
+        "50": {
+          "$value": "#fffbeb"
+        },
+        "100": {
+          "$value": "#fef3c7"
+        },
+        "200": {
+          "$value": "#fde68a"
+        },
+        "300": {
+          "$value": "#fcd34d"
+        },
+        "400": {
+          "$value": "#fbbf24"
+        },
+        "500": {
+          "$value": "#f59e0b"
+        },
+        "600": {
+          "$value": "#d97706"
+        },
+        "700": {
+          "$value": "#b45309"
+        },
+        "800": {
+          "$value": "#92400e"
+        },
+        "900": {
+          "$value": "#78350f"
+        },
+        "950": {
+          "$value": "#451a03"
+        }
+      },
+      "orange": {
+        "50": {
+          "$value": "#fff7ed"
+        },
+        "100": {
+          "$value": "#ffedd5"
+        },
+        "200": {
+          "$value": "#fed7aa"
+        },
+        "300": {
+          "$value": "#fdba74"
+        },
+        "400": {
+          "$value": "#fb923c"
+        },
+        "500": {
+          "$value": "#f97316"
+        },
+        "600": {
+          "$value": "#ea580c"
+        },
+        "700": {
+          "$value": "#c2410c"
+        },
+        "800": {
+          "$value": "#9a3412"
+        },
+        "900": {
+          "$value": "#7c2d12"
+        },
+        "950": {
+          "$value": "#431407"
+        }
+      },
+      "red": {
+        "50": {
+          "$value": "#fef2f2"
+        },
+        "100": {
+          "$value": "#fee2e2"
+        },
+        "200": {
+          "$value": "#fecaca"
+        },
+        "300": {
+          "$value": "#fca5a5"
+        },
+        "400": {
+          "$value": "#f87171"
+        },
+        "500": {
+          "$value": "#ef4444"
+        },
+        "600": {
+          "$value": "#dc2626"
+        },
+        "700": {
+          "$value": "#b91c1c"
+        },
+        "800": {
+          "$value": "#991b1b"
+        },
+        "900": {
+          "$value": "#7f1d1d"
+        },
+        "950": {
+          "$value": "#450a0a"
+        }
+      },
+      "sky": {
+        "50": {
+          "$value": "#f0f9ff"
+        },
+        "100": {
+          "$value": "#e0f2fe"
+        },
+        "200": {
+          "$value": "#bae6fd"
+        },
+        "300": {
+          "$value": "#7dd3fc"
+        },
+        "400": {
+          "$value": "#38bdf8"
+        },
+        "500": {
+          "$value": "#0ea5e9"
+        },
+        "600": {
+          "$value": "#0284c7"
+        },
+        "700": {
+          "$value": "#0369a1"
+        },
+        "800": {
+          "$value": "#075985"
+        },
+        "900": {
+          "$value": "#0c4a6e"
+        },
+        "950": {
+          "$value": "#082f49"
+        }
+      },
+      "blue": {
+        "50": {
+          "$value": "#eff6ff"
+        },
+        "100": {
+          "$value": "#dbeafe"
+        },
+        "200": {
+          "$value": "#bfdbfe"
+        },
+        "300": {
+          "$value": "#93c5fd"
+        },
+        "400": {
+          "$value": "#60a5fa"
+        },
+        "500": {
+          "$value": "#3b82f6"
+        },
+        "600": {
+          "$value": "#2563eb"
+        },
+        "700": {
+          "$value": "#1d4ed8"
+        },
+        "800": {
+          "$value": "#1e40af"
+        },
+        "900": {
+          "$value": "#1e3a8a"
+        },
+        "950": {
+          "$value": "#172554"
+        }
+      },
+      "teal": {
+        "50": {
+          "$value": "#f0fdfa"
+        },
+        "100": {
+          "$value": "#ccfbf1"
+        },
+        "200": {
+          "$value": "#99f6e4"
+        },
+        "300": {
+          "$value": "#5eead4"
+        },
+        "400": {
+          "$value": "#2dd4bf"
+        },
+        "500": {
+          "$value": "#14b8a6"
+        },
+        "600": {
+          "$value": "#0d9488"
+        },
+        "700": {
+          "$value": "#0f766e"
+        },
+        "800": {
+          "$value": "#115e59"
+        },
+        "900": {
+          "$value": "#134e4a"
+        },
+        "950": {
+          "$value": "#042f2e"
+        }
+      },
+      "violet": {
+        "50": {
+          "$value": "#f5f3ff"
+        },
+        "100": {
+          "$value": "#ede9fe"
+        },
+        "200": {
+          "$value": "#ddd6fe"
+        },
+        "300": {
+          "$value": "#c4b5fd"
+        },
+        "400": {
+          "$value": "#a78bfa"
+        },
+        "500": {
+          "$value": "#8b5cf6"
+        },
+        "600": {
+          "$value": "#7c3aed"
+        },
+        "700": {
+          "$value": "#6d28d9"
+        },
+        "800": {
+          "$value": "#5b21b6"
+        },
+        "900": {
+          "$value": "#4c1d95"
+        },
+        "950": {
+          "$value": "#2e1065"
+        }
+      },
+      "viz": {
+        "$description": "Palet data-viz referensi (skill dataviz), divalidasi CVD + kontras.",
+        "categorical-light": {
+          "1": {
+            "$value": "#2a78d6",
+            "$description": "blue"
+          },
+          "2": {
+            "$value": "#eb6834",
+            "$description": "orange"
+          },
+          "3": {
+            "$value": "#1baf7a",
+            "$description": "aqua"
+          },
+          "4": {
+            "$value": "#eda100",
+            "$description": "yellow"
+          },
+          "5": {
+            "$value": "#e87ba4",
+            "$description": "magenta"
+          },
+          "6": {
+            "$value": "#008300",
+            "$description": "green"
+          },
+          "7": {
+            "$value": "#6250d6",
+            "$description": "violet"
+          },
+          "8": {
+            "$value": "#e34948",
+            "$description": "red"
+          }
+        },
+        "categorical-dark": {
+          "1": {
+            "$value": "#3987e5",
+            "$description": "blue"
+          },
+          "2": {
+            "$value": "#d95926",
+            "$description": "orange"
+          },
+          "3": {
+            "$value": "#199e70",
+            "$description": "aqua"
+          },
+          "4": {
+            "$value": "#c98500",
+            "$description": "yellow"
+          },
+          "5": {
+            "$value": "#d55181",
+            "$description": "magenta"
+          },
+          "6": {
+            "$value": "#008300",
+            "$description": "green"
+          },
+          "7": {
+            "$value": "#9085e9",
+            "$description": "violet"
+          },
+          "8": {
+            "$value": "#e66767",
+            "$description": "red"
+          }
+        },
+        "sequential-blue": {
+          "100": {
+            "$value": "#cde2fb"
+          },
+          "200": {
+            "$value": "#9ec5f4"
+          },
+          "300": {
+            "$value": "#6da7ec"
+          },
+          "400": {
+            "$value": "#3987e5"
+          },
+          "500": {
+            "$value": "#256abf"
+          },
+          "600": {
+            "$value": "#184f95"
+          },
+          "700": {
+            "$value": "#0d366b"
+          }
+        },
+        "status": {
+          "good": {
+            "$value": "#0ca30c"
+          },
+          "warning": {
+            "$value": "#fab219"
+          },
+          "serious": {
+            "$value": "#ec835a"
+          },
+          "critical": {
+            "$value": "#d03b3b"
+          }
+        }
+      }
+    }
+  },
+  "color": {
+    "$description": "Token warna semantik. $value = mode terang; mode gelap di $extensions['com.mesinprospek.mode'].dark.",
+    "bg": {
+      "canvas": {
+        "$value": "{base.color.slate.50}",
+        "$type": "color",
+        "$description": "Latar halaman aplikasi",
+        "$extensions": {
+          "com.mesinprospek.mode": {
+            "dark": "{base.color.slate.950}"
+          }
+        }
+      },
+      "surface": {
+        "$value": "{base.color.white}",
+        "$type": "color",
+        "$description": "Kartu, panel, tabel",
+        "$extensions": {
+          "com.mesinprospek.mode": {
+            "dark": "{base.color.slate.900}"
+          }
+        }
+      },
+      "surface-raised": {
+        "$value": "{base.color.white}",
+        "$type": "color",
+        "$description": "Popover, dropdown, dialog",
+        "$extensions": {
+          "com.mesinprospek.mode": {
+            "dark": "{base.color.slate.800}"
+          }
+        }
+      },
+      "surface-sunken": {
+        "$value": "{base.color.slate.100}",
+        "$type": "color",
+        "$description": "Area inset, sel input read-only",
+        "$extensions": {
+          "com.mesinprospek.mode": {
+            "dark": "{base.color.slate.950}"
+          }
+        }
+      },
+      "hover": {
+        "$value": "{base.color.slate.100}",
+        "$type": "color",
+        "$description": "Hover baris/item",
+        "$extensions": {
+          "com.mesinprospek.mode": {
+            "dark": "{base.color.slate.800}"
+          }
+        }
+      },
+      "selected": {
+        "$value": "{base.color.indigo.50}",
+        "$type": "color",
+        "$description": "Baris/item terpilih",
+        "$extensions": {
+          "com.mesinprospek.mode": {
+            "dark": "{base.color.indigo.950}"
+          }
+        }
+      },
+      "overlay": {
+        "$value": "#0f172a80",
+        "$type": "color",
+        "$description": "Scrim di belakang dialog/drawer",
+        "$extensions": {
+          "com.mesinprospek.mode": {
+            "dark": "#020617b3"
+          }
+        }
+      },
+      "inverse": {
+        "$value": "{base.color.slate.900}",
+        "$type": "color",
+        "$description": "Tooltip, toast gelap",
+        "$extensions": {
+          "com.mesinprospek.mode": {
+            "dark": "{base.color.slate.50}"
+          }
+        }
+      }
+    },
+    "fg": {
+      "default": {
+        "$value": "{base.color.slate.900}",
+        "$type": "color",
+        "$description": "Teks utama",
+        "$extensions": {
+          "com.mesinprospek.mode": {
+            "dark": "{base.color.slate.50}"
+          }
+        }
+      },
+      "muted": {
+        "$value": "{base.color.slate.600}",
+        "$type": "color",
+        "$description": "Teks sekunder, label",
+        "$extensions": {
+          "com.mesinprospek.mode": {
+            "dark": "{base.color.slate.300}"
+          }
+        }
+      },
+      "subtle": {
+        "$value": "{base.color.slate.500}",
+        "$type": "color",
+        "$description": "Placeholder, metadata",
+        "$extensions": {
+          "com.mesinprospek.mode": {
+            "dark": "{base.color.slate.400}"
+          }
+        }
+      },
+      "disabled": {
+        "$value": "{base.color.slate.400}",
+        "$type": "color",
+        "$description": "Teks nonaktif (dikecualikan WCAG)",
+        "$extensions": {
+          "com.mesinprospek.mode": {
+            "dark": "{base.color.slate.600}"
+          }
+        }
+      },
+      "inverse": {
+        "$value": "{base.color.white}",
+        "$type": "color",
+        "$description": "Teks di atas bg.inverse",
+        "$extensions": {
+          "com.mesinprospek.mode": {
+            "dark": "{base.color.slate.900}"
+          }
+        }
+      },
+      "on-accent": {
+        "$value": "{base.color.white}",
+        "$type": "color",
+        "$description": "Teks di atas accent.default",
+        "$extensions": {
+          "com.mesinprospek.mode": {
+            "dark": "{base.color.white}"
+          }
+        }
+      },
+      "link": {
+        "$value": "{base.color.indigo.700}",
+        "$type": "color",
+        "$description": "Tautan",
+        "$extensions": {
+          "com.mesinprospek.mode": {
+            "dark": "{base.color.indigo.300}"
+          }
+        }
+      }
+    },
+    "border": {
+      "default": {
+        "$value": "{base.color.slate.200}",
+        "$type": "color",
+        "$description": "Garis pemisah kartu/tabel",
+        "$extensions": {
+          "com.mesinprospek.mode": {
+            "dark": "{base.color.slate.700}"
+          }
+        }
+      },
+      "subtle": {
+        "$value": "{base.color.slate.100}",
+        "$type": "color",
+        "$description": "Garis halus di dalam komponen",
+        "$extensions": {
+          "com.mesinprospek.mode": {
+            "dark": "{base.color.slate.800}"
+          }
+        }
+      },
+      "strong": {
+        "$value": "{base.color.slate.400}",
+        "$type": "color",
+        "$description": "Pemisah yang perlu menonjol",
+        "$extensions": {
+          "com.mesinprospek.mode": {
+            "dark": "{base.color.slate.600}"
+          }
+        }
+      },
+      "input": {
+        "$value": "{base.color.slate.500}",
+        "$type": "color",
+        "$description": "Batas kontrol form (≥ 3:1, WCAG 1.4.11)",
+        "$extensions": {
+          "com.mesinprospek.mode": {
+            "dark": "{base.color.slate.500}"
+          }
+        }
+      },
+      "focus": {
+        "$value": "{base.color.indigo.600}",
+        "$type": "color",
+        "$description": "Focus ring",
+        "$extensions": {
+          "com.mesinprospek.mode": {
+            "dark": "{base.color.indigo.400}"
+          }
+        }
+      }
+    },
+    "accent": {
+      "$description": "Warna brand. PLACEHOLDER sampai identitas visual final (D-17).",
+      "default": {
+        "$value": "{base.color.indigo.600}",
+        "$type": "color",
+        "$description": "Tombol primer",
+        "$extensions": {
+          "com.mesinprospek.mode": {
+            "dark": "{base.color.indigo.600}"
+          }
+        }
+      },
+      "hover": {
+        "$value": "{base.color.indigo.700}",
+        "$type": "color",
+        "$description": "Hover tombol primer",
+        "$extensions": {
+          "com.mesinprospek.mode": {
+            "dark": "{base.color.indigo.700}"
+          }
+        }
+      },
+      "active": {
+        "$value": "{base.color.indigo.800}",
+        "$type": "color",
+        "$description": "Tombol primer ditekan",
+        "$extensions": {
+          "com.mesinprospek.mode": {
+            "dark": "{base.color.indigo.800}"
+          }
+        }
+      },
+      "subtle": {
+        "$value": "{base.color.indigo.50}",
+        "$type": "color",
+        "$description": "Latar chip/nav aktif",
+        "$extensions": {
+          "com.mesinprospek.mode": {
+            "dark": "{base.color.indigo.950}"
+          }
+        }
+      },
+      "fg": {
+        "$value": "{base.color.indigo.700}",
+        "$type": "color",
+        "$description": "Teks/ikon berwarna brand",
+        "$extensions": {
+          "com.mesinprospek.mode": {
+            "dark": "{base.color.indigo.300}"
+          }
+        }
+      }
+    },
+    "status": {
+      "success": {
+        "fg": {
+          "$value": "{base.color.green.800}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.green.300}"
+            }
+          }
+        },
+        "bg": {
+          "$value": "{base.color.green.50}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.green.950}"
+            }
+          }
+        },
+        "border": {
+          "$value": "{base.color.green.200}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.green.800}"
+            }
+          }
+        },
+        "$description": "Berhasil"
+      },
+      "warning": {
+        "fg": {
+          "$value": "{base.color.amber.800}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.amber.300}"
+            }
+          }
+        },
+        "bg": {
+          "$value": "{base.color.amber.50}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.amber.950}"
+            }
+          }
+        },
+        "border": {
+          "$value": "{base.color.amber.200}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.amber.800}"
+            }
+          }
+        },
+        "$description": "Peringatan"
+      },
+      "danger": {
+        "fg": {
+          "$value": "{base.color.red.700}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.red.300}"
+            }
+          }
+        },
+        "bg": {
+          "$value": "{base.color.red.50}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.red.950}"
+            }
+          }
+        },
+        "border": {
+          "$value": "{base.color.red.200}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.red.800}"
+            }
+          }
+        },
+        "$description": "Error / destruktif"
+      },
+      "info": {
+        "fg": {
+          "$value": "{base.color.blue.700}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.blue.300}"
+            }
+          }
+        },
+        "bg": {
+          "$value": "{base.color.blue.50}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.blue.950}"
+            }
+          }
+        },
+        "border": {
+          "$value": "{base.color.blue.200}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.blue.800}"
+            }
+          }
+        },
+        "$description": "Informasi"
+      }
+    },
+    "score": {
+      "$description": "Band priority score (BR-SCORE-05). Selalu dengan label teks; jangan hanya warna.",
+      "hot": {
+        "fg": {
+          "$value": "{base.color.orange.800}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.orange.300}"
+            }
+          }
+        },
+        "bg": {
+          "$value": "{base.color.orange.50}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.orange.950}"
+            }
+          }
+        },
+        "border": {
+          "$value": "{base.color.orange.200}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.orange.800}"
+            }
+          }
+        },
+        "$description": "HOT ≥ 80",
+        "solid": {
+          "$value": "{base.color.orange.700}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.orange.700}"
+            }
+          }
+        },
+        "on-solid": {
+          "$value": "{base.color.white}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.white}"
+            }
+          }
+        }
+      },
+      "warm": {
+        "fg": {
+          "$value": "{base.color.amber.800}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.amber.300}"
+            }
+          }
+        },
+        "bg": {
+          "$value": "{base.color.amber.50}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.amber.950}"
+            }
+          }
+        },
+        "border": {
+          "$value": "{base.color.amber.200}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.amber.800}"
+            }
+          }
+        },
+        "$description": "WARM 60–79",
+        "solid": {
+          "$value": "{base.color.amber.400}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.amber.400}"
+            }
+          }
+        },
+        "on-solid": {
+          "$value": "{base.color.amber.950}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.amber.950}"
+            }
+          }
+        }
+      },
+      "cold": {
+        "fg": {
+          "$value": "{base.color.sky.800}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.sky.300}"
+            }
+          }
+        },
+        "bg": {
+          "$value": "{base.color.sky.50}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.sky.950}"
+            }
+          }
+        },
+        "border": {
+          "$value": "{base.color.sky.200}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.sky.800}"
+            }
+          }
+        },
+        "$description": "COLD < 60",
+        "solid": {
+          "$value": "{base.color.sky.700}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.sky.700}"
+            }
+          }
+        },
+        "on-solid": {
+          "$value": "{base.color.white}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.white}"
+            }
+          }
+        }
+      },
+      "unscored": {
+        "fg": {
+          "$value": "{base.color.slate.600}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.slate.300}"
+            }
+          }
+        },
+        "bg": {
+          "$value": "{base.color.slate.100}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.slate.800}"
+            }
+          }
+        },
+        "border": {
+          "$value": "{base.color.slate.200}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.slate.700}"
+            }
+          }
+        },
+        "$description": "UNSCORED",
+        "solid": {
+          "$value": "{base.color.slate.200}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.slate.700}"
+            }
+          }
+        },
+        "on-solid": {
+          "$value": "{base.color.slate.700}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.slate.100}"
+            }
+          }
+        }
+      }
+    },
+    "verification": {
+      "$description": "Status verifikasi contact point (BR-VER). Selalu dengan ikon + label.",
+      "verified": {
+        "fg": {
+          "$value": "{base.color.white}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.white}"
+            }
+          }
+        },
+        "bg": {
+          "$value": "{base.color.green.700}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.green.700}"
+            }
+          }
+        },
+        "border": {
+          "$value": "{base.color.green.700}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.green.600}"
+            }
+          }
+        },
+        "$description": "VERIFIED — gaya solid"
+      },
+      "likely-valid": {
+        "fg": {
+          "$value": "{base.color.green.800}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.green.300}"
+            }
+          }
+        },
+        "bg": {
+          "$value": "{base.color.green.50}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.green.950}"
+            }
+          }
+        },
+        "border": {
+          "$value": "{base.color.green.200}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.green.800}"
+            }
+          }
+        },
+        "$description": "LIKELY_VALID — gaya subtle"
+      },
+      "risky": {
+        "fg": {
+          "$value": "{base.color.amber.800}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.amber.300}"
+            }
+          }
+        },
+        "bg": {
+          "$value": "{base.color.amber.50}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.amber.950}"
+            }
+          }
+        },
+        "border": {
+          "$value": "{base.color.amber.200}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.amber.800}"
+            }
+          }
+        },
+        "$description": "RISKY"
+      },
+      "invalid": {
+        "fg": {
+          "$value": "{base.color.red.700}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.red.300}"
+            }
+          }
+        },
+        "bg": {
+          "$value": "{base.color.red.50}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.red.950}"
+            }
+          }
+        },
+        "border": {
+          "$value": "{base.color.red.200}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.red.800}"
+            }
+          }
+        },
+        "$description": "INVALID"
+      },
+      "unknown": {
+        "fg": {
+          "$value": "{base.color.slate.600}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.slate.300}"
+            }
+          }
+        },
+        "bg": {
+          "$value": "{base.color.slate.100}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.slate.800}"
+            }
+          }
+        },
+        "border": {
+          "$value": "{base.color.slate.200}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.slate.700}"
+            }
+          }
+        },
+        "$description": "UNKNOWN"
+      }
+    },
+    "claim": {
+      "$description": "Jenis claim (BR-TRUST-01). Gaya border (border-style.claim.*) adalah encoding sekunder.",
+      "observed": {
+        "fg": {
+          "$value": "{base.color.teal.800}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.teal.300}"
+            }
+          }
+        },
+        "bg": {
+          "$value": "{base.color.teal.50}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.teal.950}"
+            }
+          }
+        },
+        "border": {
+          "$value": "{base.color.teal.300}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.teal.700}"
+            }
+          }
+        },
+        "$description": "OBSERVED — Teramati"
+      },
+      "derived": {
+        "fg": {
+          "$value": "{base.color.blue.700}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.blue.300}"
+            }
+          }
+        },
+        "bg": {
+          "$value": "{base.color.blue.50}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.blue.950}"
+            }
+          }
+        },
+        "border": {
+          "$value": "{base.color.blue.300}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.blue.700}"
+            }
+          }
+        },
+        "$description": "DERIVED — Turunan"
+      },
+      "inferred": {
+        "fg": {
+          "$value": "{base.color.violet.700}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.violet.300}"
+            }
+          }
+        },
+        "bg": {
+          "$value": "{base.color.violet.50}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.violet.950}"
+            }
+          }
+        },
+        "border": {
+          "$value": "{base.color.violet.400}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.violet.500}"
+            }
+          }
+        },
+        "$description": "INFERRED — Perkiraan"
+      },
+      "unknown": {
+        "fg": {
+          "$value": "{base.color.slate.600}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.slate.300}"
+            }
+          }
+        },
+        "bg": {
+          "$value": "{base.color.slate.50}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.slate.900}"
+            }
+          }
+        },
+        "border": {
+          "$value": "{base.color.slate.300}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.slate.600}"
+            }
+          }
+        },
+        "$description": "UNKNOWN — Tidak diketahui"
+      }
+    },
+    "freshness": {
+      "$description": "Freshness (BR-TRUST-04). Alias ke status.",
+      "fresh": {
+        "$description": "Fresh",
+        "fg": {
+          "$value": "{color.status.success.fg}",
+          "$type": "color"
+        },
+        "bg": {
+          "$value": "{color.status.success.bg}",
+          "$type": "color"
+        },
+        "border": {
+          "$value": "{color.status.success.border}",
+          "$type": "color"
+        }
+      },
+      "aging": {
+        "$description": "Aging",
+        "fg": {
+          "$value": "{color.status.warning.fg}",
+          "$type": "color"
+        },
+        "bg": {
+          "$value": "{color.status.warning.bg}",
+          "$type": "color"
+        },
+        "border": {
+          "$value": "{color.status.warning.border}",
+          "$type": "color"
+        }
+      },
+      "stale": {
+        "$description": "Stale",
+        "fg": {
+          "$value": "{color.status.danger.fg}",
+          "$type": "color"
+        },
+        "bg": {
+          "$value": "{color.status.danger.bg}",
+          "$type": "color"
+        },
+        "border": {
+          "$value": "{color.status.danger.border}",
+          "$type": "color"
+        }
+      }
+    },
+    "confidence": {
+      "$description": "Level confidence (BR-TRUST-03). Alias ke status.",
+      "high": {
+        "$description": "Tinggi ≥ 80",
+        "fg": {
+          "$value": "{color.status.success.fg}",
+          "$type": "color"
+        },
+        "bg": {
+          "$value": "{color.status.success.bg}",
+          "$type": "color"
+        },
+        "border": {
+          "$value": "{color.status.success.border}",
+          "$type": "color"
+        }
+      },
+      "medium": {
+        "$description": "Sedang 50–79",
+        "fg": {
+          "$value": "{color.status.warning.fg}",
+          "$type": "color"
+        },
+        "bg": {
+          "$value": "{color.status.warning.bg}",
+          "$type": "color"
+        },
+        "border": {
+          "$value": "{color.status.warning.border}",
+          "$type": "color"
+        }
+      },
+      "low": {
+        "$description": "Rendah < 50",
+        "fg": {
+          "$value": "{color.status.danger.fg}",
+          "$type": "color"
+        },
+        "bg": {
+          "$value": "{color.status.danger.bg}",
+          "$type": "color"
+        },
+        "border": {
+          "$value": "{color.status.danger.border}",
+          "$type": "color"
+        }
+      }
+    },
+    "geo": {
+      "$description": "Peta & metrik area (FR-GEO). Choropleth sequential satu hue; mode gelap membalik anchor (nilai kecil mendekati surface).",
+      "sequential": {
+        "1": {
+          "$value": "{base.color.viz.sequential-blue.100}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.viz.sequential-blue.700}"
+            }
+          }
+        },
+        "2": {
+          "$value": "{base.color.viz.sequential-blue.200}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.viz.sequential-blue.600}"
+            }
+          }
+        },
+        "3": {
+          "$value": "{base.color.viz.sequential-blue.300}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.viz.sequential-blue.500}"
+            }
+          }
+        },
+        "4": {
+          "$value": "{base.color.viz.sequential-blue.400}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.viz.sequential-blue.400}"
+            }
+          }
+        },
+        "5": {
+          "$value": "{base.color.viz.sequential-blue.500}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.viz.sequential-blue.300}"
+            }
+          }
+        },
+        "6": {
+          "$value": "{base.color.viz.sequential-blue.600}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.viz.sequential-blue.200}"
+            }
+          }
+        },
+        "7": {
+          "$value": "{base.color.viz.sequential-blue.700}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.viz.sequential-blue.100}"
+            }
+          }
+        }
+      },
+      "competition": {
+        "$description": "Ordinal Low→High (divalidasi --ordinal).",
+        "low": {
+          "$value": "{base.color.orange.400}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.orange.800}"
+            }
+          }
+        },
+        "medium": {
+          "$value": "{base.color.orange.600}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.orange.600}"
+            }
+          }
+        },
+        "high": {
+          "$value": "{base.color.orange.800}",
+          "$type": "color",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.orange.300}"
+            }
+          }
+        }
+      },
+      "no-data": {
+        "$value": "{base.color.slate.200}",
+        "$type": "color",
+        "$description": "Area tanpa data / coverage LOW — wajib dengan pola arsir",
+        "$extensions": {
+          "com.mesinprospek.mode": {
+            "dark": "{base.color.slate.700}"
+          }
+        }
+      },
+      "boundary": {
+        "$value": "{base.color.slate.400}",
+        "$type": "color",
+        "$description": "Garis batas wilayah",
+        "$extensions": {
+          "com.mesinprospek.mode": {
+            "dark": "{base.color.slate.500}"
+          }
+        }
+      },
+      "selected": {
+        "$value": "{base.color.indigo.600}",
+        "$type": "color",
+        "$description": "Outline area terpilih",
+        "$extensions": {
+          "com.mesinprospek.mode": {
+            "dark": "{base.color.indigo.400}"
+          }
+        }
+      }
+    },
+    "chart": {
+      "$description": "Chart. Urutan categorical tetap; jangan di-cycle. Slot 1–3 aman untuk all-pairs (peta/scatter).",
+      "categorical": {
+        "1": {
+          "$value": "{base.color.viz.categorical-light.1}",
+          "$type": "color",
+          "$description": "blue",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.viz.categorical-dark.1}"
+            }
+          }
+        },
+        "2": {
+          "$value": "{base.color.viz.categorical-light.2}",
+          "$type": "color",
+          "$description": "orange",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.viz.categorical-dark.2}"
+            }
+          }
+        },
+        "3": {
+          "$value": "{base.color.viz.categorical-light.3}",
+          "$type": "color",
+          "$description": "aqua",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.viz.categorical-dark.3}"
+            }
+          }
+        },
+        "4": {
+          "$value": "{base.color.viz.categorical-light.4}",
+          "$type": "color",
+          "$description": "yellow",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.viz.categorical-dark.4}"
+            }
+          }
+        },
+        "5": {
+          "$value": "{base.color.viz.categorical-light.5}",
+          "$type": "color",
+          "$description": "magenta",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.viz.categorical-dark.5}"
+            }
+          }
+        },
+        "6": {
+          "$value": "{base.color.viz.categorical-light.6}",
+          "$type": "color",
+          "$description": "green",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.viz.categorical-dark.6}"
+            }
+          }
+        },
+        "7": {
+          "$value": "{base.color.viz.categorical-light.7}",
+          "$type": "color",
+          "$description": "violet",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.viz.categorical-dark.7}"
+            }
+          }
+        },
+        "8": {
+          "$value": "{base.color.viz.categorical-light.8}",
+          "$type": "color",
+          "$description": "red",
+          "$extensions": {
+            "com.mesinprospek.mode": {
+              "dark": "{base.color.viz.categorical-dark.8}"
+            }
+          }
+        }
+      },
+      "status": {
+        "$description": "Status data-viz (tetap, tidak ikut tema). Selalu ikon + label.",
+        "good": {
+          "$value": "{base.color.viz.status.good}",
+          "$type": "color"
+        },
+        "warning": {
+          "$value": "{base.color.viz.status.warning}",
+          "$type": "color"
+        },
+        "serious": {
+          "$value": "{base.color.viz.status.serious}",
+          "$type": "color"
+        },
+        "critical": {
+          "$value": "{base.color.viz.status.critical}",
+          "$type": "color"
+        }
+      },
+      "grid": {
+        "$value": "{base.color.slate.200}",
+        "$type": "color",
+        "$description": "Gridline",
+        "$extensions": {
+          "com.mesinprospek.mode": {
+            "dark": "{base.color.slate.800}"
+          }
+        }
+      },
+      "axis": {
+        "$value": "{base.color.slate.300}",
+        "$type": "color",
+        "$description": "Baseline/sumbu",
+        "$extensions": {
+          "com.mesinprospek.mode": {
+            "dark": "{base.color.slate.700}"
+          }
+        }
+      },
+      "label": {
+        "$value": "{color.fg.muted}",
+        "$type": "color",
+        "$description": "Label sumbu & legend"
+      }
+    }
+  },
+  "font": {
+    "family": {
+      "$type": "fontFamily",
+      "sans": {
+        "$value": [
+          "Inter",
+          "system-ui",
+          "-apple-system",
+          "Segoe UI",
+          "Roboto",
+          "sans-serif"
+        ],
+        "$description": "UI & data (mendukung tabular-nums)"
+      },
+      "display": {
+        "$value": [
+          "Plus Jakarta Sans",
+          "Inter",
+          "system-ui",
+          "sans-serif"
+        ],
+        "$description": "Judul halaman & marketing"
+      },
+      "mono": {
+        "$value": [
+          "JetBrains Mono",
+          "ui-monospace",
+          "SFMono-Regular",
+          "Menlo",
+          "monospace"
+        ],
+        "$description": "ID, kode, JSON"
+      }
+    },
+    "size": {
+      "$type": "dimension",
+      "2xs": {
+        "$value": "11px"
+      },
+      "xs": {
+        "$value": "12px"
+      },
+      "sm": {
+        "$value": "13px"
+      },
+      "md": {
+        "$value": "14px"
+      },
+      "lg": {
+        "$value": "16px"
+      },
+      "xl": {
+        "$value": "18px"
+      },
+      "2xl": {
+        "$value": "20px"
+      },
+      "3xl": {
+        "$value": "24px"
+      },
+      "4xl": {
+        "$value": "30px"
+      },
+      "5xl": {
+        "$value": "36px"
+      }
+    },
+    "weight": {
+      "$type": "fontWeight",
+      "regular": {
+        "$value": 400
+      },
+      "medium": {
+        "$value": 500
+      },
+      "semibold": {
+        "$value": 600
+      },
+      "bold": {
+        "$value": 700
+      }
+    },
+    "line-height": {
+      "$type": "dimension",
+      "$description": "Line height absolut (px) agar ritme baris tabel presisi.",
+      "xs": {
+        "$value": "16px"
+      },
+      "sm": {
+        "$value": "18px"
+      },
+      "md": {
+        "$value": "20px"
+      },
+      "lg": {
+        "$value": "24px"
+      },
+      "xl": {
+        "$value": "28px"
+      },
+      "2xl": {
+        "$value": "32px"
+      },
+      "3xl": {
+        "$value": "36px"
+      },
+      "4xl": {
+        "$value": "44px"
+      }
+    },
+    "letter-spacing": {
+      "$type": "dimension",
+      "tight": {
+        "$value": "-0.02em"
+      },
+      "snug": {
+        "$value": "-0.01em"
+      },
+      "normal": {
+        "$value": "0em"
+      },
+      "wide": {
+        "$value": "0.02em"
+      }
+    }
+  },
+  "text": {
+    "display": {
+      "$value": {
+        "fontFamily": "{font.family.display}",
+        "fontSize": "{font.size.5xl}",
+        "fontWeight": "{font.weight.bold}",
+        "lineHeight": "{font.line-height.4xl}",
+        "letterSpacing": "{font.letter-spacing.tight}"
+      },
+      "$type": "typography",
+      "$description": "Hero/angka besar halaman laporan"
+    },
+    "h1": {
+      "$value": {
+        "fontFamily": "{font.family.display}",
+        "fontSize": "{font.size.4xl}",
+        "fontWeight": "{font.weight.semibold}",
+        "lineHeight": "{font.line-height.3xl}",
+        "letterSpacing": "{font.letter-spacing.snug}"
+      },
+      "$type": "typography",
+      "$description": "Judul halaman"
+    },
+    "h2": {
+      "$value": {
+        "fontFamily": "{font.family.display}",
+        "fontSize": "{font.size.3xl}",
+        "fontWeight": "{font.weight.semibold}",
+        "lineHeight": "{font.line-height.2xl}",
+        "letterSpacing": "{font.letter-spacing.snug}"
+      },
+      "$type": "typography",
+      "$description": "Judul seksi"
+    },
+    "h3": {
+      "$value": {
+        "fontFamily": "{font.family.sans}",
+        "fontSize": "{font.size.xl}",
+        "fontWeight": "{font.weight.semibold}",
+        "lineHeight": "{font.line-height.xl}",
+        "letterSpacing": "{font.letter-spacing.normal}"
+      },
+      "$type": "typography",
+      "$description": "Judul kartu/panel"
+    },
+    "body-lg": {
+      "$value": {
+        "fontFamily": "{font.family.sans}",
+        "fontSize": "{font.size.lg}",
+        "fontWeight": "{font.weight.regular}",
+        "lineHeight": "{font.line-height.lg}",
+        "letterSpacing": "{font.letter-spacing.normal}"
+      },
+      "$type": "typography",
+      "$description": "Teks panjang (brief AI, deskripsi)"
+    },
+    "body": {
+      "$value": {
+        "fontFamily": "{font.family.sans}",
+        "fontSize": "{font.size.md}",
+        "fontWeight": "{font.weight.regular}",
+        "lineHeight": "{font.line-height.md}",
+        "letterSpacing": "{font.letter-spacing.normal}"
+      },
+      "$type": "typography",
+      "$description": "Default UI"
+    },
+    "body-sm": {
+      "$value": {
+        "fontFamily": "{font.family.sans}",
+        "fontSize": "{font.size.sm}",
+        "fontWeight": "{font.weight.regular}",
+        "lineHeight": "{font.line-height.sm}",
+        "letterSpacing": "{font.letter-spacing.normal}"
+      },
+      "$type": "typography",
+      "$description": "Sel tabel compact, metadata"
+    },
+    "caption": {
+      "$value": {
+        "fontFamily": "{font.family.sans}",
+        "fontSize": "{font.size.xs}",
+        "fontWeight": "{font.weight.regular}",
+        "lineHeight": "{font.line-height.xs}",
+        "letterSpacing": "{font.letter-spacing.normal}"
+      },
+      "$type": "typography",
+      "$description": "Keterangan, timestamp, sumber"
+    },
+    "label": {
+      "$value": {
+        "fontFamily": "{font.family.sans}",
+        "fontSize": "{font.size.xs}",
+        "fontWeight": "{font.weight.semibold}",
+        "lineHeight": "{font.line-height.xs}",
+        "letterSpacing": "{font.letter-spacing.wide}"
+      },
+      "$type": "typography",
+      "$description": "Label form, header tabel, badge"
+    },
+    "numeric": {
+      "$value": {
+        "fontFamily": "{font.family.sans}",
+        "fontSize": "{font.size.md}",
+        "fontWeight": "{font.weight.medium}",
+        "lineHeight": "{font.line-height.md}",
+        "letterSpacing": "{font.letter-spacing.normal}"
+      },
+      "$type": "typography",
+      "$description": "Angka di kolom tabel (rata kanan)",
+      "$extensions": {
+        "com.mesinprospek.css": {
+          "font-variant-numeric": "tabular-nums"
+        }
+      }
+    },
+    "mono": {
+      "$value": {
+        "fontFamily": "{font.family.mono}",
+        "fontSize": "{font.size.sm}",
+        "fontWeight": "{font.weight.regular}",
+        "lineHeight": "{font.line-height.md}",
+        "letterSpacing": "{font.letter-spacing.normal}"
+      },
+      "$type": "typography",
+      "$description": "ID, kode"
+    }
+  },
+  "space": {
+    "$type": "dimension",
+    "$description": "Skala spasi basis 4px. Nama = kelipatan 4px (0-5 = 2px).",
+    "0": {
+      "$value": "0px"
+    },
+    "0-5": {
+      "$value": "2px"
+    },
+    "1": {
+      "$value": "4px"
+    },
+    "1-5": {
+      "$value": "6px"
+    },
+    "2": {
+      "$value": "8px"
+    },
+    "3": {
+      "$value": "12px"
+    },
+    "4": {
+      "$value": "16px"
+    },
+    "5": {
+      "$value": "20px"
+    },
+    "6": {
+      "$value": "24px"
+    },
+    "8": {
+      "$value": "32px"
+    },
+    "10": {
+      "$value": "40px"
+    },
+    "12": {
+      "$value": "48px"
+    },
+    "16": {
+      "$value": "64px"
+    }
+  },
+  "radius": {
+    "$type": "dimension",
+    "none": {
+      "$value": "0px"
+    },
+    "sm": {
+      "$value": "4px",
+      "$description": "Badge, chip"
+    },
+    "md": {
+      "$value": "6px",
+      "$description": "Input, tombol"
+    },
+    "lg": {
+      "$value": "8px",
+      "$description": "Kartu, panel"
+    },
+    "xl": {
+      "$value": "12px",
+      "$description": "Dialog, drawer"
+    },
+    "full": {
+      "$value": "9999px",
+      "$description": "Pill, avatar"
+    }
+  },
+  "border-width": {
+    "$type": "dimension",
+    "thin": {
+      "$value": "1px"
+    },
+    "thick": {
+      "$value": "2px"
+    },
+    "focus": {
+      "$value": "2px"
+    }
+  },
+  "border-style": {
+    "$type": "strokeStyle",
+    "claim": {
+      "$description": "Encoding sekunder jenis claim.",
+      "observed": {
+        "$value": "solid"
+      },
+      "derived": {
+        "$value": "solid"
+      },
+      "inferred": {
+        "$value": "dashed"
+      },
+      "unknown": {
+        "$value": "dotted"
+      }
+    }
+  },
+  "shadow": {
+    "sm": {
+      "$value": {
+        "color": "#0f172a0f",
+        "offsetX": "0px",
+        "offsetY": "1px",
+        "blur": "2px",
+        "spread": "0px"
+      },
+      "$type": "shadow",
+      "$description": "Kartu di canvas",
+      "$extensions": {
+        "com.mesinprospek.mode": {
+          "dark": {
+            "color": "#00000066",
+            "offsetX": "0px",
+            "offsetY": "1px",
+            "blur": "2px",
+            "spread": "0px"
+          }
+        }
+      }
+    },
+    "md": {
+      "$value": [
+        {
+          "color": "#0f172a14",
+          "offsetX": "0px",
+          "offsetY": "2px",
+          "blur": "4px",
+          "spread": "-1px"
+        },
+        {
+          "color": "#0f172a14",
+          "offsetX": "0px",
+          "offsetY": "4px",
+          "blur": "8px",
+          "spread": "-2px"
+        }
+      ],
+      "$type": "shadow",
+      "$description": "Dropdown, popover",
+      "$extensions": {
+        "com.mesinprospek.mode": {
+          "dark": [
+            {
+              "color": "#00000080",
+              "offsetX": "0px",
+              "offsetY": "2px",
+              "blur": "4px",
+              "spread": "-1px"
+            },
+            {
+              "color": "#00000080",
+              "offsetX": "0px",
+              "offsetY": "4px",
+              "blur": "8px",
+              "spread": "-2px"
+            }
+          ]
+        }
+      }
+    },
+    "lg": {
+      "$value": {
+        "color": "#0f172a1f",
+        "offsetX": "0px",
+        "offsetY": "12px",
+        "blur": "24px",
+        "spread": "-6px"
+      },
+      "$type": "shadow",
+      "$description": "Drawer",
+      "$extensions": {
+        "com.mesinprospek.mode": {
+          "dark": {
+            "color": "#000000a6",
+            "offsetX": "0px",
+            "offsetY": "12px",
+            "blur": "24px",
+            "spread": "-6px"
+          }
+        }
+      }
+    },
+    "overlay": {
+      "$value": {
+        "color": "#0f172a40",
+        "offsetX": "0px",
+        "offsetY": "24px",
+        "blur": "48px",
+        "spread": "-12px"
+      },
+      "$type": "shadow",
+      "$description": "Dialog modal",
+      "$extensions": {
+        "com.mesinprospek.mode": {
+          "dark": {
+            "color": "#000000bf",
+            "offsetX": "0px",
+            "offsetY": "24px",
+            "blur": "48px",
+            "spread": "-12px"
+          }
+        }
+      }
+    }
+  },
+  "motion": {
+    "duration": {
+      "$type": "duration",
+      "instant": {
+        "$value": "0ms"
+      },
+      "fast": {
+        "$value": "120ms",
+        "$description": "Hover, toggle"
+      },
+      "normal": {
+        "$value": "200ms",
+        "$description": "Dropdown, tooltip"
+      },
+      "slow": {
+        "$value": "320ms",
+        "$description": "Drawer, dialog"
+      }
+    },
+    "easing": {
+      "$type": "cubicBezier",
+      "standard": {
+        "$value": [
+          0.2,
+          0,
+          0,
+          1
+        ]
+      },
+      "enter": {
+        "$value": [
+          0,
+          0,
+          0,
+          1
+        ]
+      },
+      "exit": {
+        "$value": [
+          0.3,
+          0,
+          1,
+          1
+        ]
+      }
+    },
+    "$description": "Hormati prefers-reduced-motion: durasi → instant kecuali indikator progres."
+  },
+  "z": {
+    "$type": "number",
+    "base": {
+      "$value": 0
+    },
+    "dropdown": {
+      "$value": 1000
+    },
+    "sticky": {
+      "$value": 1100
+    },
+    "overlay": {
+      "$value": 1200
+    },
+    "modal": {
+      "$value": 1300
+    },
+    "toast": {
+      "$value": 1400
+    },
+    "tooltip": {
+      "$value": 1500
+    }
+  },
+  "size": {
+    "$type": "dimension",
+    "control": {
+      "$description": "Tinggi kontrol (tombol, input). lg = target sentuh.",
+      "sm": {
+        "$value": "32px"
+      },
+      "md": {
+        "$value": "36px"
+      },
+      "lg": {
+        "$value": "44px"
+      }
+    },
+    "icon": {
+      "sm": {
+        "$value": "16px"
+      },
+      "md": {
+        "$value": "20px"
+      },
+      "lg": {
+        "$value": "24px"
+      }
+    },
+    "target-min": {
+      "$value": "24px",
+      "$description": "Ukuran target minimum (WCAG 2.5.8)"
+    },
+    "sidebar": {
+      "$value": "248px"
+    },
+    "drawer": {
+      "$value": "480px",
+      "$description": "Lebar evidence drawer / panel samping"
+    },
+    "content-max": {
+      "$value": "1440px"
+    }
+  },
+  "breakpoint": {
+    "$type": "dimension",
+    "sm": {
+      "$value": "640px"
+    },
+    "md": {
+      "$value": "768px"
+    },
+    "lg": {
+      "$value": "1024px"
+    },
+    "xl": {
+      "$value": "1280px",
+      "$description": "Target desktop utama (NFR-COMP-01)"
+    },
+    "2xl": {
+      "$value": "1536px"
+    }
+  },
+  "density": {
+    "$type": "dimension",
+    "$description": "Tinggi baris tabel hasil/list.",
+    "compact": {
+      "$value": "36px"
+    },
+    "comfortable": {
+      "$value": "44px"
+    }
+  }
+}
