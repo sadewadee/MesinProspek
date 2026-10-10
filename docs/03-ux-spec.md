@@ -41,7 +41,7 @@
 | SCR-01 | Masuk & daftar (flow Kratos) | `/login`, `/signup`, `/verify`, `/recovery`, `/account`, `/invite/[token]` | Semua | FR-AUTH-01, -02, -03 |
 | SCR-02 | Onboarding: Offering → ICP → hasil pertama | `/onboarding` | Admin | FR-ICP-01, FR-ICP-02, FR-AUTH-02 |
 | SCR-03 | Prospek (search + filter + hasil) | `/prospects` | Admin, Member | FR-SRCH-01, -02, FR-INTL-04, FR-ACT-01..04 |
-| SCR-04 | Profil prospek | `/prospects/[id]` | Admin, Member | FR-PROF-01, FR-INTL-01..05, FR-ACT-01, -02, -04, -05, FR-PRIV-02 |
+| SCR-04 | Profil prospek | `/prospects/[id]` | Admin, Member | FR-PROF-01, FR-INTL-01..05, FR-DATA-02, FR-ACT-01, -02, -04, -05, FR-PRIV-02 |
 | SCR-05 | Wilayah (peringkat + peta + drilldown) | `/areas` | Admin, Member | FR-GEO-01, FR-INTL-03, FR-DATA-04 |
 | SCR-06 | List & pencarian tersimpan | `/lists`, `/lists/[id]` | Admin, Member | FR-ACT-01, FR-SRCH-02 |
 | SCR-07 | Export (dialog biaya + riwayat) | `/exports` | Admin, Member | FR-ACT-03, FR-BILL-01 |
@@ -390,7 +390,7 @@ Nada: lugas, sopan, tanpa menyalahkan user. Istilah produk mengikuti PRD: *credi
 | Perkiraan | ±13.500 | Untuk populasi dan hitungan perkiraan |
 | Densitas | 3,1 per 1.000 penduduk | Lampiran C |
 | Tanggal · tanggal + jam | 10 Okt 2026 · 10 Okt 2026, 14.30 WIB | `Asia/Jakarta` (NFR-07) |
-| Waktu relatif | baru saja · 5 menit lalu · 3 hari lalu | Lebih dari 30 hari → tanggal absolut; `<time datetime>` selalu ada |
+| Waktu relatif | baru saja · 5 menit lalu · 3 hari lalu | Lebih dari 30 hari → tanggal absolut, kecuali umur data di badge freshness ("Menua · 210 hari lalu"). `<time datetime>` selalu ada |
 | Telepon | +62 812-3456-7890 | Disimpan E.164 (BR-NORM-01) |
 | Credit | 1 credit · 35 credit · 1 AI credit | Tanpa bentuk jamak |
 
@@ -424,7 +424,7 @@ Nada: lugas, sopan, tanpa menyalahkan user. Istilah produk mengikuti PRD: *credi
 
 ## 9. Event analytics minimal
 
-Aturan: nama `<objek>_<kata kerja lampau>`. Event berbayar dicatat **server-side** (sumber yang sama dengan ledger). Jangan pernah mengirim nomor telepon, teks query mentah, atau nama bisnis; pakai ID.
+Aturan: nama `<objek>_<kata kerja lampau>`; properti umum `workspace_id`, `user_id`, `role`, `icp_id`, `occurred_at`. Event berbayar dicatat **server-side** (sumber yang sama dengan ledger). Jangan pernah mengirim nomor telepon, teks query mentah, atau nama bisnis; pakai ID.
 
 | Event | Sumber | Properti kunci | Tujuan PRD §4 |
 |---|---|---|---|

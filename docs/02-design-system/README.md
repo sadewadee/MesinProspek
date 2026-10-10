@@ -5,7 +5,7 @@
 | Dokumen | Design system & design tokens |
 | Versi | 0.2 · tokens `0.2.0` (brand Forest & Mint) |
 | Tanggal | 2026-10-10 |
-| Basis | `01-prd.md` (BR-TRUST, BR-VER, BR-SCORE, NFR-A11Y-01, NFR-L10N-01, FR-GEO-009) |
+| Basis | `01-prd.md` v0.2 (BR-TRUST, BR-NORM-01, BR-SCORE, NFR-06, NFR-07, FR-INTL-03) |
 | Audience | Design, Frontend, QA |
 | File | `tokens/design-tokens.json` (sumber kebenaran, DTCG) · `tokens/tokens.css` (hasil build) · `tokens/build.mjs` (build + validasi kontras, Node tanpa dependency) |
 
@@ -19,8 +19,8 @@
 |---|---|
 | **Trust terlihat** | Jenis claim, confidence, freshness, dan verifikasi punya token dan komponen sendiri, bukan teks abu-abu kecil. |
 | **Tenang meski padat data** | Netral (slate) mendominasi. Warna dipakai untuk makna, tidak untuk dekorasi. Satu aksen brand. |
-| **Warna tidak pernah sendirian** | Setiap status selalu tampil sebagai ikon + label teks. Jenis claim juga memakai gaya border (solid/dashed/dotted) sebagai encoding sekunder (NFR-A11Y-01). |
-| **Unknown itu sah** | Ada token khusus untuk Unknown/UNSCORED/no-data, sehingga "Tidak diketahui" tampil konsisten (BR-TRUST-06). |
+| **Warna tidak pernah sendirian** | Setiap status selalu tampil sebagai ikon + label teks. Jenis claim juga memakai gaya border (solid/dashed/dotted) sebagai encoding sekunder (NFR-06). |
+| **Unknown itu sah** | Ada token khusus untuk Unknown/UNSCORED/no-data, sehingga "Tidak diketahui" tampil konsisten (BR-TRUST-03). |
 | **Angka harus rata** | Kolom angka memakai `text.numeric` (tabular-nums) dan rata kanan. |
 | **Satu sumber, banyak mode** | Light & dark dari token yang sama. Mode gelap adalah pilihan desain per token, bukan inversi otomatis. |
 
@@ -101,7 +101,7 @@ node docs/02-design-system/tokens/build.mjs --report  # tabel kontras lengkap (m
 
 Semua token domain memiliki `fg`, `bg`, `border`. Label UI id-ID final ditetapkan di `03-ux-spec.md` (glosarium). Kolom ikon berisi saran nama dari set **Lucide** (lisensi ISC).
 
-**Score band** (BR-SCORE-05). Token tambahan `solid` dan `on-solid` dipakai untuk badge skor di baris hasil.
+**Score band** (BR-SCORE-02). Token tambahan `solid` dan `on-solid` dipakai untuk badge skor di baris hasil.
 
 | Token | Makna | Gaya badge | Ikon |
 |---|---|---|---|
@@ -110,7 +110,7 @@ Semua token domain memiliki `fg`, `bg`, `border`. Label UI id-ID final ditetapka
 | `color.score.cold` | COLD < 60 | solid sky 700 + teks putih | `snowflake` |
 | `color.score.unscored` | UNSCORED ("Belum dinilai") | solid slate 200 + teks slate 700 | `circle-minus` |
 
-**Verifikasi contact point** (BR-VER)
+**Verifikasi contact point** (F1: telepon "Format valid" → `likely-valid`, tidak valid → `invalid`, kosong → `unknown`; VERIFIED dan RISKY dipakai mulai F2)
 
 | Token | Status | Gaya | Ikon |
 |---|---|---|---|
@@ -131,7 +131,7 @@ VERIFIED dan LIKELY_VALID memakai hue yang sama. Keduanya dibedakan lewat **bobo
 | `color.claim.inferred` | INFERRED | Perkiraan | **dashed** | `sparkles` |
 | `color.claim.unknown` | UNKNOWN | Tidak diketahui | **dotted** | `circle-help` |
 
-**Freshness** (BR-TRUST-04) dan **confidence** (BR-TRUST-03) adalah alias ke `status.*`, sehingga palet tetap kecil:
+**Freshness** (BR-TRUST-02) dan **confidence** (dipakai mulai F2) adalah alias ke `status.*`, sehingga palet tetap kecil:
 
 | Token | Alias ke | Ikon |
 |---|---|---|
@@ -157,7 +157,7 @@ Palet data-viz memakai palet referensi skill dataviz yang **sudah divalidasi ula
 | — (batas) | Chart all-pairs (peta, scatter, small multiples) | Maksimal **3 seri**. Lebih dari itu: lebur ke "Lainnya" atau pecah menjadi facet. |
 | `color.geo.sequential.1..7` | Satu hue biru, terang → gelap | Untuk metrik area kontinu (densitas, skor). Mode gelap **membalik anchor**: nilai kecil mendekati warna surface. Tidak pernah rainbow. |
 | `color.geo.competition.{low,medium,high}` | Ramp ordinal oranye | Legend selalu menyertakan label Rendah/Sedang/Tinggi. |
-| `color.geo.no-data` | Slate + **pola arsir 45°** | Untuk coverage LOW/"Data terbatas" (FR-GEO-009). Warna polos tanpa arsir dilarang. |
+| `color.geo.no-data` | Slate + **pola arsir 45°** | Untuk coverage LOW/"Data terbatas" (FR-INTL-03). Warna polos tanpa arsir dilarang. |
 | `color.geo.boundary` / `selected` | Garis batas / area terpilih | — |
 | `color.chart.status.{good,warning,serious,critical}` | Status data-viz tetap | Tidak ikut tema, tidak dipakai sebagai "seri ke-n". Selalu ikon + label. |
 | `color.chart.grid` / `axis` / `label` | Chrome chart | Grid samar, label memakai warna teks, bukan warna seri. |
@@ -214,13 +214,13 @@ Komponen dibangun di `packages/ui` di atas Radix primitives. Komponen hanya bole
 |---|---|---|---|---|
 | **Button** | label, ikon opsional | `accent.*`, `fg.on-accent`, `radius.md`, `size.control.*` | primary / secondary / ghost / danger; loading; disabled. Tombol berbayar menampilkan biaya ("Unlock · 1 credit"). | Fokus `border.focus`. Aksi berbayar wajib lewat dialog konfirmasi. |
 | **Badge** | ikon + label | `color.{score,verification,claim,freshness,confidence,status}.*`, `radius.sm`, `text.label` | Varian `solid` / `subtle`. Badge claim memakai `border-style.claim.*`. | Label teks wajib. Tooltip berisi angka (confidence) dan tanggal. |
-| **ScoreBadge** | angka skor + band + (opsional) badge coverage | `color.score.*.solid/on-solid`, `text.numeric` | UNSCORED menampilkan label "Belum dinilai" tanpa angka (tidak pernah "—" atau "0", BR-TRUST-06). `coverage` < 0,6 menampilkan badge "Data terbatas" (`status.warning`). | `aria-label` lengkap, misalnya "Skor prioritas 92, HOT". |
+| **ScoreBadge** | angka skor + band + (opsional) badge coverage | `color.score.*.solid/on-solid`, `text.numeric` | UNSCORED menampilkan label "Belum dinilai" tanpa angka (tidak pernah "—" atau "0", BR-TRUST-03). `coverage` < 0,6 menampilkan badge "Data terbatas" (`status.warning`). | `aria-label` lengkap, misalnya "Skor prioritas 92, HOT". |
 | **ConfidenceMeter** | 3 bar + label | `color.confidence.*` | Tinggi 3 bar, Sedang 2, Rendah 1. Angka di tooltip. | Bukan warna saja: jumlah bar + label. |
 | **FactorBar** (penjelasan skor) | nama faktor, bar kontribusi, bobot, nilai, badge claim | `color.accent.default` (bar), `color.claim.*`, `text.numeric` | Faktor Unknown: bar kosong bergaris putus + "Tidak dihitung". | Tersedia sebagai tabel untuk screen reader. |
 | **MaskedValue + Unlock** | nilai ter-mask, tombol unlock | `fg.muted`, `text.mono` | Ter-mask → dialog biaya → terbuka (copy, WhatsApp, telepon). | Nilai ter-mask dibacakan "disembunyikan". |
 | **EvidenceDrawer** | judul claim, daftar sumber, metadata | `bg.surface-raised`, `shadow.lg`, `size.drawer`, `color.claim.*` | Loading, kosong (claim UNKNOWN), error + retry. | Focus trap. Esc menutup. Fokus kembali ke pemicu. |
 | **DataTable** | header sticky, checkbox, kolom angka kanan | `density.*`, `bg.hover/selected`, `text.label`, `text.numeric` | Skeleton, kosong, zero-result, error. Bulk select. | Navigasi keyboard baris. `aria-sort`. Checkbox ≥ 24px. |
-| **MapLegend** | ramp/ordinal, label, periode referensi, no-data | `color.geo.*`, `text.caption` | Selalu menampilkan periode data & guardrail (FR-GEO-009). | Peta selalu punya padanan tabel. |
+| **MapLegend** | ramp/ordinal, label, periode referensi, no-data | `color.geo.*`, `text.caption` | Selalu menampilkan periode data & guardrail (FR-INTL-03). | Peta selalu punya padanan tabel. |
 | **Dialog / Drawer** | judul, isi, aksi | `bg.overlay`, `shadow.overlay`, `radius.xl`, `motion.*` | Dialog berbayar: biaya, saldo sebelum/sesudah. | Focus trap, `aria-modal`. |
 | **Toast** | ikon status, pesan, aksi | `bg.inverse`, `fg.inverse`, `z.toast` | Error yang bisa di-retry selalu punya tombol "Coba lagi". | `role=status` / `alert`. |
 | **EmptyState** | ilustrasi ringan, judul, saran, CTA | `fg.muted`, `space.*` | Copy menjelaskan langkah berikutnya. | — |

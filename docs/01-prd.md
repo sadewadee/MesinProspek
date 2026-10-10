@@ -129,18 +129,18 @@ Pertanyaan terbuka: jumlah record, cakupan wilayah, tanggal pengambilan, dan kad
 | FR-GEO-01 | Peringkat wilayah (kecamatan dan kelurahan dalam kab/kota pilihan) untuk ICP aktif, peta berwarna dari tiles GeoAPI, drilldown ke daftar prospek | Peta selalu punya padanan tabel |
 | **ACT** | | |
 | FR-ACT-01 | List, tag, catatan, dan pemilik (assign ke anggota) untuk prospek | — |
-| FR-ACT-02 | Unlock kontak: 1 credit per prospek, permanen per workspace | Unlock ganda tidak menagih ulang |
-| FR-ACT-03 | Export CSV/XLSX sebagai job async dengan preview biaya. Prospek yang belum di-unlock ikut di-unlock saat export **berhasil** | Gagal → tidak ditagih |
+| FR-ACT-02 | Unlock kontak: 1 credit per prospek, permanen per workspace. Yang di-mask hanya **nomor telepon**; website dan akun sosial selalu terlihat | Unlock ganda tidak menagih ulang |
+| FR-ACT-03 | Export CSV/XLSX sebagai job async dengan preview biaya, maksimal 10.000 baris per job. Prospek yang belum di-unlock ikut di-unlock saat export **berhasil** | Gagal → tidak ditagih |
 | FR-ACT-04 | Webhook: daftar URL HTTPS (ditolak bila mengarah ke IP privat/internal), payload ber-tanda tangan HMAC, retry otomatis, log pengiriman, kirim prospek terpilih | Uji SSRF lulus |
 | FR-ACT-05 | AI brief per prospek: **Claude**, fallback ke API **OpenAI-compatible** (D-15). Hanya dari fakta profil, setiap kalimat merujuk fakta. Cache 7 hari. Ada kill switch | Brief tanpa rujukan fakta ditolak lalu dibuat ulang sekali |
 | **BILL** | | |
-| FR-BILL-01 | Ledger credit (grant, debit, refund), idempotent. Ops memberi credit secara manual. Saldo terlihat di workspace | Saldo = jumlah ledger |
+| FR-BILL-01 | Satu ledger dengan dua meter: `credit` dan `ai_credit` (grant, debit, refund), idempotent. Ops memberi credit secara manual. Saldo terlihat di workspace | Saldo = jumlah ledger per meter |
 | **OPS** | | |
 | FR-OPS-01 | Halaman ops: daftar workspace + grant credit, riwayat import, ringkasan kesehatan data (jumlah prospek, % terisi per field, % terpetakan wilayah), feature flag (AI, export, webhook), suppression list | Hanya akun ops |
 | FR-OPS-02 | Audit log append-only untuk login, undang anggota, unlock, export, webhook, grant credit, flag, suppression | Tidak ada update/delete |
 | **PRIV** | | |
 | FR-PRIV-01 | Isolasi data per workspace di database (row-level security) | Test lintas workspace lulus |
-| FR-PRIV-02 | Nilai kontak di suppression list disembunyikan dari tampilan, export, dan webhook | — |
+| FR-PRIV-02 | Nilai kontak di suppression list disembunyikan dari tampilan, export, dan webhook. Prospek yang kontaknya ter-suppress tidak bisa di-unlock dan tidak ditagih | — |
 
 ---
 
@@ -149,7 +149,7 @@ Pertanyaan terbuka: jumlah record, cakupan wilayah, tanggal pengambilan, dan kad
 | ID | Aturan |
 |---|---|
 | BR-TRUST-01 | Claim type: **Teramati** (langsung dari dataset), **Turunan** (aturan deterministik, mis. kategori, tipe telepon), **Perkiraan** (hipotesis, mis. "kemungkinan WhatsApp", opportunity), **Tidak diketahui** (field kosong) |
-| BR-TRUST-02 | Freshness dari tanggal pengambilan data: Baru ≤ 180 hari, Menua ≤ 365 hari, Usang > 365 hari |
+| BR-TRUST-02 | Freshness dari tanggal pengambilan data: Baru ≤ 180 hari, Menua ≤ 365 hari, Usang > 365 hari. Record tanpa tanggal sendiri memakai tanggal pengambilan dataset yang diisi saat import |
 | BR-TRUST-03 | "Tidak diketahui" tidak pernah ditampilkan sebagai kosong, "0", atau "—" |
 | BR-NORM-01 | Telepon → E.164 (+62) dengan nilai mentah tetap disimpan. Nomor seluler (+628…) → "Kemungkinan WhatsApp" (Perkiraan) |
 | BR-NORM-02 | URL website diklasifikasi: domain sendiri · profil sosial (instagram.com, facebook.com, tiktok.com) · link aggregator (linktr.ee, dll.) · link pesan (wa.me) · subdomain gratis (wixsite, blogspot, dll.) · kosong. Daftar pola disimpan sekali sebagai data (DRY) |
@@ -158,7 +158,7 @@ Pertanyaan terbuka: jumlah record, cakupan wilayah, tanggal pengambilan, dan kad
 | BR-SCORE-02 | Band: **HOT** ≥ 80, **WARM** 60–79, **COLD** < 60. Bila coverage < 0,6 atau kriteria ICP *wajib* tidak diketahui → maksimal WARM, dengan label "Data terbatas" |
 | BR-SCORE-03 | Persentil memakai `percent_rank()` Postgres dalam kelompok pembanding (kategori × kab/kota) |
 | BR-OPP-01 | Klaim "tidak ada X" hanya dibuat bila field X terisi ≥ 50% di kategori × kab/kota yang sama (minimal 20 prospek). Bila tidak, opportunity tersebut tidak dibuat |
-| BR-CRED-01 | Unlock 1 credit/prospek, permanen. Export prospek yang belum di-unlock = auto-unlock, ditagih hanya bila export berhasil. Semua debit memakai idempotency key. Refund dilakukan manual oleh ops |
+| BR-CRED-01 | Unlock 1 credit/prospek, permanen. Export **atau kirim ke webhook** untuk prospek yang belum di-unlock = auto-unlock, ditagih hanya bila berhasil. AI brief yang gagal tidak ditagih. Semua debit memakai idempotency key. Refund dilakukan manual oleh ops |
 | BR-AI-01 | Ke LLM hanya dikirim fakta level bisnis. Nomor telepon tidak dikirim |
 
 ## 11. Non-functional requirements
