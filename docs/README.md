@@ -56,6 +56,7 @@ Semua dokumen memakai nama-nama ini persis.
 | Hal | Nama |
 |---|---|
 | Binary & subcommand | `msp api`, `msp worker`, `msp migrate`, `msp tool import <file.jsonl[.gz]>`, `msp tool geo-sync`, `msp tool rescore` |
+| Target Makefile (lokal = CI) | `make generate` (oapi-codegen, client TS, sqlc, design tokens), `make lint`, `make test` |
 | Format dataset | JSON Lines: satu objek JSON-LD schema.org per baris |
 | Antrean River | `import`, `score`, `export`, `webhook`, `ai` |
 | Service Compose (prod & staging) | `caddy`, `web`, `api`, `worker`, `kratos`, `postgres` |
