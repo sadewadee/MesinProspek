@@ -7,7 +7,7 @@
 | Versi | 0.2 (lean). Menggantikan v0.1 yang terlalu besar untuk MVP |
 | Tanggal | 2026-10-10 |
 | Prinsip | **KISS**, **DRY**, **Make it work → make it right → make it fast** (D-23) |
-| Input | Dataset bisnis JSON-LD yang sudah ada (D-24) + data wilayah GeoAPI (D-25). Crawler **PAUSED** (D-01) |
+| Input | Dataset bisnis JSON-LD **global**, diperbarui berkala (D-24) + data wilayah GeoAPI (D-25). **F1 melayani Indonesia** (D-28). Crawler **PAUSED** (D-01) |
 | Pembangun | Agent AI (maks. 8 paralel) diorkestrasi Claude. Founder menyetujui tiap gerbang fase (D-22) |
 
 > Konvensi: `FR-<AREA>-nn`, `BR-<AREA>-nn`, `NFR-nn`. Kolom **Fase**: **F1** = make it work (rilis jual pertama), **F2** = make it right, **F3** = make it fast. Hanya F1 yang dirinci. Fitur masuk F1 hanya jika dibutuhkan alur inti: **temukan → pahami → prioritaskan → tindak lanjuti**.
@@ -80,7 +80,7 @@ Satu record = satu tempat usaha (Google Place). Contoh field dan pemakaiannya:
 | `image` | Tidak dipakai di F1 | — |
 | Email, nama pemilik/person | Tidak ada → "Tidak diketahui" | ✗ |
 
-Pertanyaan terbuka: jumlah record, cakupan wilayah, tanggal pengambilan, dan kadens pembaruan (Q-02, Q-03).
+Dataset mencakup **seluruh dunia** dan **diperbarui berkala** (Q-02, Q-03 terjawab). F1 hanya mengaktifkan **Indonesia**: import memakai filter negara, dan record negara lain dilewati lalu dihitung di laporan. Pembaruan berkala = import ulang file terbaru dengan tanggal pengambilan baru (FR-DATA-01). Negara lain diaktifkan kelak dengan import + geo-sync negara tersebut (F2/F3).
 
 ### 7.2 Data wilayah (GeoAPI, D-25)
 
@@ -109,9 +109,9 @@ Pertanyaan terbuka: jumlah record, cakupan wilayah, tanggal pengambilan, dan kad
 | FR-AUTH-02 | Workspace dibuat saat daftar. Admin bisa mengundang anggota. Role: **Admin** (kelola anggota, ICP, webhook, lihat usage) dan **Member** (pakai fitur) | Aksi di luar role → 403 |
 | FR-AUTH-03 | Akun internal ops wajib MFA (TOTP) | Login ops tanpa MFA ditolak |
 | **DATA** | | |
-| FR-DATA-01 | Import file dataset JSON-LD lewat `msp tool import`. Upsert berdasarkan `google_place_id`. Record mentah disimpan sebagai evidence. Hasilnya laporan: baru, berubah, tidak berubah, ditolak (per alasan) | Import ulang file yang sama tidak membuat duplikat |
+| FR-DATA-01 | Import file dataset JSON-LD lewat `msp tool import`. Hanya negara aktif (`--country ID` di F1) yang diproses. Upsert berdasarkan `google_place_id`. Record mentah disimpan sebagai evidence. Hasilnya laporan: baru, berubah, tidak berubah, ditolak (per alasan) | Import ulang file yang sama tidak membuat duplikat |
 | FR-DATA-02 | Normalisasi sesuai BR-NORM: telepon, URL, kategori, jam buka, rating | Unit test per aturan |
-| FR-DATA-03 | Sync area GeoAPI (4 level, populasi, batas sederhana, atribusi) lewat `msp tool geo-sync` | Semua area level 1–4 Indonesia tersimpan |
+| FR-DATA-03 | Sync area GeoAPI (4 level, populasi, batas sederhana, atribusi) lewat `msp tool geo-sync` untuk negara aktif | Semua area level 1–4 Indonesia tersimpan |
 | FR-DATA-04 | Penetapan wilayah: koordinat prospek → desa/kelurahan (+ kecamatan, kab/kota, provinsi) dengan point-in-polygon di database | ≥ 98% prospek ber-koordinat mendapat kelurahan |
 | **INTL** | | |
 | FR-INTL-01 | Setiap nilai yang tampil punya claim type dan sumber (BR-TRUST) | Evidence bisa dibuka dari profil |
@@ -132,11 +132,11 @@ Pertanyaan terbuka: jumlah record, cakupan wilayah, tanggal pengambilan, dan kad
 | FR-ACT-02 | Unlock kontak: 1 credit per prospek, permanen per workspace. Yang di-mask hanya **nomor telepon**; website dan akun sosial selalu terlihat | Unlock ganda tidak menagih ulang |
 | FR-ACT-03 | Export CSV/XLSX sebagai job async, maksimal 10.000 baris per job. Bila ada prospek yang belum di-unlock, user ditawari **"Unlock & export"** dengan preview biaya | Export gagal bisa diulang tanpa biaya |
 | FR-ACT-04 | Webhook: daftar URL HTTPS (ditolak bila mengarah ke IP privat/internal), payload ber-tanda tangan HMAC, retry otomatis, log pengiriman, kirim prospek terpilih | Uji SSRF lulus |
-| FR-ACT-05 | AI brief per prospek: **Claude**, fallback ke API **OpenAI-compatible** (D-15). Hanya dari fakta profil, setiap kalimat merujuk fakta. Cache 7 hari. Ada kill switch | Brief tanpa rujukan fakta ditolak lalu dibuat ulang sekali |
+| FR-ACT-05 | AI brief per prospek: **Claude**, fallback ke API **OpenAI-compatible** (D-15). Provider, model utama, dan model fallback **diatur dari halaman ops** (tidak di-hardcode; API key tetap secret di server, D-29). Hanya dari fakta profil, setiap kalimat merujuk fakta. Cache 7 hari. Ada kill switch | Brief tanpa rujukan fakta ditolak lalu dibuat ulang sekali |
 | **BILL** | | |
-| FR-BILL-01 | Satu ledger dengan dua meter: `credit` dan `ai_credit` (grant, debit, refund), idempotent. Ops memberi credit secara manual. Saldo terlihat di workspace | Saldo = jumlah ledger per meter |
+| FR-BILL-01 | Satu ledger dengan dua meter: `credit` dan `ai_credit` (grant, debit, refund), idempotent. **Plan** (nama, harga tampilan, seat, credit & AI credit bulanan) dikelola dari halaman ops (D-29); credit bulanan diberikan otomatis tiap awal siklus sesuai plan workspace; ops juga bisa memberi credit manual. Pembayaran tetap manual di F1. Saldo terlihat di workspace | Saldo = jumlah ledger per meter |
 | **OPS** | | |
-| FR-OPS-01 | Halaman ops: daftar workspace + grant credit, riwayat import, ringkasan kesehatan data (jumlah prospek, % terisi per field, % terpetakan wilayah), feature flag (AI, export, webhook), suppression list | Hanya akun ops |
+| FR-OPS-01 | Halaman ops: daftar workspace + grant credit, pengaturan plan dan AI (provider/model/fallback), riwayat import, ringkasan kesehatan data (jumlah prospek, % terisi per field, % terpetakan wilayah), feature flag (AI, export, webhook), suppression list | Hanya akun ops |
 | FR-OPS-02 | Audit log append-only untuk login, undang anggota, unlock, export, webhook, grant credit, flag, suppression | Tidak ada update/delete |
 | **PRIV** | | |
 | FR-PRIV-01 | Isolasi data per workspace di database (row-level security) | Test lintas workspace lulus |
@@ -167,7 +167,7 @@ Pertanyaan terbuka: jumlah record, cakupan wilayah, tanggal pengambilan, dan kad
 |---|---|
 | NFR-01 | Search p95 ≤ 1 s, profil p95 ≤ 500 ms, untuk ukuran dataset saat ini (Q-02) |
 | NFR-02 | Export 10.000 baris ≤ 2 menit. AI brief ≤ 20 s |
-| NFR-03 | Ketersediaan F1 99% per bulan (satu server). Naik ke 99,5% di F3 |
+| NFR-03 | Ketersediaan F1 99% per bulan (satu server untuk semua, D-19). Naik ke 99,5% di F3 |
 | NFR-04 | Backup: RPO ≤ 15 menit, RTO ≤ 8 jam (F1). Restore diuji sebelum rilis F1 |
 | NFR-05 | HTTPS, isolasi workspace (RLS), secret tidak ada di repo, pengecekan SSRF untuk webhook |
 | NFR-06 | WCAG 2.2 AA dasar: kontras, keyboard, status tidak hanya dengan warna |
@@ -189,7 +189,7 @@ Pertanyaan terbuka: jumlah record, cakupan wilayah, tanggal pengambilan, dan kad
 |---|---|
 | Dataset tidak punya email/person → nilai kontak lebih rendah dari kompetitor | Fokus ke telepon/WhatsApp + sosial; upload daftar customer di F2 |
 | Populasi adalah perkiraan model, bukan sensus | Label jelas di UI dan laporan |
-| Satu server = titik gagal tunggal | Backup off-site + RTO 8 jam di F1; HA di F3 |
+| Satu server untuk production, staging, GitLab, CI, dan monitoring (D-19) | Batas CPU/RAM per container, runner CI 1 job sekaligus, uptime monitor eksternal, backup DB & GitLab off-site, rebuild dari skrip bootstrap (RTO 8 jam). Pisahkan GitLab/CI ke server lain bila contention terukur (F3) |
 | Opportunity dirasa tidak relevan | Offering + tombol feedback (FR-INTL-05), kalibrasi bobot |
 
 ---
@@ -248,4 +248,4 @@ Dihitung per kelurahan dan kecamatan. Satuan densitas **per 1.000 penduduk**.
 | Unlock kontak (termasuk "Unlock & export/kirim") | 1 credit per prospek |
 | AI brief | 1 AI credit (gratis bila diambil dari cache, tidak ditagih bila gagal) |
 
-Harga dan kuota per plan ada di [`10-bisnis.md`](10-bisnis.md) §3 (DRY).
+Nilai plan (harga, seat, kuota) diatur di halaman ops (FR-BILL-01). Hipotesis awal ada di [`10-bisnis.md`](10-bisnis.md) §3.

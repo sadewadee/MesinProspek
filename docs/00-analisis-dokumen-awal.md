@@ -150,29 +150,31 @@ Revisi 0.2 menerapkan arahan founder: **KISS, DRY, make it work → right → fa
 | D-16 | Beachhead: penjual B2B (agency digital, vendor SaaS UMKM) ke bisnis lokal | Accepted |
 | D-17 | Brand Forest & Mint; heading Plus Jakarta Sans, body Inter | Accepted |
 | D-18 | GitLab CE self-hosted, tanpa GitHub | Accepted |
-| D-19 | Hosting di dedicated server | Accepted |
+| D-19 | Hosting: **satu dedicated server** untuk semuanya (production, staging, GitLab CE, CI runner, monitoring) — pilihan founder | Accepted |
 | D-20 | Identity: Ory Kratos | Accepted |
 | D-21 | Go (backend) + Next.js (frontend) | Accepted |
 | D-22 | Dibangun agent AI (maks. 8 paralel) yang diorkestrasi Claude. Founder menyetujui gerbang fase dan deploy produksi | Accepted |
 | D-23 | Prinsip KISS, DRY, make it work → right → fast | Accepted |
 | D-24 | Dataset = JSON-LD schema.org per tempat usaha, kunci `google_place_id` | Accepted |
 | D-25 | Wilayah & populasi dari GeoAPI (Kontur 2023, perkiraan model), di-sync ke PostGIS | Accepted |
-| D-26 | Infra F1 minimal: 2 server, tanpa Redis, PgBouncer, object storage internal, maupun HA | Accepted |
+| D-26 | Infra F1 minimal: 1 server, tanpa Redis, PgBouncer, object storage internal, maupun HA. Mitigasi: batas resource per container, runner 1 job, uptime monitor eksternal, backup off-site | Accepted |
 | D-27 | Isu hukum (PDP, lisensi data, retensi) ditangani tim legal | Accepted |
+| D-28 | Dataset global & diperbarui berkala; **F1 melayani Indonesia** (filter negara saat import). Negara lain diaktifkan kelak per negara | Accepted |
+| D-29 | Model AI (provider, model, fallback) dan plan (harga tampilan, seat, kuota) **diatur dari dashboard ops**, tidak mengikat | Accepted |
 
 ## 8. Pertanyaan terbuka
 
 | ID | Pertanyaan | Status |
 |---|---|---|
 | Q-01 | Skema dataset | **Terjawab:** JSON-LD schema.org (lihat PRD §7.1) |
-| Q-02 | Jumlah record & cakupan wilayah dataset | Terbuka |
-| Q-03 | Kadens pembaruan dataset | Terbuka |
+| Q-02 | Jumlah record & cakupan wilayah dataset | **Terjawab:** full, seluruh dunia (F1: Indonesia, D-28) |
+| Q-03 | Kadens pembaruan dataset | **Terjawab:** berkala (import ulang) |
 | Q-04 / Q-10 | Populasi & batas wilayah | **Terjawab:** GeoAPI |
 | Q-05 | Aturan pakai/tampil/export data | Tim legal |
 | Q-06 | Data acuan revenue | Ditunda: band revenue di F2 |
-| Q-07 | Calon customer beta & Offering mereka | Terbuka |
+| Q-07 | Calon customer beta & Offering mereka | **Terjawab:** peserta sudah ada |
 | Q-08 | GitHub tetap jadi mirror atau ditinggalkan? | **Terjawab:** GitLab repo utama; mirror GitHub opsional, tanpa CI |
-| Q-09 | Spesifikasi 2 server & lokasi backup off-site | Terbuka |
+| Q-09 | Spesifikasi satu server & lokasi backup off-site | Terbuka |
 | Q-11 | Validasi hukum PDP | Tim legal |
 
 ## 9. Peta dokumen lanjutan

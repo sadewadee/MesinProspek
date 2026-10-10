@@ -13,6 +13,8 @@ Prinsip ini juga tertulis sebagai aturan wajib untuk setiap sesi Claude dan agen
 Kondisi saat ini:
 - **Crawler PAUSED.** Input = dataset JSON-LD yang sudah ada + data wilayah GeoAPI.
 - **Pembangun** = agent AI (maks. 8 paralel) diorkestrasi Claude. Founder menyetujui gerbang fase.
+- **Cakupan F1** = Indonesia. Dataset global disimpan per negara dan diperbarui berkala.
+- **Konfigurasi yang sering berubah** (model AI, plan & harga) diatur dari dashboard ops, bukan di kode. Secret tetap di `.env`.
 - **Isu hukum** ditangani tim legal, di luar dokumen ini.
 
 ## Peta dokumen
@@ -43,7 +45,7 @@ Kondisi saat ini:
 | File (export) | Disk lokal lewat interface `storage`. S3 di F3 |
 | AI | **Claude**, fallback ke API **OpenAI-compatible** (D-15) |
 | Wilayah | **GeoAPI** (`geoapi.mcpke.dev`) di-sync ke PostGIS. Peta: vector tiles GeoAPI + basemap OpenStreetMap |
-| Hosting | **2 dedicated server** di Indonesia (D-19, D-26): `prod` (aplikasi + DB) dan `ops` (GitLab, runner, staging, monitoring). Docker Compose + Caddy (TLS otomatis) |
+| Hosting | **1 dedicated server** di Indonesia untuk semuanya (D-19, D-26): production, staging, GitLab CE + runner, monitoring. Docker Compose + Caddy (TLS otomatis). Batas CPU/RAM per container; runner 1 job sekaligus |
 | Backup | **pgBackRest** (WAL kontinu) ke object storage S3-compatible off-site di Indonesia |
 | Secret | Variabel CI terproteksi GitLab → file `.env` di server (izin 600) |
 | Observability | Log JSON (`slog`), endpoint `/metrics` → Prometheus + Grafana + alert (email/Telegram) |
@@ -56,16 +58,16 @@ Semua dokumen memakai nama-nama ini persis.
 
 | Hal | Nama |
 |---|---|
-| Binary & subcommand | `msp api`, `msp worker`, `msp migrate`, `msp tool import --observed-at <YYYY-MM-DD> <file.jsonl[.gz]>` (tanggal pengambilan dataset wajib), `msp tool geo-sync`, `msp tool rescore` |
+| Binary & subcommand | `msp api`, `msp worker`, `msp migrate`, `msp tool import --country ID --observed-at <YYYY-MM-DD> <file.jsonl[.gz]>` (negara aktif & tanggal pengambilan wajib), `msp tool geo-sync --country ID`, `msp tool rescore` |
 | Hitung ulang | Rantai tunggal: metrik wilayah → opportunity → skor. Otomatis setelah import, setelah geo-sync, dan saat ICP disimpan (ICP itu saja). `msp tool rescore` manual hanya setelah versi model/bobot berubah |
 | Target Makefile (lokal = CI) | `make generate` (oapi-codegen, client TS, sqlc, design tokens), `make lint`, `make test` |
 | Format dataset | JSON Lines: satu objek JSON-LD schema.org per baris |
 | Antrean River | `import`, `score`, `export`, `webhook`, `ai` |
-| Service Compose (prod & staging) | `caddy`, `web`, `api`, `worker`, `kratos`, `postgres`, `node-exporter` |
-| Service Compose (server ops) | `gitlab`, `gitlab-runner`, `prometheus`, `alertmanager`, `grafana`, `blackbox-exporter` (probe eksternal ke production), `node-exporter` |
-| Environment | `local` (laptop, Docker Compose), `staging` (server ops), `production` (server prod) |
+| Service Compose (production & staging) | `caddy`, `web`, `api`, `worker`, `kratos`, `postgres` |
+| Service Compose (ops, di server yang sama) | `gitlab`, `gitlab-runner`, `prometheus`, `alertmanager`, `grafana`, `node-exporter`. Uptime dipantau layanan eksternal |
+| Environment | `local` (laptop, Docker Compose), `staging` dan `production` (keduanya di satu server, project Compose terpisah) |
 | Domain | `app.<domain>` (production), `staging.<domain>`, `gitlab.<domain>`, `registry.<domain>` (container registry GitLab), `grafana.<domain>` |
-| Direktori Compose di server | `/opt/msp` (prod), `/opt/msp-staging` (staging, di server ops), `/opt/ops` (GitLab, runner, monitoring) |
+| Direktori Compose di server | `/opt/msp` (production), `/opt/msp-staging` (staging), `/opt/ops` (GitLab, runner, monitoring) |
 | Menjalankan tool di server | `docker compose run --rm worker msp <subcommand>` |
 | Backup | pgBackRest stanza `msp` |
 | Rute HTTP | API `/api/v1` · Kratos `/.ory/*` · health `/healthz` (proses hidup) dan `/readyz` (DB siap) · metrik `/metrics` di listener internal `:9090` (allowlist IP + basic auth) |

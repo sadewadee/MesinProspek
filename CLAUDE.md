@@ -39,10 +39,11 @@ Logika yang sama (mis. klasifikasi URL, normalisasi telepon, perhitungan skor) d
 
 ## Batasan tetap
 
-- Crawler **PAUSED**. Input = dataset JSON-LD (kunci `google_place_id`) + data wilayah GeoAPI.
+- Crawler **PAUSED**. Input = dataset JSON-LD global (kunci `google_place_id`, diperbarui berkala) + data wilayah GeoAPI. **F1 melayani Indonesia saja**; negara disimpan per record agar negara lain bisa diaktifkan kelak tanpa ubah desain.
 - **Unknown lebih baik daripada mengarang.** Field yang tidak ada tampil "Tidak diketahui". Jangan mengisi nilai tebakan tanpa label "Perkiraan".
 - Isu hukum (PDP, lisensi data, retensi) ditangani **tim legal**. Jangan membuat keputusan atau dokumen hukum.
-- CI/CD memakai **GitLab CE self-hosted**, tanpa GitHub Actions. Hosting di **dedicated server** di Indonesia.
+- CI/CD memakai **GitLab CE self-hosted**, tanpa GitHub Actions. Hosting di **satu dedicated server** di Indonesia (production, staging, GitLab, CI, monitoring).
+- Nilai yang sering berubah (model AI, plan, harga, kuota) **dikonfigurasi dari dashboard ops**, tidak di-hardcode.
 - Stack: Go (backend, satu binary `msp`) + Next.js (frontend) + PostgreSQL/PostGIS + Ory Kratos + River. AI: Claude, fallback ke OpenAI-compatible. Detail di `docs/README.md`.
 - Jangan pernah commit secret. Jangan kirim nomor telepon ke LLM.
 
