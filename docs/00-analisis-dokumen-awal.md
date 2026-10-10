@@ -139,7 +139,7 @@ Status: **Proposed** = default yang dipakai dokumen lanjutan sampai dikonfirmasi
 | D-05 | Model entity | `Company` (entitas bisnis/brand) 1—N `Establishment` (lokasi fisik/cabang). Geo dan kontak lokasi menempel pada Establishment. | Satu tabel Company | Skema, ER | Proposed |
 | D-06 | Priority score | Bobot Rev 1.2 §9 sebagai default. Faktor Unknown dikeluarkan dan bobot di-renormalisasi. `coverage` < 0,6 → badge "Data terbatas" dan tidak boleh berlabel HOT. Bobot dapat diatur per Offering preset (MVP) dan per tenant (V1.5). | Rumus §06 | Scoring | Proposed |
 | D-07 | Score band | HOT ≥ 80, WARM 60–79, COLD < 60, UNSCORED. Dapat dikonfigurasi. | 4 band | UX, tokens | Proposed |
-| D-08 | Model credit | Meter `credit` + `ai_credit`. Search/profil tidak memakai credit (fair-use per plan). Kontak person/email ditampilkan ter-mask sampai **unlock** (1 credit/record, permanen per tenant). Export/sync record yang sudah di-unlock gratis. Refund otomatis untuk operasi gagal dan untuk kontak yang terbukti INVALID ≤ 30 hari setelah unlock. | Charge per export | Billing, UX | Proposed |
+| D-08 | Model credit | Meter `credit` + `ai_credit`. Search/profil tidak memakai credit (fair-use per plan). Semua nilai contact point dan nama person ditampilkan ter-mask sampai **unlock** (1 credit/record, permanen per tenant). Export/sync record yang sudah di-unlock gratis. Refund otomatis untuk operasi gagal dan untuk kontak yang terbukti INVALID ≤ 30 hari setelah unlock. | Charge per export | Billing, UX | Proposed |
 | D-09 | Plan | Starter (≈ paket Prospect), Growth (≈ Intelligence + Workflow), Agency, Enterprise. Harga di luar dokumen ini. | — | Billing | Proposed |
 | D-10 | Integrasi CRM | MVP 1: webhook + export. V1: satu CRM (kandidat ditentukan dari survei customer beta). | CRM di MVP | Scope | Proposed |
 | D-11 | Arsitektur | **Modular monolith** (satu codebase backend dengan modul sesuai service boundary §11) + worker terpisah. Pecah menjadi service hanya bila ada alasan skala. | 6 microservice | Ops, CI/CD | Proposed |
@@ -168,6 +168,7 @@ Status: **Proposed** = default yang dipakai dokumen lanjutan sampai dikonfirmasi
 | Q-07 | Siapa 5–10 calon customer beta dan Offering mereka? | Prioritas opportunity catalog dan preset bobot. |
 | Q-08 | Apakah source code ikut pindah sepenuhnya dari GitHub ke GitLab self-hosted, atau GitHub tetap ada sebagai mirror? | Setup repo, CI/CD (D-18). |
 | Q-09 | Spesifikasi dan jumlah dedicated server yang tersedia/dianggarkan, serta lokasi backup off-site? | Topologi, HA, DR (D-19). |
+| Q-10 | Apakah tersedia data batas wilayah (poligon kelurahan/kecamatan) beserta lisensinya? | Peta choropleth FR-GEO-002 (A-03). |
 
 ---
 

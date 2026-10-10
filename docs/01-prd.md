@@ -144,6 +144,12 @@ MesinProspek adalah platform **sales intelligence multi-tenant** untuk penjual B
 | Export / kirim ke webhook | ✓ | ✓ | ✓ | ✓* | — |
 | Kelola ICP & Offering | ✓ | ✓ | ✓ | — | — |
 | Generate AI brief | ✓ | ✓ | ✓ | ✓ | — |
+| Refresh prospek (memakai credit) | ✓ | ✓ | ✓ | ✓ | — |
+| Upload daftar sendiri (FR-DATA-012) | ✓ | ✓ | ✓ | ✓ | — |
+| Lihat list/segment bersama & AI brief yang sudah ada | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Lihat saldo credit workspace | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Lihat job (export/upload/refresh) milik sendiri / semua job workspace | ✓ / ✓ | ✓ / ✓ | ✓ / ✓ | ✓ / — | — / — |
+| Feedback opportunity/skor/AI, laporkan data | ✓ | ✓ | ✓ | ✓ | — |
 | Kelola webhook & integrasi | ✓ | ✓ | — | — | — |
 | Kelola anggota & role | ✓ | ✓ | — | — | — |
 | Lihat usage & audit log | ✓ | ✓ | Usage saja | — | — |
@@ -162,7 +168,7 @@ MesinProspek adalah platform **sales intelligence multi-tenant** untuk penjual B
 | FR-DATA-005 | Verifikasi contact point sesuai BR-VER (email: syntax + MX; telepon: format + tipe; domain: DNS). | P0 | MVP0 | Setiap contact point memiliki status, confidence, dan `verified_at` (MVP-02). |
 | FR-DATA-006 | Setiap nilai observed memiliki Evidence. Nilai derived/inferred merujuk input dan versi rule/model-nya. | P0 | MVP0 | Evidence coverage ≥ 95% (MVP-03). |
 | FR-DATA-007 | Re-run pipeline pada snapshot yang sama atau lebih baru tidak membuat entity duplikat. ID entity stabil. | P0 | MVP0 | Re-run 2× → jumlah entity sama, ID sama (MVP-11). |
-| FR-DATA-008 | Import data referensi wilayah: kode wilayah Kemendagri, batas wilayah (bila ada), dan populasi per kelurahan/desa beserta periode referensi. Crosswalk ke kode BPS bila diperlukan. | P0 | MVP0 | Setiap metrik populasi memiliki `reference_period` dan `source`. |
+| FR-DATA-008 | Import data referensi wilayah: kode wilayah Kemendagri, batas wilayah (wajib untuk peta choropleth FR-GEO-002; tanpa batas, peta turun ke titik/cluster + tampilan tabel), dan populasi per kelurahan/desa beserta periode referensi. Crosswalk ke kode BPS bila diperlukan. | P0 | MVP0 | Setiap metrik populasi memiliki `reference_period` dan `source`. |
 | FR-DATA-009 | Penetapan area: setiap Establishment dipetakan ke kelurahan/desa melalui point-in-polygon (bila ada batas) atau pencocokan alamat, dengan `geo_confidence`. | P0 | MVP0 | ≥ 90% establishment ber-koordinat terpetakan ke kelurahan. |
 | FR-DATA-010 | Digital presence lite: klasifikasi nilai website (domain sendiri / subdomain platform gratis / profil sosial / link aggregator / link pesan / tidak ada) dan klasifikasi email (domain sendiri / webmail gratis). | P0 | MVP0 | Unit test klasifikasi lulus untuk daftar pola (SDD). |
 | FR-DATA-011 | Lookup DNS (MX, SPF) untuk domain milik company → petunjuk penyedia email dan tool marketing. | P1 | MVP1 | Hasil DNS di-cache dengan TTL dan dicatat sebagai evidence. |
@@ -175,11 +181,11 @@ MesinProspek adalah platform **sales intelligence multi-tenant** untuk penjual B
 | ID | Requirement | Pri | Rel | Acceptance (ringkas) |
 |---|---|---|---|---|
 | FR-ICP-001 | Workspace membuat ≥ 1 **Offering**: nama dan *offering tags* dari katalog (website_dev, local_seo, digital_ads, reputation_mgmt, booking_system, crm, pos, email_service, other). | P0 | MVP1 | Offering wajib ada sebelum opportunity ditampilkan. |
-| FR-ICP-002 | Workspace membuat **ICP**: kategori/industri, wilayah (provinsi→kelurahan), band karyawan, band revenue, kondisi digital, tipe kontak wajib, dan pengecualian. Setiap kriteria dapat ditandai *wajib* atau *preferensi*. | P0 | MVP1 | ICP tersimpan berversi. Perubahan memicu re-score (NFR-PERF-05). |
+| FR-ICP-002 | Workspace membuat **ICP**: kategori/industri, wilayah (provinsi→kelurahan), band karyawan, band revenue, kondisi digital, tipe kontak wajib, dan pengecualian. Setiap kriteria dapat ditandai *wajib* atau *preferensi*. Setiap ICP terikat ke **tepat satu Offering**, sehingga relevansi opportunity selalu memakai Offering milik ICP aktif. | P0 | MVP1 | ICP tersimpan berversi. Perubahan memicu re-score (NFR-PERF-05). |
 | FR-ICP-003 | Engine menghitung **ICP fit** 0–100 dengan breakdown per kriteria (match/partial/no/unknown). | P0 | MVP0 | Breakdown tampil di profil. |
 | FR-ICP-004 | **Preset bobot skor per tipe Offering** dapat dipilih. Default mengikuti Lampiran A. | P0 | MVP1 | Preset tercatat di `model_version` skor. |
 | FR-ICP-005 | Onboarding wizard: Offering → ICP → hasil pertama. | P0 | MVP1 | Median time-to-first-result ≤ 5 menit. |
-| FR-ICP-006 | Beberapa ICP per workspace (batas per plan). Satu ICP aktif sebagai konteks pencarian. | P0 | MVP1 | Mengganti ICP aktif mengubah skor & urutan hasil. |
+| FR-ICP-006 | Beberapa ICP tersimpan per workspace (batas per plan). Setiap user memilih satu ICP aktif sebagai konteks pencarian. | P0 | MVP1 | Mengganti ICP aktif mengubah skor & urutan hasil. |
 | FR-ICP-007 | Bobot faktor kustom per tenant. | P2 | V1.5 | — |
 
 ### 8.4 SRCH — Search & discovery
@@ -212,6 +218,7 @@ MesinProspek adalah platform **sales intelligence multi-tenant** untuk penjual B
 | FR-PROF-009 | Bar aksi: simpan ke list, tag, catatan, assign, unlock, export, kirim ke webhook, AI brief, refresh, laporkan data. | P0 | MVP1 | Aksi yang tidak diizinkan role disembunyikan. |
 | FR-PROF-010 | Timeline aktivitas (privat workspace). | P1 | MVP1 | — |
 | FR-PROF-011 | Bagian signal. | P1 | V1 | — |
+| FR-PROF-012 | Compare 2–5 prospek berdampingan (skor, faktor, kontak, konteks area). | P1 | V1 | — |
 
 ### 8.6 INTL — Intelligence engine
 
@@ -222,7 +229,7 @@ MesinProspek adalah platform **sales intelligence multi-tenant** untuk penjual B
 | FR-INTL-003 | Skor Contactability (Lampiran A). | P0 | MVP0 | — |
 | FR-INTL-004 | Commercial potential: band karyawan dan band revenue v0 (BR-REV). | P0 | MVP0 | Confidence revenue inferred ≤ 70 (BR-REV-03). |
 | FR-INTL-005 | Faktor Digital Opportunity dari digital presence lite + opportunity keluarga DIGITAL. | P0 | MVP0 | Unknown bila data digital tidak ada. |
-| FR-INTL-006 | Faktor Geographic Opportunity dari metrik area (Lampiran C). | P0 | MVP0 | Unknown bila coverage area LOW. |
+| FR-INTL-006 | Faktor Geographic Opportunity dari metrik area (Lampiran C). Memakai kelurahan. Bila coverage kelurahan LOW, fallback ke kecamatan. Bila keduanya LOW → Unknown. | P0 | MVP0 | Sumber level (kelurahan/kecamatan) tercatat di breakdown. |
 | FR-INTL-007 | **Opportunity detection** sesuai katalog v0 (Lampiran B): gap fact global + relevansi per Offering, lengkap dengan rationale, evidence_ids, dan confidence. | P0 | MVP0 | MVP-07. Setiap opportunity bisa dibuka ke evidence. |
 | FR-INTL-008 | **Priority score** per (workspace, ICP, establishment) + rollup company, beserta breakdown, versi, coverage, dan band. | P0 | MVP0 | MVP-06. Deterministik untuk input + versi yang sama. |
 | FR-INTL-009 | Versioning model skor. Perubahan konfigurasi → versi baru + job recompute. Versi lama tetap tersimpan untuk audit/perbandingan. | P0 | MVP0 | Skor lama dapat direproduksi dari versi + snapshot. |
@@ -274,7 +281,7 @@ MesinProspek adalah platform **sales intelligence multi-tenant** untuk penjual B
 |---|---|---|---|---|
 | FR-AI-001 | **Prospect brief** dari profil terstruktur. Setiap kalimat mengutip claim/evidence ID. Tidak ada claim di luar data yang tersedia. Diberi label "Dibuat AI" beserta versi model/prompt. Bahasa Indonesia (default) atau Inggris. | P0 | MVP1 | MVP-10. Validator sitasi lulus ≥ 98%. |
 | FR-AI-002 | **Sales angle**: hipotesis pendekatan yang terkait Offering + opportunity, beserta rationale. Berlabel Inferred. | P1 | MVP1 | — |
-| FR-AI-003 | Cache berdasarkan hash input. Input sama dalam 7 hari → dipakai ulang tanpa biaya. "Generate ulang" dikenai biaya. | P0 | MVP1 | — |
+| FR-AI-003 | Cache **per workspace** dengan kunci (workspace, ICP/Offering, hash input, versi prompt, bahasa). Input sama dalam 7 hari → dipakai ulang tanpa biaya. "Generate ulang" dikenai biaya. Cache tidak pernah dibagi lintas workspace. | P0 | MVP1 | Uji isolasi cache lintas workspace. |
 | FR-AI-004 | Grounding validator: output dengan klaim tanpa sitasi ditolak, lalu di-regenerate maksimal 1×. Bila tetap gagal → error eksplisit dan refund. | P0 | MVP1 | — |
 | FR-AI-005 | Nilai contact point pribadi (email/telepon person) **tidak dikirim** ke LLM. Person cukup direpresentasikan dengan role. | P0 | MVP1 | Diuji otomatis (test redaksi prompt). |
 | FR-AI-006 | Batas biaya AI per workspace + kill switch global. | P0 | MVP1 | Kill switch aktif → tombol AI nonaktif dengan pesan. |
@@ -308,9 +315,9 @@ MesinProspek adalah platform **sales intelligence multi-tenant** untuk penjual B
 |---|---|---|---|---|
 | FR-AUD-001 | **Audit log immutable** untuk login, perubahan role, export, unlock, konfigurasi webhook/API key, suppression, keputusan merge, grant credit, dan akses support. Setiap entri memuat aktor, waktu, IP, dan target. | P0 | MVP1 | MVP-13. Tidak ada endpoint update/delete audit. |
 | FR-AUD-002 | Penampil audit log untuk Owner/Admin. | P1 | MVP1 | — |
-| FR-AUD-003 | **Suppression list** global (dikelola ops): person/contact point ter-suppress hilang dari search, profil, export, dan webhook ≤ 24 jam, termasuk projection. | P0 | MVP1 | Uji propagasi ke semua projection. |
-| FR-AUD-004 | Intake **permintaan subjek data** (akses, koreksi, hapus, keberatan) via form/email + workflow internal dengan SLA terpantau. | P0 | MVP1 | Permintaan tercatat dari masuk hingga selesai. |
-| FR-AUD-005 | Penutupan workspace → data tenant (termasuk upload) dihapus setelah masa tenggang 30 hari. | P0 | MVP1 | Job penghapusan terverifikasi. |
+| FR-AUD-003 | **Suppression list** global (dikelola ops): person/contact point ter-suppress hilang dari search, profil, export, dan webhook ≤ 24 jam, termasuk projection. File export yang belum kedaluwarsa dan memuat record tersebut dibatalkan lalu dibuat ulang tanpa record itu. Workspace yang pernah menerima record (export/webhook) menerima event `suppression.applied` (tanpa nilai kontak) agar dapat menghapus di sistem hilir. | P0 | MVP1 | Uji propagasi ke semua projection, file export aktif, dan event. |
+| FR-AUD-004 | Intake **permintaan subjek data** (akses, koreksi, hapus, keberatan) via form/email + workflow internal dengan SLA terpantau. Pengakuan penerimaan ≤ 1 hari kerja. Tenggat pemenuhan mengikuti UU PDP dan aturan pelaksananya (beberapa hak bertenggat 3×24 jam; divalidasi konsultan hukum). Untuk data upload tenant (tenant = pengendali), permintaan diteruskan ke tenant. | P0 | MVP1 | Permintaan tercatat dari masuk hingga selesai, termasuk penerusan ke tenant. |
+| FR-AUD-005 | Penutupan workspace → data tenant (termasuk upload) dihapus setelah masa tenggang 30 hari. Pengecualian: `audit_log` dan `credit_ledger`/invoice disimpan sesuai masa retensi hukum lalu **dipseudonimkan** (identitas aktor diganti ID ter-hash, tanpa data pribadi). Masa retensi divalidasi konsultan hukum. | P0 | MVP1 | Job penghapusan terverifikasi. Audit & ledger tetap utuh tetapi tanpa PII. |
 | FR-AUD-006 | **Isolasi tenant** ditegakkan di layer DB (RLS) dan aplikasi. | P0 | MVP1 | MVP-12. Uji lintas-tenant otomatis di CI. |
 | FR-AUD-007 | Kebijakan retensi per kelas data dapat dikonfigurasi. | P1 | V1 | — |
 
@@ -326,6 +333,7 @@ MesinProspek adalah platform **sales intelligence multi-tenant** untuk penjual B
 | FR-OPS-006 | Admin tenant: daftar workspace, plan, grant credit. Akses support read-only dengan alasan wajib dan tercatat di audit (tanpa impersonation). | P0 | MVP1 | — |
 | FR-OPS-007 | Feature flag & kill switch (AI, export, webhook, upload). | P0 | MVP1 | Perubahan flag tercatat di audit. |
 | FR-OPS-008 | Antrean laporan data dari user (FR-DATA-014) dan permintaan subjek data (FR-AUD-004). | P0 | MVP1 | — |
+| FR-OPS-009 | Koreksi data oleh ops: membuat evidence `ops_correction` (merujuk laporan) yang menang atas data dataset sampai ada observasi lebih baru dari snapshot berikutnya. Koreksi memicu recompute skor terkait. | P0 | MVP1 | Koreksi bertahan saat re-run snapshot yang sama dan tercatat di audit. |
 
 ### 8.15 RPT — Laporan
 
@@ -381,6 +389,9 @@ MesinProspek adalah platform **sales intelligence multi-tenant** untuk penjual B
 | BR-ER-05 | Identifier kuat yang bertentangan (dua domain sendiri berbeda) → tidak pernah auto-merge. |
 | BR-ER-06 | Keputusan manual bersifat final terhadap re-run sampai ops mengubahnya. |
 | BR-ER-07 | Record upload customer hanya di-**link** ke entity global (confidence link disimpan). Data upload tidak pernah mengubah global layer. |
+| BR-ER-08 | Telepon dianggap **nomor bersama** (bukan identifier kuat) bila muncul di ≥ 3 establishment milik company berbeda (nama dan domain berbeda) dalam satu snapshot. |
+| BR-ER-09 | Domain sendiri sama dengan jarak 50–200 m → tetap satu Company. Establishment di-merge hanya bila kemiripan nama ≥ 0,90 **dan** alamat ternormalisasi sama. Selain itu dibuat establishment terpisah dengan flag `geo_ambiguous`, dan masuk review queue bila bernilai tinggi. |
+| BR-ER-10 | Pengukuran recall: pasangan duplikat yang berakhir di review queue dihitung *terdeteksi*. Auto-recall (tanpa review) dilaporkan terpisah. Rasio review terhadap total kandidat ≤ 5% (target operasional). |
 
 ### 9.5 BR-SCORE — Skor
 
@@ -394,13 +405,18 @@ MesinProspek adalah platform **sales intelligence multi-tenant** untuk penjual B
 | BR-SCORE-06 | Setiap skor menyimpan `value`, `factors[]` (nilai, bobot, kontribusi, claim_type), `model_version`, `calculated_at`, `coverage`, dan `stale`. |
 | BR-SCORE-07 | Establishment dengan status tutup permanen dan record ter-suppress dikecualikan dari hasil secara default. |
 | BR-SCORE-08 | Agar tidak dihitung ganda: faktor *Digital Opportunity* hanya memakai opportunity keluarga DIGITAL, sedangkan *Opportunity Strength* memakai keluarga lain. |
+| BR-SCORE-09 | Persentil memakai metode **mid-rank**: `pct(x) = 100 × (jumlah nilai < x + 0,5 × jumlah nilai = x) / n`. Nilai seri mendapat persentil yang sama. |
+| BR-SCORE-10 | Skor disimpan dengan 1 desimal dan ditampilkan sebagai bilangan bulat (pembulatan half-up). **Band ditentukan dari bilangan bulat yang ditampilkan**, sehingga UI tidak pernah menampilkan "80" dengan band WARM. |
+| BR-SCORE-11 | Coverage < 0,60 hanya membatasi **band** (maks WARM). Nilai numerik tidak dipotong. |
+| BR-SCORE-12 | Kriteria ICP *wajib* yang nilainya Unknown: establishment tetap masuk hasil, kriteria dikeluarkan dari ICP Fit, flag "Kriteria wajib belum terkonfirmasi" ditampilkan, dan band maksimal WARM. |
+| BR-SCORE-13 | Determinisme: input yang sama + `model_version` yang sama + `as_of` yang sama → skor identik. Komponen yang bergantung waktu (freshness) dihitung terhadap `as_of` (= `calculated_at`). Job harian menandai skor stale bila freshness berpindah kelas. |
 
 ### 9.6 BR-OPP — Opportunity
 
 | ID | Aturan |
 |---|---|
 | BR-OPP-01 | Katalog, aturan deteksi, dan severity ada di **Lampiran B**. Tipe yang field sumbernya tidak ada di dataset berstatus *inactive*, bukan dihapus. |
-| BR-OPP-02 | Klaim "tidak ada X" hanya valid bila fill-rate field X pada sumber untuk kategori × kab/kota tersebut ≥ 50%. Bila di bawah itu, confidence dikurangi 30 poin. Bila < 20%, tipe tidak dideteksi untuk segmen tersebut. |
+| BR-OPP-02 | Klaim "tidak ada X" hanya valid bila fill-rate field X pada sumber untuk kategori × kab/kota tersebut ≥ 50%. Bila di bawah itu, confidence dikurangi 30 poin. Bila < 20%, tipe tidak dideteksi untuk segmen tersebut. Fill-rate hanya dihitung bila segmen berisi ≥ 20 establishment. Bila kurang, naik ke kategori × provinsi, lalu kategori × nasional. |
 | BR-OPP-03 | `opportunity_score = severity × (confidence/100) × relevance`. `relevance` = 1,0 bila tag Offering cocok primer, 0,6 bila sekunder, dan 0 bila tidak relevan (gap fact tetap terlihat di kartu digital/reputasi, tetapi tidak disebut opportunity). |
 | BR-OPP-04 | Setiap opportunity memiliki rationale yang dapat dibaca sales, termasuk konteks peer bila ada. Contoh: "Tidak ada website pada data sumber (snapshot 2026.10). 68% klinik gigi di Kota Denpasar memiliki website." |
 | BR-OPP-05 | Opportunity adalah hipotesis, bukan jaminan hasil penjualan (guardrail Rev 1.2 §8). |
@@ -419,19 +435,21 @@ MesinProspek adalah platform **sales intelligence multi-tenant** untuk penjual B
 
 | ID | Aturan |
 |---|---|
-| BR-CRED-01 | Search dan lihat profil tidak memakai credit, tetapi dibatasi fair-use per plan (Lampiran E). |
-| BR-CRED-02 | Contact point ditampilkan ter-mask (contoh `+62 812-****-7890`, `h****@abcdental.co.id`) sampai di-**unlock**. Unlock = 1 credit per Company dan berlaku permanen untuk workspace. |
+| BR-CRED-01 | Search dan lihat profil tidak memakai credit, tetapi dibatasi fair-use per plan (Lampiran E). Saat kuota 100%: hasil search tetap tampil, profil yang belum dibuka di siklus ini diblokir dengan pesan upgrade, sedangkan profil yang sudah dibuka, di-unlock, atau di-assign tetap dapat diakses. |
+| BR-CRED-02 | **Semua** nilai contact point (telepon, WhatsApp, email) dan nama person ditampilkan ter-mask (contoh `+62 812-****-7890`, `h****@abcdental.co.id`) sampai di-**unlock**. Nama company, kategori, alamat, website, dan role person tetap terlihat. Unlock = 1 credit per Company dan berlaku permanen untuk workspace. Kontak yang berasal dari upload workspace itu sendiri tidak di-mask. |
 | BR-CRED-03 | Export/webhook record yang sudah di-unlock gratis. Record yang belum di-unlock otomatis di-unlock saat export (biaya ditampilkan di pratinjau). |
 | BR-CRED-04 | Operasi berbayar idempotent per `idempotency_key`. Retry tidak menagih ulang. |
-| BR-CRED-05 | Refund otomatis bila (a) operasi gagal atau tidak terkirim, atau (b) seluruh contact point Company yang di-unlock terbukti INVALID ≤ 30 hari setelah unlock. |
+| BR-CRED-05 | Refund otomatis bila (a) operasi gagal atau tidak terkirim, atau (b) seluruh contact point Company yang di-unlock terbukti INVALID ≤ 30 hari setelah unlock. Di MVP 1, "terbukti INVALID" berarti hasil re-verifikasi (refresh) INVALID, atau laporan data user (FR-DATA-014) yang dikonfirmasi ops. |
 | BR-CRED-06 | Credit grant bulanan kedaluwarsa di akhir siklus. Credit top-up berlaku 12 bulan (default, menunggu keputusan pricing). |
+| BR-CRED-07 | Operasi berbayar async (export, webhook massal, refresh massal) memakai pola **reserve → capture/release**: credit ditahan saat job dibuat, ditagih saat sukses, dan dilepas bila gagal. Auto-unlock dari export baru berlaku saat export sukses. |
+| BR-CRED-08 | Urutan pemakaian credit: yang paling cepat kedaluwarsa dipakai lebih dulu (grant bulanan, lalu top-up FIFO berdasarkan tanggal kedaluwarsa). |
 
 ### 9.9 BR-PRIV — Privasi
 
 | ID | Aturan |
 |---|---|
 | BR-PRIV-01 | Data pribadi (nama person, email/telepon pribadi) diminimalkan di log, analytics, dan payload debug (hash/redaksi). |
-| BR-PRIV-02 | Suppression berlaku global dan mengalahkan semua data lain, termasuk upload tenant untuk tampilan lintas tenant. |
+| BR-PRIV-02 | Suppression atas data global layer berlaku untuk semua workspace dan mengalahkan semua sumber lain. Untuk data upload tenant (tenant = pengendali, MSP = prosesor), permintaan subjek data diteruskan ke tenant dan dieksekusi atas instruksinya. Nilai yang sama dari global layer tetap di-suppress. |
 | BR-PRIV-03 | Kepatuhan mengacu UU 27/2022 tentang Pelindungan Data Pribadi dan aturan pelaksananya. Kewajiban notifikasi kegagalan pelindungan data 3×24 jam dimasukkan ke runbook insiden. Detail hukum divalidasi konsultan hukum. |
 | BR-PRIV-04 | Penggunaan, penyimpanan, tampilan, dan export data mengikuti lisensi/ketentuan sumber dataset (guardrail Rev 1.2 §8, Q-05). |
 
@@ -445,7 +463,7 @@ MesinProspek adalah platform **sales intelligence multi-tenant** untuk penjual B
 | NFR-PERF-02 | Performa | API profil p95 ≤ 500 ms. |
 | NFR-PERF-03 | Performa | Web: LCP p75 ≤ 2,5 s, INP p75 ≤ 200 ms (desktop). |
 | NFR-PERF-04 | Performa | Export 10.000 baris ≤ 2 menit. 50.000 baris ≤ 10 menit. |
-| NFR-PERF-05 | Performa | Simpan/ubah ICP → skor tersedia ≤ 10 menit untuk ≤ 200.000 kandidat establishment. Selama proses, UI menampilkan status "Menghitung skor". |
+| NFR-PERF-05 | Performa | Simpan/ubah ICP → **skor progresif**: halaman pertama (≤ 50 kandidat teratas hasil pre-ranking) ber-skor ≤ 30 detik; seluruh kandidat (≤ 200.000 establishment) ≤ 10 menit. Selama proses, UI menampilkan status "Menghitung skor" beserta progres. |
 | NFR-PERF-06 | Performa | AI brief p95 ≤ 20 s. |
 | NFR-PERF-07 | Performa | Re-run pipeline penuh untuk 5 juta establishment ≤ 12 jam. |
 | NFR-SCAL-01 | Skala | Sizing MVP: 5 juta establishment, ±84 ribu kelurahan/desa, 200 workspace, 2.000 user, 50 user konkuren. Revisi setelah Q-02 dijawab. |
@@ -496,7 +514,7 @@ Kontrak lengkap ada di `04-technical-design.md` §Input Contract.
 | RG-3 Aksi | Skenario E2E select → export dan select → webhook lulus. Webhook success ≥ 99% pada soak test 24 jam di staging. | Laporan E2E + soak |
 | RG-4 Usage | Rekonsiliasi ledger vs usage event 100%. Tidak ada tagihan ganda pada uji idempotensi. | Laporan test billing |
 | RG-5 Operasional | Alert pipeline failure > 5%, backlog > 1 jam, AI failure > 5%, dan webhook failure > 5% terpicu pada drill di staging. | Laporan drill |
-| RG-6 Kualitas data | ER precision ≥ 98% dan recall ≥ 90% pada golden set. ≥ 10 edge case data (duplikat, hilang, konflik, stale, ambigu) lulus. | Laporan QA |
+| RG-6 Kualitas data | ER precision ≥ 98% dan recall ≥ 90% pada golden set. Akurasi klasifikasi industri ≥ 90% dan akurasi penetapan kelurahan ≥ 95% (sampel berlabel n ≥ 300). ≥ 10 edge case data (duplikat, hilang, konflik, stale, ambigu) lulus. | Laporan QA |
 | RG-7 Keamanan | Uji isolasi tenant lulus. Tidak ada Critical/High terbuka. Uji SSRF webhook lulus. | Laporan security |
 
 ### 12.2 Definition of Done (per fitur)
@@ -514,6 +532,7 @@ Kontrak lengkap ada di `04-technical-design.md` §Input Contract.
 |---|---|---|---|
 | A-01 | Asumsi | Dataset bisnis memuat field minimum §11 untuk mayoritas record. | Validasi via laporan fill-rate FR-DATA-001 (Q-01). |
 | A-02 | Asumsi | Data populasi per kelurahan tersedia dengan periode referensi jelas. | Q-04. Fallback ke level kecamatan. |
+| A-03 | Asumsi | Data batas wilayah (poligon) kelurahan/kecamatan tersedia dengan lisensi yang mengizinkan tampilan. | Q-10. Tanpa poligon, peta memakai titik/cluster + tabel. |
 | R-01 | Risiko | Fill-rate rendah untuk email/person → nilai Contact Intelligence turun. | Tampilkan coverage secara jujur. Upload customer. Crawler dapat dihidupkan kembali di V2. |
 | R-02 | Risiko | Revenue v0 tidak terkalibrasi. | Hanya band + confidence ≤ 70. Kumpulkan ground truth (Q-06). |
 | R-03 | Risiko | "White space" sebenarnya mencerminkan data yang belum lengkap. | Indikator coverage dan guard populasi (Lampiran C). |
@@ -538,7 +557,7 @@ coverage = Σ_{k∈K} wₖ / Σ_{semua} wₖ
 | Contactability | 10 | Kanal terbaik: email person VERIFIED 100; email company LIKELY_VALID 80; seluler LIKELY_VALID (WA-likely) 80; telepon tetap LIKELY_VALID 60; hanya profil sosial 30; tidak ada 0. Bonus +10 bila ada kontak decision-maker (maks 100). | ✓ |
 | Commercial Potential | 15 | Persentil proxy skala (band revenue, band karyawan, cabang, volume ulasan) dalam kategori × tier kota, dikali (0,5 + 0,5·confidence/100) | ✓ |
 | Digital Opportunity | 10 | Maks `opportunity_score` keluarga DIGITAL yang relevan. 0 bila data digital diketahui tetapi tidak ada gap relevan. Unknown bila data digital tidak ada. | ✓ (lite) |
-| Geographic Opportunity | 15 | `market_opportunity_score` kelurahan establishment (fallback kecamatan) | ✓ |
+| Geographic Opportunity | 15 | `market_opportunity_score` kelurahan establishment. Fallback kecamatan bila kelurahan LOW. Unknown bila keduanya LOW (FR-INTL-006). | ✓ |
 | Signal Strength | 5 | Maks kekuatan signal relevan dalam 90 hari, dengan decay | Unknown sampai V1 |
 | Opportunity Strength | 10 | Maks `opportunity_score` keluarga non-DIGITAL yang relevan | ✓ |
 
@@ -623,7 +642,7 @@ Level area: L1 provinsi, L2 kab/kota, L3 kecamatan, L4 kelurahan/desa. Satuan de
 | Entitlement | Starter | Growth | Agency | Enterprise |
 |---|---|---|---|---|
 | Seat | 2 | 5 | 15 | Kontrak |
-| ICP aktif | 1 | 5 | 20 | Kontrak |
+| ICP tersimpan | 1 | 5 | 20 | Kontrak |
 | Lihat profil / bulan (fair-use) | 1.000 | 10.000 | 30.000 | Kontrak |
 | Credit / bulan | 200 | 1.000 | 3.000 | Kontrak |
 | AI credit / bulan | 50 | 300 | 1.000 | Kontrak |
