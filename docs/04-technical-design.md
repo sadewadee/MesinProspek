@@ -952,7 +952,7 @@ Konfigurasi `er-1.0.0` (bobot dan ambang) dikalibrasi pada golden set (RG-6).
 - Taksonomi dua level di `data/taxonomy/msp-taxonomy-1.0.0.yaml` (sektor → kategori; kode seperti `HLT.DENTAL`, `FNB.CAFE`), dengan label id-ID/en-US dan sinonim.
 - Peta kategori sumber per source di `data/taxonomy/source-maps/<source>.yaml` (contoh `Dentist` → `HLT.DENTAL`, confidence 95).
 - Urutan: (1) peta eksak kategori primer (confidence 90–95); (2) kategori sekunder; (3) aturan kata kunci nama (`klinik gigi`, `drg.`, `dental` → `HLT.DENTAL`, confidence 60–80); (4) tidak terpetakan → `OTH.OTHER` ("Lainnya", confidence 30).
-- **AI hanya untuk string kategori sumber yang belum terpetakan** (ratusan string, bukan per bisnis). Model kelas Haiku mengusulkan mapping secara batch, ops meninjau, lalu usulan di-commit ke source-map. Biaya kecil dan tetap ter-govern. Klasifikasi per record tetap deterministik.
+- **AI hanya untuk string kategori sumber yang belum terpetakan** (ratusan string, bukan per bisnis). Tool ops `msp taxonomy suggest` (modul `ops`, memakai `ai` dengan alias kelas Haiku) mengusulkan mapping secara batch, ops meninjau, lalu usulan di-commit ke source-map. Biaya kecil dan tetap ter-govern. Stage `classify` (modul `identity`) tetap deterministik dan tidak memanggil LLM.
 - Metrik: % establishment aktif non-"Lainnya" (target ≥ 95%, FR-INTL-001), dengan rincian per source.
 
 ### 6.7 Penetapan area (FR-DATA-009)
