@@ -21,7 +21,7 @@
 | **Solusi** | Opportunity berbasis evidence (mis. website hanya linktr.ee, ulasan sedikit), skor prioritas sesuai ICP, peringkat wilayah per kelurahan, unlock kontak WhatsApp, export/webhook, dan AI brief. |
 | **Channel** | Jaringan founder, komunitas agency & UMKM, konten LinkedIn/Instagram (contoh peluang nyata per kota), kemitraan dengan komunitas pelatihan digital marketing. |
 | **Pendapatan** | Langganan bulanan per plan (seat + kuota credit) ditambah top-up credit. |
-| **Biaya** | Server (2 dedicated server), backup off-site, API Claude, domain/SMTP, waktu founder. Dataset sudah dimiliki. |
+| **Biaya** | 1 dedicated server (semua layanan), backup off-site, API AI, domain/SMTP, waktu founder. Dataset sudah dimiliki. |
 | **Metrik kunci** | Aktivasi (hasil pertama ≤ 5 menit), prospek yang ditindaklanjuti per workspace per minggu, % opportunity "Relevan", konversi beta → berbayar, churn bulanan. |
 | **Keunggulan** | Data lokal Indonesia + konteks wilayah per kelurahan + aturan opportunity yang menjelaskan alasannya. Kompetitor global (mis. Coldlytics) kuat di kontak email, tetapi tidak di konteks lokal dan WhatsApp. |
 
@@ -35,6 +35,8 @@
 | Transparansi data | Status verifikasi | Claim type + evidence untuk setiap nilai |
 
 ## 3. Hipotesis harga & paket
+
+> Harga, seat, dan kuota **diatur dari dashboard ops** (D-29), jadi bisa diubah kapan saja tanpa deploy. Tabel ini hanya nilai awal untuk diisi ke dashboard dan divalidasi saat beta.
 
 Operasi yang memakai credit ditetapkan di PRD (Lampiran D, BR-CRED-01). Tabel ini hanya berisi harga dan kuota.
 
@@ -59,13 +61,13 @@ Harga API Claude per 1 juta token, sumber referensi resmi per 2026-10-06. Asumsi
 | Claude Sonnet 5.5 | $2 / $10 | ≈ $0,013 ≈ Rp215 | ≈ Rp64.000 |
 | Claude Haiku 5.5 | $0,10 / $0,50 | ≈ $0,00065 ≈ Rp11 | ≈ Rp3.200 |
 
-Model dipilih founder lewat konfigurasi (`MSP_*`). Cache 7 hari (FR-ACT-05) menurunkan biaya untuk prospek yang dibuka berulang. Kuota AI credit membatasi biaya maksimum per workspace.
+Provider dan model **diatur dari dashboard ops** dan bisa diganti kapan saja (D-29), termasuk fallback ke API OpenAI-compatible. Cache 7 hari (FR-ACT-05) menurunkan biaya untuk prospek yang dibuka berulang. Kuota AI credit membatasi biaya maksimum per workspace.
 
 ### 4.2 Biaya tetap per bulan
 
 | Pos | Asumsi |
 |---|---|
-| 2 dedicated server di Indonesia (prod + ops) | **[isi]**, mis. Rp4–8 juta |
+| 1 dedicated server di Indonesia (production, staging, GitLab, CI, monitoring) | **[isi]**, mis. Rp3–6 juta |
 | Object storage off-site untuk backup | **[isi]**, mis. Rp200–500 ribu |
 | Domain, SMTP, lain-lain | **[isi]**, mis. Rp200 ribu |
 | GeoAPI | Gratis (kunci API gratis). Wajib mencantumkan atribusi sumber |
@@ -76,16 +78,16 @@ Model dipilih founder lewat konfigurasi (`MSP_*`). Cache 7 hari (FR-ACT-05) menu
 |---|---|
 | Pendapatan | Rp999.000 |
 | Biaya AI maksimum (300 brief, Opus 5.5) | − Rp129.000 |
-| Porsi infra (biaya tetap Rp6 juta dibagi 30 workspace) | − Rp200.000 |
-| **Margin kotor** | **≈ Rp670.000 (≈ 67%)** |
+| Porsi infra (biaya tetap Rp5 juta dibagi 30 workspace) | ≈ − Rp167.000 |
+| **Margin kotor** | **≈ Rp703.000 (≈ 70%)** |
 
-Titik impas infra ≈ biaya tetap ÷ (harga rata-rata − biaya AI rata-rata). Dengan biaya tetap Rp6 juta dan campuran plan rata-rata Rp800 ribu, impas tercapai di **±9 workspace berbayar**.
+Titik impas infra ≈ biaya tetap ÷ (harga rata-rata − biaya AI rata-rata). Dengan biaya tetap Rp5 juta dan campuran plan rata-rata Rp800 ribu, impas tercapai di **±7 workspace berbayar**.
 
 ## 5. Rencana beta → berbayar
 
 | Langkah | Isi |
 |---|---|
-| Kriteria peserta | 5–10 agency/vendor SaaS (Q-07) di 1–2 kota dengan cakupan dataset terbaik, yang sudah aktif mencari klien UMKM |
+| Peserta | **Sudah ada** (Q-07). Mulai di Indonesia (D-28) |
 | Penawaran | Gratis 30 hari, plan Growth, plus sesi onboarding 30 menit. Diskon 50% selama 3 bulan pertama bila lanjut berbayar |
 | Umpan balik | Tombol "Relevan / Tidak relevan" (FR-INTL-05), wawancara singkat mingguan, dan catatan dari ops |
 | Metrik sukses beta | ≥ 70% peserta mendapat hasil pertama ≤ 5 menit · ≥ 50 prospek ditindaklanjuti per workspace per minggu · ≥ 60% opportunity dinilai "Relevan" · **≥ 50% peserta lanjut berbayar** |
@@ -95,7 +97,6 @@ Titik impas infra ≈ biaya tetap ÷ (harga rata-rata − biaya AI rata-rata). D
 
 | ID | Keputusan | Kapan |
 |---|---|---|
-| D-09 | Harga & kuota plan final | Setelah beta |
-| — | Model Claude default untuk AI brief | Sebelum WP AI brief (07) |
+| D-09 | Harga & kuota plan final (diubah langsung di dashboard ops) | Setelah beta |
+| — | Model AI default (bisa diganti kapan saja di dashboard ops) | Saat AI brief pertama aktif |
 | — | Biaya server & backup aktual (mengisi §4.2) | Saat server disewa (Q-09) |
-| Q-07 | Daftar calon peserta beta | Sebelum gerbang F1 |
