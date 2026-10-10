@@ -126,20 +126,20 @@ Proporsi dihitung dari jumlah test otomatis. Logika bisnis (rumus skor, aturan E
 
 | Level | Tujuan | Tools | Lokasi (monorepo) | Penulis | Jalan di CI | Kriteria lulus |
 |---|---|---|---|---|---|---|
-| Unit (backend) | Logika murni: normalizer, rule ER, faktor & rumus skor, opportunity, geo, kalkulasi billing, masking | `go test -race`, table-driven test, go-cmp, clock ter-inject | `apps/api/internal/<modul>/*_test.go` (di samping kode) | Dev | MR | 100% lulus; coverage §9.1 |
-| Property-based & fuzz | Invariant normalizer, agregasi confidence, persentil, skor, ledger (stateful) | `pgregory.net/rapid`, fuzzing native Go (`go test -fuzz`) | `apps/api/internal/<modul>/*_test.go` + `testdata/rapid/`, `testdata/fuzz/` | Dev, direview QA | MR (rapid 200 checks, fuzz 30 s/target), nightly (rapid 5.000 checks, fuzz 10 menit/target) | 0 counterexample. Input gagal di-commit ke `testdata/` sebagai regression permanen |
+| Unit (backend) | Logika murni: normalizer, rule ER, faktor & rumus skor, opportunity, geo, kalkulasi billing, masking | `go test -race`, table-driven test, go-cmp, clock ter-inject | `apps/api/internal/<modul>/**/*_test.go` (di samping kode, mis. `identity/internal/normalize`) | Dev | MR | 100% lulus; coverage §9.1 |
+| Property-based & fuzz | Invariant normalizer, agregasi confidence, persentil, skor, ledger (stateful) | `pgregory.net/rapid`, fuzzing native Go (`go test -fuzz`) | `apps/api/internal/<modul>/**/*_test.go` + `testdata/rapid/`, `testdata/fuzz/` | Dev, direview QA | MR (rapid 200 checks, fuzz 30 s/target), nightly (rapid 5.000 checks, fuzz 10 menit/target) | 0 counterexample. Input gagal di-commit ke `testdata/` sebagai regression permanen |
 | Component (frontend) | Render semua state, interaksi, format, a11y per komponen | Vitest, Testing Library, Storybook *(usulan)*, `vitest-axe` | `packages/ui/src/**`, `apps/web/src/**` (`*.test.tsx`, `*.stories.tsx`) | Dev FE | MR | 100% lulus; axe 0 serious/critical |
-| Integration | API + DB + Redis + object storage + worker River, satu modul atau lintas modul | `go test -race -tags integration`, `net/http/httptest`, client hasil oapi-codegen, River client nyata, fake DNS, fake LLM, webhook receiver | `apps/api/internal/<modul>/*_integration_test.go` | Dev | MR (GitLab `services:` PostGIS, Redis, SeaweedFS; lokal: testcontainers-go), main | 100% lulus |
-| Contract | API sesuai OpenAPI; event, webhook, Input Contract sesuai JSON Schema; kode hasil generate up-to-date; client TS compile | Schemathesis (image Docker, agnostik bahasa), validator JSON Schema di `go test`, `tsc --noEmit`; cek kode generate oapi-codegen/sqlc & oasdiff (gate di `06`) | `apps/api/internal/<modul>/*_test.go`, `contracts/**/examples/` | Dev | MR (50 contoh/operation), nightly (500) | 0 pelanggaran schema; 0 error 5xx; 0 diff kode generate |
-| Security (otomatis) | Isolasi tenant, RLS, RBAC, SSRF, egress, HMAC, masking, redaksi | `go test -tags integration`, Playwright, OWASP ZAP; gosec (via golangci-lint), govulncheck, secret & container scan (gate di `06`) | `apps/api/internal/<modul>/*_test.go` (isolasi, RBAC, SSRF), `tests/security/` (ZAP, egress/nftables) | Dev + security champion (QA) | MR (isolasi, RBAC, SSRF, masking, redaksi); staging pasca-deploy (ZAP baseline, egress/nftables); pre-release (ZAP full + review manual) | 0 gagal; 0 Critical/High terbuka (NFR-SEC-06) |
-| Data quality | Kualitas output engine pada golden set dan setiap snapshot | `go test -tags dataquality` + generator laporan | `apps/api/internal/dq/` *(usulan)*, `data/golden/` | Dev data, QA, Product (label) | MR (subset ≤ 2 menit), nightly (penuh), setiap import snapshot | Ambang §3.9 |
-| Scoring regression | Skor deterministik dan terversi | `go test` + golden file (`testdata/*.golden`, flag `-update`), go-cmp | `apps/api/internal/scoring/testdata/` | Dev | MR | Golden file identik. Perubahan hanya dengan bump versi |
+| Integration | API + DB + Redis + object storage + worker River, satu modul atau lintas modul | `go test -race -tags integration`, `net/http/httptest`, client hasil oapi-codegen, River client nyata, fake DNS, fake LLM, webhook receiver | `apps/api/internal/<modul>/**/*_integration_test.go` | Dev | MR (GitLab `services:` PostGIS, Redis, SeaweedFS; lokal: testcontainers-go), main | 100% lulus |
+| Contract | API sesuai OpenAPI; event, webhook, Input Contract sesuai JSON Schema; kode hasil generate up-to-date; client TS compile | Schemathesis (image Docker, agnostik bahasa), validator JSON Schema di `go test`, `tsc --noEmit`; cek kode generate oapi-codegen/sqlc & oasdiff (gate di `06`) | `apps/api/internal/<modul>/**/*_test.go`, `contracts/**/examples/` | Dev | MR (50 contoh/operation), nightly (500) | 0 pelanggaran schema; 0 error 5xx; 0 diff kode generate |
+| Security (otomatis) | Isolasi tenant, RLS, RBAC, SSRF, egress, HMAC, masking, redaksi | `go test -tags integration`, Playwright, OWASP ZAP; gosec (via golangci-lint), govulncheck, secret & container scan (gate di `06`) | `apps/api/internal/<modul>/**/*_test.go` (isolasi, RBAC, SSRF), `tests/security/` (ZAP, egress/nftables) | Dev + security champion (QA) | MR (isolasi, RBAC, SSRF, masking, redaksi); staging pasca-deploy (ZAP baseline, egress/nftables); pre-release (ZAP full + review manual) | 0 gagal; 0 Critical/High terbuka (NFR-SEC-06) |
+| Data quality | Kualitas output engine pada golden set dan setiap snapshot | `go test -tags dataquality` + generator laporan | `apps/api/internal/<modul>/**/*_dq_test.go` (build tag `dataquality`, mis. `identity/internal/er`) *(usulan)*, `data/golden/` | Dev data, QA, Product (label) | MR (subset ≤ 2 menit), nightly (penuh), setiap import snapshot | Ambang §3.9 |
+| Scoring regression | Skor deterministik dan terversi | `go test` + golden file (`testdata/*.golden`, flag `-update`), go-cmp | `apps/api/internal/intelligence/internal/scoring/testdata/` | Dev | MR | Golden file identik. Perubahan hanya dengan bump versi |
 | AI eval | Grounding, tanpa fakta karangan, bahasa, tone, redaksi | `go test` + fake provider (rekaman); eval runner live | `apps/api/internal/ai/`, `data/golden/ai-eval/` | Dev AI, QA, Product | MR (rekaman), nightly mingguan (live sandbox), pre-release (live penuh) | §3.13 |
 | E2E | Journey kritis lintas stack | Playwright (Chromium; nightly + Firefox, WebKit) | `tests/e2e/` *(usulan direktori baru)* | QA, Dev berkontribusi | main (smoke, Docker Compose di runner), nightly (penuh), staging pasca-deploy (`@smoke`) | 100% journey P0 lulus |
 | Aksesibilitas | WCAG 2.2 AA | axe-core (component + E2E), checklist manual, NVDA, VoiceOver | Sama dengan component/E2E; checklist di §3.15 | QA + Design | MR (component), nightly (E2E), pre-release (manual) | 0 serious/critical; checklist lulus |
 | Performance | NFR-PERF, NFR-SCAL | k6, harness timing pipeline, Lighthouse CI *(usulan)* | `tests/load/` | Dev + Ops | nightly (load ringan, dataset 500 ribu), pre-release (penuh 5 juta) | Threshold §3.16 |
-| Resilience | Retry, backoff, DLQ (job River `discarded`), crash, rescue, unique job | `go test -tags integration` + fault injection (Toxiproxy *(usulan)*, `docker kill`) | `apps/api/internal/<modul>/*_integration_test.go`, `tests/ops/` | Dev | main, nightly | §3.18 |
-| Migrasi | Migrasi goose aman dan kompatibel N-1 | `msp migrate` (goose) + `go test -tags integration`, squawk *(usulan)* | `apps/api/db/migrations/`, test di `apps/api/internal/db/` | Dev | MR (DB kosong), nightly & pre-release (prod-like) | §3.21 |
+| Resilience | Retry, backoff, DLQ (job River `discarded`), crash, rescue, unique job | `go test -tags integration` + fault injection (Toxiproxy *(usulan)*, `docker kill`) | `apps/api/internal/<modul>/**/*_integration_test.go`, `tests/ops/` | Dev | main, nightly | §3.18 |
+| Migrasi | Migrasi goose aman dan kompatibel N-1 | `msp migrate` (goose) + `go test -tags integration`, squawk *(usulan)* | `apps/api/db/migrations/`, test integrasi di `apps/api/internal/app/` (subcommand `migrate`; `internal/db/` berisi kode hasil sqlc) | Dev | MR (DB kosong), nightly & pre-release (prod-like) | §3.21 |
 | Operasional | Backup/restore, blue/green, rollback, alert | Skrip drill + checklist | `tests/ops/` *(usulan)*, runbook `06` | Ops + QA | staging setiap deploy (smoke/rollback), pre-release (drill) | §3.25 |
 | Usability & UAT | RG-1, RG-2, penerimaan beta | Sesi moderated, form UAT | Artefak release | Design, Product, QA | pre-release | §3.23, §3.24 |
 
@@ -197,8 +197,8 @@ Generator kustom membangkitkan varian penulisan dari nilai kanonik yang diketahu
 
 | Kontrak | Cara uji | Kapan |
 |---|---|---|
-| OpenAPI 3.1 (`contracts/openapi/openapi.yaml`) | Schemathesis terhadap API yang berjalan, dengan auth per role. Checks: `not_a_server_error`, `status_code_conformance`, `content_type_conformance`, `response_schema_conformance`, plus stateful links (create → get → delete) | MR (50 contoh/operation), nightly (500) |
-| Event envelope (`contracts/events/`) | Helper test Go menangkap setiap job River event/webhook (outbox) yang di-enqueue dalam integration test dan memvalidasinya dengan JSON Schema. Field wajib: `event_id`, `type`, `occurred_at`, `tenant_id`, `schema_version`, `correlation_id`, `data`, ditambah versi model untuk event intelligence (MVP Pack §12) | MR |
+| OpenAPI 3.1 (`contracts/openapi/openapi.yaml`) | Schemathesis terhadap API yang berjalan, dengan auth per role. Checks: `not_a_server_error`, `status_code_conformance`, `content_type_conformance`, `response_schema_conformance`, plus stateful links (create → get → delete). Respons error divalidasi terhadap skema problem 04 §11.2: `application/problem+json` + `code` dari katalog + `correlation_id`; 422 membawa `errors[]` (`pointer`/`field`, `code`, `detail`); 500 hanya `INTERNAL_ERROR` tanpa detail internal | MR (50 contoh/operation), nightly (500) |
+| Event envelope (`contracts/events/`) | Helper test Go menangkap setiap job River event/webhook (outbox) yang di-enqueue dalam integration test dan memvalidasinya dengan JSON Schema. Field wajib mengikuti envelope 04 §12.1: `id`, `type`, `version`, `occurred_at`, `workspace_id`, `subject`, `correlation_id`, `data`, ditambah `model_version` untuk event intelligence (MVP Pack §12) | MR |
 | Payload webhook | Sama seperti event. Receiver referensi juga memvalidasi payload yang diterima | MR, E2E |
 | Input Contract (`contracts/input/`) | Contoh valid harus lolos, contoh invalid harus gagal dengan kode error yang diharapkan. Importer diuji dengan contoh yang sama sehingga schema dan kode tidak menyimpang | MR |
 | Kompatibilitas mundur | Contoh payload versi sebelumnya tetap valid terhadap schema baru, kecuali major bump. Breaking change OpenAPI dideteksi oasdiff (gate di `06`) | MR |
@@ -226,8 +226,8 @@ Generator kustom membangkitkan varian penulisan dari nilai kanonik yang diketahu
 
 ### 3.10 Scoring regression test
 
-- **Fixture:** ≥ 50 profil establishment (`apps/api/internal/scoring/testdata/fixtures/*.yaml`) yang mencakup semua faktor, kombinasi Unknown, setiap preset Offering, serta kasus batas.
-- **Golden file per versi:** `apps/api/internal/scoring/testdata/priority-1.2.0/*.golden` dan `apps/api/internal/geo/testdata/geo-1.0.0/*.golden`. Isi: `value`, band, `coverage`, `factors[]` (nilai, bobot, kontribusi, claim_type) dalam JSON kanonik (key terurut, tanpa `calculated_at`). Perbedaan ditampilkan dengan go-cmp. Golden file hanya diperbarui lewat `go test ./internal/scoring/... -update` dan wajib direview di MR.
+- **Fixture:** ≥ 50 profil establishment (`apps/api/internal/intelligence/internal/scoring/testdata/fixtures/*.yaml`) yang mencakup semua faktor, kombinasi Unknown, setiap preset Offering, serta kasus batas.
+- **Golden file per versi:** `apps/api/internal/intelligence/internal/scoring/testdata/priority-1.2.0/*.golden` dan `apps/api/internal/geo/internal/geocalc/testdata/geo-1.0.0/*.golden`. Isi: `value`, band, `coverage`, `factors[]` (nilai, bobot, kontribusi, claim_type) dalam JSON kanonik (key terurut, tanpa `calculated_at`). Perbedaan ditampilkan dengan go-cmp. Golden file hanya diperbarui lewat `go test ./internal/intelligence/internal/scoring/... -update` dan wajib direview di MR.
 - **Disiplin versi (FR-INTL-009):** diff golden file tanpa bump versi → gagal. Bump versi wajib membuat direktori golden baru dan disetujui Product (CODEOWNERS GitLab pada direktori `testdata/priority-*`). Direktori versi lama tetap diuji agar skor lama dapat direproduksi (NFR-DATA-01).
 - **Pemeriksaan wajib:** renormalisasi (TC-INTL-013); batas band 59/60/79/80 beserta aturan pembulatan (TC-INTL-014); cap coverage < 0,60 → maksimal WARM; ICP Fit Unknown → UNSCORED; preset bobot (contoh `reputation_mgmt`: Opportunity Strength 20, Digital 5, Geographic 10, sisanya tetap 25/10/10/15/5 sehingga total 100); bentuk JSON explanation (TC-INTL-022); properti metamorphic (TC-INTL-025).
 
@@ -346,7 +346,7 @@ Aturan: data disiapkan lewat API/seed, bukan lewat UI (kecuali langkah yang seda
 | Matriks RBAC | 5 role × setiap operation, di-generate dari PRD §8.1.1 | TC-AUTH-006 | MR |
 | SSRF registrasi & delivery | Korpus di bawah; fake DNS; validasi ulang IP di `net.Dialer.Control` kustom untuk setiap koneksi (memeriksa IP hasil resolve yang benar-benar dipakai) | TC-EXP-005, TC-EXP-020 | MR |
 | Egress proxy & nftables | Delivery hanya lewat egress proxy; koneksi langsung dari container worker ke LAN/RFC1918 diblokir nftables | TC-EXP-022 | Staging pasca-deploy, pre-release |
-| HMAC & replay | Signature, timestamp, event_id | TC-EXP-006 | MR |
+| HMAC & replay | `MSP-Signature` (`t=…,v1=…`), timestamp, `MSP-Event-Id` | TC-EXP-006 | MR |
 | Masking & redaksi | Kontak ter-mask di semua payload; PII tidak masuk prompt, log, GlitchTip, analytics | TC-PROF-003, TC-AI-003, TC-AUD-010 | MR |
 | Input berbahaya | Query search, formula injection export, file upload, prompt injection | TC-SRCH-012, TC-EXP-013, TC-DATA-030, TC-AI-007 | MR |
 | DAST | OWASP ZAP baseline (pasif) di staging setelah deploy; ZAP full aktif dengan user per role di pre-release | — | main, pre-release |
@@ -380,7 +380,7 @@ Aturan: data disiapkan lewat API/seed, bukan lewat UI (kecuali langkah yang seda
 | Unique job | Enqueue job yang sama 2× (mis. refresh per establishment, export per idempotency key) | Opsi unique River mencegah job ganda; hanya 1 eksekusi dan 1 debit | TC-MON-002, TC-BILL-016 |
 | Re-run idempotent | Re-run snapshot sama/baru | ID stabil, tanpa duplikat | TC-DATA-021/022 |
 | Endpoint webhook mati 24 jam | Receiver 503 + time-travel | Retry ≤ 24 jam → DLQ → kirim ulang manual | TC-EXP-007 |
-| Crash setelah commit (outbox) | Kill proses setelah commit transaksi yang meng-enqueue job webhook | Job sudah ada di DB (enqueue transaksional) dan dijalankan setelah restart; bila crash saat delivery, job di-rescue dan dikirim ulang; consumer dedupe via event_id | TC-OPS-009 |
+| Crash setelah commit (outbox) | Kill proses setelah commit transaksi yang meng-enqueue job webhook | Job sudah ada di DB (enqueue transaksional) dan dijalankan setelah restart; bila crash saat delivery, job di-rescue dan dikirim ulang; consumer dedupe via `id` event (`MSP-Event-Id`) | TC-OPS-009 |
 | Provider AI down / rate limit | Fake LLM 5xx/429/timeout | Error eksplisit + refund | TC-AI-009 |
 | Object storage down saat export | Stop container SeaweedFS (gateway S3/volume) | Job FAILED eksplisit, retry, refund | TC-EXP-004 |
 | Crash setelah debit | Kill worker setelah ledger debit | Tidak ada debit ganda; refund bila gagal final | TC-BILL-016 |
@@ -484,7 +484,7 @@ Aturan: data disiapkan lewat API/seed, bukan lewat UI (kecuali langkah yang seda
 | Data sintetis | Hasil `msp-synth` dengan seed tetap | Dibangkitkan saat run; dump `perf` di SeaweedFS staging | `synth-<versi generator>-<seed>` |
 | Golden set | Korpus normalisasi, pasangan ER, sampel klasifikasi, sampel geo, profil scoring, eval set AI | `data/golden/` (aman untuk repo) atau bucket SeaweedFS S3 privat `msp-testdata` (bila berasal dari dataset berlisensi), dengan manifest + sha256 di repo | `gs-<jenis>-YYYY.MM.n` |
 | Rekaman AI | Respons provider per versi prompt (cassette) | `apps/api/internal/ai/testdata/cassettes/brief-X.Y.Z/` | Ikut versi prompt |
-| Golden file skor | Expected explanation per versi model | `apps/api/internal/scoring/testdata/<versi>/*.golden` | Ikut versi model |
+| Golden file skor | Expected explanation per versi model | `apps/api/internal/intelligence/internal/scoring/testdata/<versi>/*.golden` | Ikut versi model |
 | Prod-like snapshot | Global layer + tenant layer sintetis/pseudonim | SeaweedFS staging, TTL 30 hari | Tanggal + hash |
 
 ### 4.3 Generator data sintetis (`msp-synth`)
@@ -599,10 +599,10 @@ Prioritas (urgensi perbaikan) ditetapkan terpisah oleh Product saat triage: **PR
 
 1. Flaky = test yang gagal lalu lulus pada commit yang sama tanpa perubahan kode. Retry otomatis hanya untuk E2E (1×). Unit, property, dan integration **tidak pernah** di-retry.
 2. Setiap pass-on-retry tercatat di laporan flaky (job pipeline main) dan otomatis membuka issue ke owner area.
-3. **Quarantine hanya boleh dengan:** issue GitLab, owner bernama, hipotesis penyebab, dan **batas waktu ≤ 7 hari kalender**. Test yang di-quarantine tetap dijalankan (non-blocking) dan hasilnya tetap terlihat di laporan. File quarantine (`tests/quarantine.yaml`) memuat ID test, issue, owner, dan tanggal kedaluwarsa.
-4. Job `quarantine-check` gagal bila ada entri tanpa issue/owner atau yang melewati 7 hari. Setelah batas waktu hanya ada tiga pilihan: diperbaiki, dihapus dengan pengganti cakupan yang disetujui QA lead, atau dikeluarkan dari quarantine (kembali blocking).
+3. **Quarantine hanya boleh dengan:** issue GitLab, owner bernama, hipotesis penyebab, dan **batas waktu ≤ 7 hari kalender**. Test yang di-quarantine tetap dijalankan di nightly (non-blocking di MR) dan hasilnya tetap terlihat di laporan. Mekanisme mengikuti `06` §16.3: penanda di kode (Go: helper `testutil.Quarantine(t, "#<issue>")`, skip kecuali `MSP_QUARANTINE=run`; Playwright: tag `@quarantine`) yang merujuk issue berlabel `flaky` dengan owner dan tanggal kedaluwarsa.
+4. Job `quarantine-check` gagal bila ada penanda quarantine tanpa issue/owner atau yang melewati 7 hari. Setelah batas waktu hanya ada tiga pilihan: diperbaiki, dihapus dengan pengganti cakupan yang disetujui QA lead, atau dikeluarkan dari quarantine (kembali blocking).
 5. **Tidak boleh di-quarantine:** isolasi tenant/RLS, RBAC, SSRF/egress, HMAC, billing/ledger, suppression, redaksi PII, scoring regression, dan semua test untuk risiko skor ≥ 6 (§2). Bila flaky, merge diblokir sampai diperbaiki.
-6. Batas jumlah: quarantine ≤ 1% suite atau ≤ 10 test. Melebihi batas → *stop the line*: fitur baru ditahan sampai turun.
+6. Batas jumlah: test ter-quarantine ≤ 1% suite. Melebihi batas → *stop the line*: fitur baru ditahan sampai turun.
 7. Counterexample rapid atau input fuzz yang gagal bukan flaky. Itu bug nyata, dan input-nya di-commit permanen (`testdata/rapid/`, `testdata/fuzz/`).
 
 ---
@@ -667,7 +667,7 @@ Legenda **Level:** U = unit (termasuk property-based dan component frontend), I 
 | TC-DATA-030 | Batas & keamanan file upload | FR-DATA-012 | I, S | P0 | Ya | 50.000 baris diterima; 50.001 ditolak dengan pesan jelas; file rusak, zip bomb XLSX, makro, encoding non-UTF-8 → ditolak/ditangani aman; baris tanpa field minimum → rejected (EC-31) |
 | TC-DATA-031 | Kegagalan per stage tidak menghentikan record | FR-DATA-002, FR-DATA-005, BR-VER-02 | I | P0 | Ya | Error normalisasi satu field → record tetap lanjut; verifikasi gagal sementara → UNKNOWN; tidak ada INVALID karena timeout |
 | TC-DATA-032 | Lookup DNS MX/SPF di-cache | FR-DATA-011 | I | P1 | Ya | Lookup kedua dalam TTL → dari cache; hasil tercatat sebagai evidence dengan waktu lookup |
-| TC-DATA-033 | "Laporkan data" | FR-DATA-014 | I, E2E | P1 | Ya | Laporan dari profil masuk antrean ops dengan claim ID yang dirujuk dan pelapor |
+| TC-DATA-033 | "Laporkan data" | FR-DATA-014, FR-OPS-008 | I, E2E | P0 | Ya | Laporan dari profil (Member) masuk antrean ops (`ops.data_issue_report`) dengan `claim_ref` yang dirujuk, alasan, dan pelapor; tercatat di audit; laporan tanpa `claim_ref` valid → 422 |
 | TC-DATA-034 | Re-run pipeline 5 juta ≤ 12 jam | NFR-PERF-07, NFR-SCAL-01 | P | P0 | Ya | PERF-06: durasi total dan per stage; tidak ada stage yang menjadi bottleneck tak terbatas |
 
 #### ICP — Offering & Ideal Customer Profile
@@ -802,13 +802,13 @@ Legenda **Level:** U = unit (termasuk property-based dan component frontend), I 
 | TC-EXP-006 | Signature HMAC-SHA256 & replay ▸ | FR-EXP-003 | I, S | P0 | Ya | Receiver referensi memverifikasi; body diubah/secret salah/timestamp lama → ditolak; secret tidak bocor |
 | TC-EXP-007 | Retry ≤ 24 jam → DLQ → kirim ulang ▸ | FR-EXP-003 | I | P0 | Ya | Backoff, batas 24 jam, DLQ, redrive manual, log pengiriman |
 | TC-EXP-008 | Tombol uji webhook | FR-EXP-003 | E2E | P0 | Ya | "Uji" → receiver menerima event uji bertanda tangan; UI menampilkan status & kode respons |
-| TC-EXP-009 | Kirim seleksi ke webhook via outbox | FR-EXP-004 | I | P0 | Ya | Job webhook River di-enqueue di transaksi yang sama dengan aksi (outbox); rollback → tidak ada job/event; setiap event punya `event_id` unik |
+| TC-EXP-009 | Kirim seleksi ke webhook via outbox | FR-EXP-004 | I | P0 | Ya | Job webhook River di-enqueue di transaksi yang sama dengan aksi (outbox); rollback → tidak ada job/event; setiap event punya `id` unik (envelope 04 §12.1) |
 | TC-EXP-010 | Record ter-suppress dikecualikan | FR-EXP-005 | I | P0 | Ya | Seleksi berisi record/kontak ter-suppress → tidak ada di file export maupun payload webhook; jumlah di pratinjau sudah dikurangi |
 | TC-EXP-011 | Batas export | FR-EXP-006, FR-BILL-003 | I | P0 | Ya | Starter 1.001 baris → ditolak/dipotong dengan pesan; Agency 50.000 → OK; 50.001 → ditolak per job |
 | TC-EXP-012 | Performa export | NFR-PERF-04 | P | P0 | Ya | PERF-03: 10.000 ≤ 2 menit, 50.000 ≤ 10 menit |
 | TC-EXP-013 | Formula injection | NFR-SEC-01 | S | P0 | Ya | Nilai yang diawali `=`, `+`, `-`, `@`, tab, CR di CSV/XLSX → dinetralkan (prefix `'`), nilai asli tetap di JSON |
 | TC-EXP-014 | Link unduhan terikat workspace | FR-EXP-001, FR-AUD-006 | S | P0 | Ya | Presigned URL S3 SeaweedFS kedaluwarsa 24 jam; ID export A diminta user B → 404; URL kedaluwarsa → 403 |
-| TC-EXP-015 | Soak webhook 24 jam | RG-3 | P | P0 | Ya | PERF-07: success ≥ 99% setelah retry; tidak ada event hilang/ganda di sisi receiver (dedupe event_id) |
+| TC-EXP-015 | Soak webhook 24 jam | RG-3 | P | P0 | Ya | PERF-07: success ≥ 99% setelah retry; tidak ada event hilang/ganda di sisi receiver (dedupe `id` event / `MSP-Event-Id`) |
 | TC-EXP-016 | E2E select → export | RG-3, MVP-09 | E2E | P0 | Ya | J-04 lulus di Docker Compose & staging; file berisi baris & kolom yang benar |
 | TC-EXP-017 | E2E select → webhook | RG-3, MVP-09 | E2E | P0 | Ya | J-05 lulus; receiver memverifikasi signature dan schema payload |
 | TC-EXP-018 | Jumlah endpoint per plan | FR-BILL-003 | I | P0 | Ya | Starter: 0 endpoint (ditolak ber-kode); Growth: endpoint ke-4 ditolak; Agency: 10 |
@@ -904,6 +904,7 @@ Legenda **Level:** U = unit (termasuk property-based dan component frontend), I 
 | TC-OPS-014 | Intelligence & Cost health | FR-OPS-003, FR-OPS-004 | I | P1 | Ya | Distribusi skor per versi, acceptance, AI failure rate, biaya per brief = agregasi fixture |
 | TC-OPS-015 | Smoke blue/green | NFR-AVAIL-01, `06` | E2E | P0 | Ya | Warna baru di-smoke sebelum switch Traefik; switch hanya bila lulus; 0 request 5xx saat switch (k6 ringan berjalan selama switch) |
 | TC-OPS-016 | Drill rollback blue/green | NFR-AVAIL-01, `06` | E2E | P0 | Manual | Switch kembali ke warna lama ≤ 5 menit *(usulan)*; `/version` menunjukkan versi lama; smoke lulus; schema fase expand tetap kompatibel; tidak ada data hilang |
+| TC-OPS-017 | Koreksi data oleh ops (`OPS_CORRECTION`) | FR-OPS-009, FR-DATA-014, BR-TRUST-02 | I, D | P0 | Ya | Given laporan TC-DATA-033 atas `est_…#website` → ops mengoreksi dari antrean → (1) evidence `OPS_CORRECTION` merujuk `data_issue_report` dan claim builder memilihnya mengalahkan evidence dataset (`captured_at` ≤ waktu koreksi; 04 §5.6 butir 6); (2) `entity_seq` naik dan skor terkait di-recompute (epoch baru; profil, projection, dan penjelasan menampilkan nilai koreksi); (3) re-run snapshot yang **sama** → koreksi tetap menang; (4) import snapshot **lebih baru** dengan observasi `observed_at` > waktu koreksi → observasi baru menang; (5) `audit_log` mencatat aktor ops, laporan, field, nilai lama/baru (teredaksi bila P1); (6) user tenant tidak dapat membuat koreksi (403) |
 
 ### 6.2 Rincian test case kritis (Given/When/Then)
 
@@ -1083,16 +1084,16 @@ Nilai contoh (nama, nomor, domain) adalah data sintetis. Nama header, kode error
 *FR-EXP-003, NFR-SEC-05 · S · P0 · MR*
 - **Given** Admin workspace Growth dan fake DNS dengan zona `ssrf.test`.
 - **When** setiap URL di korpus SSRF §3.17 didaftarkan sebagai endpoint webhook.
-- **Then** semua ditolak 422 `WEBHOOK_URL_FORBIDDEN` dengan pesan yang tidak membocorkan detail jaringan internal; tidak ada endpoint tersimpan; fake egress logger mencatat 0 koneksi keluar.
+- **Then** semua ditolak 422 `WEBHOOK_URL_REJECTED` (04 §11.2) dengan pesan yang tidak membocorkan detail jaringan internal; tidak ada endpoint tersimpan; fake egress logger mencatat 0 koneksi keluar.
 - **And** URL kontrol `https://receiver.public.test/hook` (resolve ke IP publik uji) diterima.
 
 #### TC-EXP-006 — Signature HMAC-SHA256 & replay
 *FR-EXP-003 · I, S · P0 · MR*
 - **Given** endpoint dengan secret `s1` dan receiver referensi (`tests/support/webhook_receiver`) yang memverifikasi signature dengan algoritma yang dipublikasikan di dokumentasi API.
 - **When** event hasil "Kirim ke webhook" dikirim.
-- **Then** request memuat event id, timestamp, dan signature HMAC-SHA256 atas `timestamp + "." + raw_body` (format final di `04`); receiver memvalidasi dengan perbandingan constant-time.
+- **Then** request memuat header `MSP-Event-Id`, `MSP-Event-Type`, `MSP-Delivery-Id`, dan `MSP-Signature: t=<unix_ts>,v1=<hex HMAC-SHA256 atas "<t>.<raw_body>">` (04 §12.4); receiver memvalidasi dengan perbandingan constant-time.
 - **When** body diubah 1 byte, atau signature dibuat dengan secret lain → **Then** receiver menolak.
-- **When** request yang sama di-replay setelah melewati toleransi timestamp (5 menit, *usulan*, OQ-T-22) → **Then** ditolak; replay dalam toleransi terdeteksi duplikat via `event_id`.
+- **When** request yang sama di-replay setelah melewati toleransi timestamp (5 menit, *usulan*, OQ-T-22) → **Then** ditolak; replay dalam toleransi terdeteksi duplikat via `MSP-Event-Id`.
 - **And** secret hanya ditampilkan sekali saat dibuat/dirotasi, dan tidak pernah muncul di log, respons API, maupun delivery log.
 
 #### TC-EXP-007 — Retry ≤ 24 jam → DLQ → kirim ulang
@@ -1102,7 +1103,7 @@ Nilai contoh (nama, nomor, domain) adalah data sintetis. Nama header, kode error
 - **Then** percobaan mengikuti jadwal backoff + jitter di `04`; tidak ada percobaan setelah 24 jam sejak percobaan pertama.
 - **And** setelah `MaxAttempts` habis, job River berstatus `discarded` (DLQ), delivery log berstatus "Gagal" dengan jumlah percobaan dan kode terakhir, dan metrik webhook failure naik.
 - **And** 429 menghormati `Retry-After`; 4xx non-retryable (400, 404, 410) tidak di-retry *(usulan)*.
-- **When** receiver pulih dan Admin menekan "Kirim ulang" (re-drive job `discarded`) → **Then** event terkirim 1× dengan `event_id` yang sama dan tautan ke percobaan sebelumnya.
+- **When** receiver pulih dan Admin menekan "Kirim ulang" (re-drive job `discarded`) → **Then** event terkirim 1× dengan `id` event (`MSP-Event-Id`) yang sama dan tautan ke percobaan sebelumnya.
 
 #### TC-EXP-020 — SSRF saat delivery
 *FR-EXP-003, NFR-SEC-05 · S · P0 · MR*
@@ -1370,12 +1371,12 @@ DoD MVP Pack mensyaratkan ≥ 10 edge case representatif untuk data duplikat, hi
 
 ### 8.4 Cakupan FR P0 → TC
 
-Dihasilkan dari kolom Ref katalog §6.1 dan diperiksa ulang oleh job `traceability` di CI. Format: nomor FR → TC (prefix `TC-` dihilangkan; maksimal 4 TC ditampilkan). Tanda ⁰ = FR ber-Rel MVP0; lainnya MVP1. **Seluruh 90 FR P0 MVP 0 & MVP 1 punya ≥ 1 TC.**
+Dihasilkan dari kolom Ref katalog §6.1 dan diperiksa ulang oleh job `traceability` di CI. Format: nomor FR → TC (prefix `TC-` dihilangkan; maksimal 4 TC ditampilkan). Tanda ⁰ = FR ber-Rel MVP0; lainnya MVP1. **Seluruh 92 FR P0 MVP 0 & MVP 1 (dihitung ulang dari tabel FR `01-prd.md`: Pri P0, Rel MVP0/MVP1, termasuk FR-AUTH-006 "MVP0 (ops) / MVP1 (tenant)") punya ≥ 1 TC.**
 
 | Area | FR P0 → TC |
 |---|---|
 | AUTH | 001 → AUTH-001, AUTH-002 · 002 → AUTH-002, AUTH-003 · 003 → AUTH-004, AUTH-005 · 004 → AUTH-005, AUTH-006, AUTH-007, AUTH-008 … · 005 → AUTH-009, AUTH-010, AUTH-011 · 006 → AUTH-012, OPS-013 |
-| DATA | 001⁰ → DATA-001, DATA-002, DATA-003, DATA-004 · 002⁰ → DATA-005, DATA-010, DATA-031 · 003⁰ → DATA-011 · 004⁰ → DATA-016, OPS-003 · 005⁰ → DATA-017, DATA-018, DATA-019, DATA-031 · 006⁰ → DATA-020 · 007⁰ → DATA-004, DATA-021, DATA-022, OPS-008 · 008⁰ → DATA-023 · 009⁰ → DATA-024, DATA-025 · 010⁰ → DATA-026, DATA-027 · 012 → DATA-028, DATA-029, DATA-030 |
+| DATA | 001⁰ → DATA-001, DATA-002, DATA-003, DATA-004 · 002⁰ → DATA-005, DATA-010, DATA-031 · 003⁰ → DATA-011 · 004⁰ → DATA-016, OPS-003 · 005⁰ → DATA-017, DATA-018, DATA-019, DATA-031 · 006⁰ → DATA-020 · 007⁰ → DATA-004, DATA-021, DATA-022, OPS-008 · 008⁰ → DATA-023 · 009⁰ → DATA-024, DATA-025 · 010⁰ → DATA-026, DATA-027 · 012 → DATA-028, DATA-029, DATA-030 · 014 → DATA-033, OPS-017 |
 | ICP | 001 → ICP-001, ICP-002 · 002 → ICP-003, ICP-004 · 003⁰ → ICP-003, ICP-005 · 004 → ICP-007 · 005 → ICP-008 · 006 → ICP-009, ICP-010 |
 | SRCH | 001 → SRCH-001 · 002 → SRCH-002, SRCH-003 · 003 → SRCH-004 · 004 → SRCH-005 · 005 → SRCH-007 · 006 → SRCH-008 · 007 → SRCH-009 · 008 → SRCH-010 |
 | PROF | 001 → PROF-001 · 002 → PROF-002 · 003 → PROF-003, PROF-004, PROF-005 · 004 → PROF-006 · 005 → PROF-007 · 006 → PROF-008 · 007 → PROF-009 · 008 → PROF-010 · 009 → AUTH-008, PROF-011 |
@@ -1387,7 +1388,7 @@ Dihasilkan dari kolom Ref katalog §6.1 dan diperiksa ulang oleh job `traceabili
 | MON | 001 → MON-001, MON-002, MON-003, MON-004 |
 | BILL | 001 → BILL-001, BILL-002 · 002 → BILL-005, BILL-006, BILL-015 · 003 → ICP-009, EXP-011, EXP-018, BILL-010 · 004 → EXP-002, EXP-003, BILL-004 · 005 → EXP-004, BILL-009, BILL-016 · 006 → BILL-013 |
 | AUD | 001 → AUD-001, AUD-002 · 003 → AUD-003 · 004 → AUD-005 · 005 → AUD-006 · 006 → AUTH-003, GEO-013, EXP-014, AUD-007 … |
-| OPS | 001⁰ → OPS-001 · 002⁰ → OPS-002, OPS-008 · 005⁰ → OPS-003 · 006 → OPS-004, OPS-013 · 007 → AI-005, OPS-005 · 008 → OPS-006 |
+| OPS | 001⁰ → OPS-001 · 002⁰ → OPS-002, OPS-008 · 005⁰ → OPS-003 · 006 → OPS-004, OPS-013 · 007 → AI-005, OPS-005 · 008 → OPS-006, DATA-033 · 009 → OPS-017 |
 
 ---
 
@@ -1397,7 +1398,7 @@ Dihasilkan dari kolom Ref katalog §6.1 dan diperiksa ulang oleh job `traceabili
 
 | Scope | Target | Alat | Ref |
 |---|---|---|---|
-| Modul normalisasi, ER, scoring (termasuk opportunity & kalkulasi geo *(usulan)*) | ≥ 85% statement | `go test -coverprofile` per paket (`internal/normalize`, `internal/er`, `internal/scoring`, …), dikonversi ke Cobertura untuk GitLab | NFR-MAINT-01 |
+| Modul normalisasi, ER, scoring (termasuk opportunity & kalkulasi geo *(usulan)*) | ≥ 85% statement | `go test -coverprofile` per paket (`internal/identity/internal/normalize`, `internal/identity/internal/er`, `internal/intelligence/internal/scoring`, …; layout 04 §3.1), dikonversi ke Cobertura untuk GitLab | NFR-MAINT-01 |
 | Backend keseluruhan (`apps/api`) | ≥ 75% statement | `go test -coverprofile -coverpkg=./internal/...` | NFR-MAINT-01 |
 | `packages/ui` | ≥ 80% line *(usulan)*; 100% komponen inti punya story untuk semua state (§3.6) | Vitest (v8 coverage) | Usulan |
 | `apps/web` (lib, hooks, formatter, masking) | ≥ 70% line *(usulan)*; formatter l10n & masking 100% | Vitest | Usulan |
@@ -1413,7 +1414,7 @@ Go mengukur coverage per statement (tanpa branch coverage), sehingga "line" di N
 |---|---|---|
 | Pass rate main | Pipeline main hijau / total run (per minggu) | ≥ 95% |
 | Flaky rate | Run dengan pass-on-retry / total run E2E | < 1% |
-| Jumlah quarantine | Test di `tests/quarantine.yaml` | ≤ 10 dan ≤ 1% suite; 0 entri kedaluwarsa |
+| Jumlah quarantine | Test bertanda quarantine (`06` §16.3) / total test | ≤ 1% suite; 0 penanda lewat 7 hari |
 | Defect leakage | Defect ditemukan setelah rilis / total defect release | ≤ 10%; **0 S1** bocor |
 | MTTR defect | Rata-rata waktu dari laporan sampai fix ter-deploy | S1 ≤ 24 jam; S2 ≤ 5 hari kerja |
 | Durasi MR pipeline | p50 / p90 | ≤ 10 / 15 menit |

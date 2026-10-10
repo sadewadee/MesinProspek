@@ -855,8 +855,8 @@ L = likelihood, I = impact. T = tinggi, S = sedang, R = rendah.
 | Q-D-12 | ~~Akses aman ops console MVP 0 sebelum MFA ops~~ | **Resolved:** PRD menetapkan FR-AUTH-006 untuk akun ops di MVP 0. MFA ops dibangun di SPR-02 (`US-PLAT-041`, `US-AUTH-001`), tanpa akses interim | — | TL |
 | Q-D-13 | Credit awal beta (OQ-UX-25) dan harga final (D-09) | Lampiran E sebagai grant beta | Beta: SPR-11. Harga: SPR-15 | Founder |
 | Q-D-14 | Target konversi early paid: berapa workspace berbayar / LOI di M-3? | ≥ 3 komitmen | SPR-12 | Founder |
-| Q-D-15 | 04 §17.5 masih menulis "`app-02` di V1", berbeda dengan PRD R-08 (sebelum M-3) | Ikuti PRD. 04 diperbarui | SPR-12 | TL |
-| Q-D-16 | 05 §8.4 masih menyebut 90 FR P0, padahal PRD kini punya 92. **FR-OPS-009** belum punya TC, FR-DATA-014 (kini P0) belum di §8.4, dan FR-AUTH-006 (ops) belum di kolom MVP 0 §5.2 | Tambah TC & perbarui 05 | SPR-02 (FR-AUTH-006), SPR-12 (lainnya) | QA |
+| Q-D-15 | ~~04 §17.5 masih menulis "`app-02` di V1", berbeda dengan PRD R-08 (sebelum M-3)~~ **Resolved:** 04 sudah memakai "`app-02` aktif sebelum M-3 (R-08)" | Ikuti PRD. 04 diperbarui | SPR-12 | TL |
+| Q-D-16 | ~~05 §8.4 masih menyebut 90 FR P0, padahal PRD kini punya 92. **FR-OPS-009** belum punya TC, FR-DATA-014 (kini P0) belum di §8.4, dan FR-AUTH-006 (ops) belum di kolom MVP 0 §5.2~~ **Resolved:** 05 kini mencakup 92 FR P0 (TC-OPS-017 untuk FR-OPS-009, TC-DATA-033 P0) | Tambah TC & perbarui 05 | SPR-02 (FR-AUTH-006), SPR-12 (lainnya) | QA |
 | Q-D-17 | ~~FR MVP 0 butuh konteks workspace/ICP sebelum UI MVP 1~~ | **Resolved:** PRD §6 menetapkan MVP 0 memakai workspace internal + fixture ICP/Offering buatan ops (`US-ICP-002`, `US-OPS-009`) | — | PM |
 | Q-D-18 | DevOps 1,0 FTE di SPR-00..01 dan SPR-14..17? | Ya, atau kontrak DevOps sementara | Sebelum SPR-00 | Founder |
 | Q-D-19 | Bila tim hanya 3 engineer (§2.4 C), P0 mana yang dinegosiasikan ulang lewat PRD? | Belum ada. Kandidat: upload (FR-DATA-012), territory ranking (FR-GEO-003) | Sebelum SPR-00 | Founder, PM |

@@ -38,6 +38,7 @@ Dokumentasi produk & engineering untuk **MesinProspek — Sales Intelligence Eng
 | `ADR-nn` | Architecture decision record | 04 |
 | `TC-<AREA>-nnn` / `EC-nn` | Test case / edge case data | 05 |
 | `QG-nn` | Quality gate CI/CD | 06 |
+| `STD-<AREA>-nn` | Aturan engineering standards | 08 |
 
 ## Konvensi teknis (Proposed, berlaku untuk semua dokumen)
 
@@ -51,7 +52,7 @@ Ringkasan default dari D-11, D-12, D-14, D-18, D-19, D-21 beserta pilihan toolin
 | Worker & antrean | **River** (antrean berbasis Postgres: retry, backoff, unique job, periodic job, enqueue transaksional, sekaligus outbox event/webhook). Redis hanya untuk cache, rate limit, dan counter fair-use |
 | Database | PostgreSQL 16+ dengan PostGIS, `pg_trgm`, `unaccent`. Full-text search Postgres (MVP) |
 | Storage | S3-compatible self-hosted: **SeaweedFS** (gateway S3; alternatif Garage) untuk export, upload, raw snapshot. MinIO community tidak dipakai karena repo-nya sudah diarsipkan. |
-| Kontrak | OpenAPI 3.1 (`contracts/openapi/`), JSON Schema untuk event, webhook, dan Input Contract (`contracts/events/`, `contracts/input/`) |
+| Kontrak | OpenAPI 3.1 (`contracts/openapi/`; subset yang didukung generator, lihat spike Sprint 0, 04 TQ-18), JSON Schema untuk event, webhook, dan Input Contract (`contracts/events/`, `contracts/input/`) |
 | JS tooling | Node 24 LTS, pnpm workspaces, Turborepo, ESLint, Prettier |
 | Go tooling | gofmt/goimports, golangci-lint (termasuk gosec, staticcheck, depguard), govulncheck, sqlc, oapi-codegen. Build `CGO_ENABLED=0` → image distroless/static |
 | Test | `go test` (+ `-race`, fuzzing native), rapid (property-based), golden file, Schemathesis, Vitest + Testing Library, Playwright + axe-core, k6 |

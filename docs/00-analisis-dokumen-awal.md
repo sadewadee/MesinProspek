@@ -167,7 +167,7 @@ Status: **Proposed** = default yang dipakai dokumen lanjutan sampai dikonfirmasi
 | Q-05 | Ketentuan lisensi/penggunaan dataset untuk penyimpanan, tampilan, dan export ke customer (guardrail Rev 1.2 §8)? | Aturan export dan tampilan. |
 | Q-06 | Apakah ada data ground truth revenue/karyawan untuk kalibrasi model revenue? | Confidence revenue (G-09). |
 | Q-07 | Siapa 5–10 calon customer beta dan Offering mereka? | Prioritas opportunity catalog dan preset bobot. |
-| Q-08 | Apakah source code ikut pindah sepenuhnya dari GitHub ke GitLab self-hosted, atau GitHub tetap ada sebagai mirror? | Setup repo, CI/CD (D-18). |
+| Q-08 | Apakah source code ikut pindah sepenuhnya dari GitHub ke GitLab self-hosted, atau GitHub tetap ada sebagai mirror? Default usulan: GitLab primary, mirror GitHub opsional (= `06` Q-CI-01). | Setup repo, CI/CD (D-18). |
 | Q-09 | Spesifikasi dan jumlah dedicated server yang tersedia/dianggarkan, serta lokasi backup off-site? | Topologi, HA, DR (D-19). |
 | Q-10 | Apakah tersedia data batas wilayah (poligon kelurahan/kecamatan) beserta lisensinya? | Peta choropleth FR-GEO-002 (A-03). |
 

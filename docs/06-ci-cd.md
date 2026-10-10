@@ -926,7 +926,7 @@ creation_rules:
 | `SOPS_AGE_KEY_SIGNING` | File | Ya | `signing` | Membuka `cosign.key` + password |
 | `RELEASE_TOKEN` | Masked | Ya | `release` | Token bot rilis (Maintainer) |
 | `RENOVATE_TOKEN` | Masked | Ya | `renovate` | Token bot Renovate |
-| `LLM_EVAL_API_KEY` | Masked | Tidak (MR perlu) | `ai-eval` | Key LLM khusus eval, kuota & budget kecil |
+| `MSP_LLM_EVAL_API_KEY` | Masked | Tidak (MR perlu) | `ai-eval` | Key LLM khusus eval, kuota & budget kecil |
 | `MR_GATE_TOKEN` | Masked | Tidak | — | `read_api`, role Reporter |
 
 Job hanya menerima variabel ber-scope bila menyatakan `environment:` yang sesuai. Job non-deploy memakai `environment: { name: <x>, action: prepare }`. Runner tidak menyimpan secret di disk, dan workspace job dibersihkan setelahnya.
