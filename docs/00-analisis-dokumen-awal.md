@@ -170,6 +170,7 @@ Status: **Proposed** = default yang dipakai dokumen lanjutan sampai dikonfirmasi
 | Q-08 | Apakah source code ikut pindah sepenuhnya dari GitHub ke GitLab self-hosted, atau GitHub tetap ada sebagai mirror? Default usulan: GitLab primary, mirror GitHub opsional (= `06` Q-CI-01). | Setup repo, CI/CD (D-18). |
 | Q-09 | Spesifikasi dan jumlah dedicated server yang tersedia/dianggarkan, serta lokasi backup off-site? | Topologi, HA, DR (D-19). |
 | Q-10 | Apakah tersedia data batas wilayah (poligon kelurahan/kecamatan) beserta lisensinya? | Peta choropleth FR-GEO-002 (A-03). |
+| Q-11 | Validasi hukum PDP: kapan tenggat 3×24 jam mulai dihitung, kanal pelaporan ke Lembaga PDP, tenggat notifikasi ke tenant saat MSP berperan sebagai prosesor, masa retensi audit/ledger, dan kesesuaian dengan PP 33/2026 (cek JDIH). | Runbook insiden RB-50 (`09`), FR-AUD-004/005, BR-PRIV-03. |
 
 ---
 
