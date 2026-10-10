@@ -50,11 +50,11 @@ MesinProspek adalah platform **sales intelligence multi-tenant** untuk penjual B
 ## 4. Tujuan & non-tujuan
 
 ### 4.1 Tujuan (MVP 1)
-- **G-1 Relevansi.** Dalam ≤ 5 menit sejak sign-up, user baru melihat daftar prospek yang cocok dengan ICP-nya dan memahami mengapa urutan teratas berada di atas.
-- **G-2 Kepercayaan.** Setiap claim penting menampilkan jenis claim (observed/derived/inferred), confidence, freshness, dan evidence.
-- **G-3 Aksi.** User dapat memilih sekumpulan prospek dan menjalankan minimal satu aksi lanjutan (export, webhook, assign).
-- **G-4 Ekonomi.** Penggunaan berbayar tercatat akurat, idempotent, dan dapat di-refund.
-- **G-5 Operasional.** Tim internal dapat melihat penurunan kualitas data atau pipeline sebelum customer mengeluh.
+- **OBJ-1 Relevansi.** Dalam ≤ 5 menit sejak sign-up, user baru melihat daftar prospek yang cocok dengan ICP-nya dan memahami mengapa urutan teratas berada di atas.
+- **OBJ-2 Kepercayaan.** Setiap claim penting menampilkan jenis claim (observed/derived/inferred), confidence, freshness, dan evidence.
+- **OBJ-3 Aksi.** User dapat memilih sekumpulan prospek dan menjalankan minimal satu aksi lanjutan (export, webhook, assign).
+- **OBJ-4 Ekonomi.** Penggunaan berbayar tercatat akurat, idempotent, dan dapat di-refund.
+- **OBJ-5 Operasional.** Tim internal dapat melihat penurunan kualitas data atau pipeline sebelum customer mengeluh.
 
 ### 4.2 Non-tujuan (eksplisit)
 - Akuisisi data / crawler (**PAUSED**, D-01).

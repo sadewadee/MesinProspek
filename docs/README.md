@@ -30,7 +30,7 @@ Dokumentasi produk & engineering untuk **MesinProspek — Sales Intelligence Eng
 | `FR-<AREA>-nnn` | Functional requirement. AREA ∈ AUTH, DATA, ICP, SRCH, PROF, INTL, GEO, SEG, EXP, AI, MON, BILL, AUD, OPS, RPT | 01 §8 |
 | `NFR-<CAT>-nn` | Non-functional requirement | 01 §10 |
 | `BR-<AREA>-nn` | Business rule | 01 §9 |
-| `RG-n` | Release gate | 01 §12 |
+| `OBJ-n` / `RG-n` | Tujuan produk / release gate | 01 §4, §12 |
 | `SCR-nn` / `FLOW-nn` | Layar / user flow | 03 |
 | `ADR-nn` | Architecture decision record | 04 |
 | `TC-<AREA>-nnn` / `EC-nn` | Test case / edge case data | 05 |
