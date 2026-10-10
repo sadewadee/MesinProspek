@@ -1408,7 +1408,7 @@ LIMIT 51;                                                             -- 50 + 1 
 
 ### 10.5 Pagination (ADR-12)
 
-Cursor = base64url(JSON `{v, k:[nilai sort, id], e: epoch, qh: hash(query+filter+icp)}`) + HMAC-SHA256 (kunci `CURSOR_HMAC_KEY`). Cursor tidak valid atau `qh` berbeda → `400 CURSOR_INVALID`. Epoch lama dipertahankan ≥ 1 jam setelah swap; setelah itu → `409 CURSOR_STALE`, dan client memulai ulang dari halaman pertama.
+Cursor = base64url(JSON `{v, k:[nilai sort, id], e: epoch, qh: hash(query+filter+icp)}`) + HMAC-SHA256 (kunci dari `MSP_CURSOR_HMAC_KEY_FILE`, §18.1). Cursor tidak valid atau `qh` berbeda → `400 CURSOR_INVALID`. Epoch lama dipertahankan ≥ 1 jam setelah swap; setelah itu → `409 CURSOR_STALE`, dan client memulai ulang dari halaman pertama.
 
 ### 10.6 Hitungan (FR-SRCH-006)
 
@@ -1680,7 +1680,7 @@ type LLMProvider interface {
 // LLMResponse: Content (JSON), StopReason, Usage{InputTokens, OutputTokens, CachedTokens}, ProviderModel, Latency
 ```
 
-- Alias → ID model diatur lewat konfigurasi (`LLM_MODEL_BRIEF`, `LLM_MODEL_CLASSIFY`). Usulan default (D-15, Open): model Claude **kelas Sonnet** untuk brief/sales angle dan **kelas Haiku** untuk klasifikasi kategori. ID model tidak di-hardcode.
+- Alias → ID model diatur lewat konfigurasi (`MSP_LLM_MODEL_BRIEF`, `MSP_LLM_MODEL_CLASSIFY`). Usulan default (D-15, Open): model Claude **kelas Sonnet** untuk brief/sales angle dan **kelas Haiku** untuk klasifikasi kategori. ID model tidak di-hardcode.
 - Adapter: `anthropic` (usulan default, SDK Go resmi provider; memakai output terstruktur berbasis JSON Schema dan prompt caching untuk prefix stabil), `fake` (test/CI, deterministik), dan provider lain kelak. Retry dilakukan adapter untuk 429/5xx (maksimal 2) dengan budget waktu total.
 - Egress ke provider melalui Smokescreen (role `ai`, allowlist host). Data yang keluar dari Indonesia hanya data level company (D-14). Status DPA/region provider = TQ-02.
 - Prefix prompt (system + instruksi + skema) dijaga byte-stabil agar cache prompt provider efektif. Data per prospek selalu diletakkan sesudah prefix.
@@ -2035,20 +2035,22 @@ Memenuhi FR-OPS-007, NFR-SEC-04, dan D-19.
 
 ### 18.1 Konfigurasi (12-factor)
 
-Semua konfigurasi berasal dari environment variable (di-parse ke struct config Go dan divalidasi saat start; nilai wajib yang hilang → gagal start). Konfigurasi domain berversi (model skor, katalog, taksonomi, daftar referensi) adalah file di repo, bukan env. Variabel utama:
+Semua konfigurasi berasal dari environment variable (di-parse ke struct config Go dan divalidasi saat start; nilai wajib yang hilang → gagal start). Konfigurasi domain berversi (model skor, katalog, taksonomi, daftar referensi) adalah file di repo, bukan env.
+
+**Konvensi (sama dengan `06-ci-cd.md` §12.3):** semua variabel aplikasi berprefiks `MSP_`. Secret **tidak pernah** dikirim sebagai nilai env: binary hanya membaca `MSP_<NAMA>_FILE`, yaitu path ke file di tmpfs (`/run/secrets/<nama>`) hasil dekripsi SOPS saat deploy. Nilai langsung `MSP_<NAMA>` untuk secret hanya diterima saat `MSP_ENV=local` (nilai dummy); di staging/production binary menolak start. Pengecualian prefix: variabel standar OpenTelemetry (`OTEL_*`) yang dibaca langsung oleh SDK. Variabel utama (secret ditandai `_FILE`):
 
 | Kelompok | Variabel |
 |---|---|
-| Inti | `MSP_ENV` (local, ci, staging, production), `MSP_VERSION`, `MSP_BASE_URL`, `MSP_LOG_LEVEL` |
-| Database | `DATABASE_URL_APP`, `DATABASE_URL_PIPELINE`, `DATABASE_URL_OPS`, `DATABASE_URL_REPLICA`, `DATABASE_URL_DIRECT` (River listener, migrate) |
-| Worker | `MSP_WORKER_QUEUES` (mis. `pipeline,scoring`), `MSP_WORKER_MAX_<QUEUE>` |
-| Redis (opsional) | `REDIS_URL` (cache, rate limit, counter fair-use). Kosong → cache in-process (dev) |
-| Object storage | `S3_ENDPOINT_URL`, `S3_PUBLIC_ENDPOINT` (`files.<domain>`), `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_FORCE_PATH_STYLE`, `S3_BUCKET_{SNAPSHOTS,UPLOADS,EXPORTS,TILES,AUDIT}` |
-| Auth (D-20) | `IDP_KIND` (kratos, oidc), `KRATOS_PUBLIC_URL`, `KRATOS_ADMIN_URL`, `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `SESSION_PEPPER` |
-| Kriptografi | `CURSOR_HMAC_KEY`, `VALUE_HASH_PEPPER`, `WEBHOOK_SECRET_MASTER_KEYS` (berversi) |
-| AI | `LLM_PROVIDER`, `LLM_API_KEY`, `LLM_MODEL_BRIEF`, `LLM_MODEL_CLASSIFY`, `AI_DAILY_BUDGET_USD`, `AI_PRICE_TABLE` |
-| Jaringan | `EGRESS_PROXY_URL` (Smokescreen), `DNS_RESOLVER` (Unbound), `SMTP_URL` |
-| Observability | `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_TRACES_SAMPLER_ARG`, `GLITCHTIP_DSN` |
+| Inti | `MSP_ENV` (local, ci, staging, production), `MSP_VERSION` (disuntikkan saat deploy, 06 §5.1), `MSP_BASE_URL`, `MSP_LOG_LEVEL` |
+| Database | `MSP_DATABASE_URL_APP_FILE`, `MSP_DATABASE_URL_PIPELINE_FILE`, `MSP_DATABASE_URL_OPS_FILE` (via PgBouncer), `MSP_DATABASE_URL_REPLICA_FILE` (db-02), `MSP_DATABASE_URL_DIRECT_FILE` (langsung ke db-01:5432: client River di worker, `migrate`; §17.4) |
+| Worker | `MSP_WORKER_QUEUES` (mis. `pipeline,scoring`), `MSP_WORKER_MAX_<QUEUE>`, `MSP_RIVER_POLL_ONLY` (fallback tanpa `LISTEN`, default `false`) |
+| Redis (opsional) | `MSP_REDIS_URL_FILE` (cache, rate limit, counter fair-use). Kosong → cache in-process (dev) |
+| Object storage | `MSP_S3_ENDPOINT_URL`, `MSP_S3_PUBLIC_ENDPOINT` (`files.<domain>`), `MSP_S3_ACCESS_KEY_ID_FILE`, `MSP_S3_SECRET_ACCESS_KEY_FILE`, `MSP_S3_FORCE_PATH_STYLE`, `MSP_S3_BUCKET_{SNAPSHOTS,UPLOADS,EXPORTS,TILES,AUDIT}` |
+| Auth (D-20) | `MSP_IDP_KIND` (kratos, oidc), `MSP_KRATOS_PUBLIC_URL`, `MSP_KRATOS_ADMIN_URL`, `MSP_OIDC_ISSUER`, `MSP_OIDC_CLIENT_ID`, `MSP_OIDC_CLIENT_SECRET_FILE`, `MSP_SESSION_PEPPER_FILE` |
+| Kriptografi | `MSP_CURSOR_HMAC_KEY_FILE`, `MSP_VALUE_HASH_PEPPER_FILE`, `MSP_WEBHOOK_SECRET_MASTER_KEYS_FILE` (berversi) |
+| AI | `MSP_LLM_PROVIDER`, `MSP_LLM_API_KEY_FILE`, `MSP_LLM_MODEL_BRIEF`, `MSP_LLM_MODEL_CLASSIFY`, `MSP_AI_DAILY_BUDGET_USD`, `MSP_AI_PRICE_TABLE` |
+| Jaringan | `MSP_EGRESS_PROXY_URL` (Smokescreen), `MSP_DNS_RESOLVER` (Unbound), `MSP_SMTP_URL_FILE` |
+| Observability | `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_TRACES_SAMPLER_ARG`, `OTEL_RESOURCE_ATTRIBUTES` (nama standar SDK), `MSP_GLITCHTIP_DSN_FILE` |
 
 ### 18.2 Environment
 
