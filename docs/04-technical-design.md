@@ -37,7 +37,7 @@
 9. **Event via River** (queue berbasis Postgres) yang di-*enqueue* dalam transaksi yang sama dengan perubahan domain, sehingga River sekaligus berfungsi sebagai transactional outbox (ADR-07). Webhook ditandatangani HMAC (`MSP-Signature`), di-retry hingga ≤ 24 jam, dan dikirim melalui **egress proxy + nftables** dengan kontrol SSRF (ADR-20).
 10. **AI di balik abstraksi provider.** Output terstruktur dengan sitasi per kalimat, divalidasi oleh grounding validator. Nilai kontak pribadi tidak pernah dikirim ke LLM (ADR-09).
 11. **Credit memakai ledger double-entry append-only** dengan mekanisme *hold → capture/release*, sehingga operasi yang gagal tidak pernah menagih (ADR-10).
-12. **Infrastruktur self-hosted di Indonesia** (D-19): Docker Compose + Traefik di `app-01`, PostgreSQL primary/replica di `db-01`/`db-02`, MinIO untuk object storage, monitoring di `ops-01` (ADR-18).
+12. **Infrastruktur self-hosted di Indonesia** (D-19): Docker Compose + Traefik di `app-01`, PostgreSQL primary/replica di `db-01`/`db-02`, SeaweedFS (S3 API) untuk object storage, monitoring di `ops-01` (ADR-18).
 
 ### 1.2 Prinsip desain (diturunkan dari MVP Pack, tidak berubah)
 
@@ -73,11 +73,11 @@ Semua ADR berstatus **Proposed** kecuali ditandai lain. Kolom "Ref" menautkan ke
 | ADR-15 | **Relevansi opportunity tenant dihitung saat dibaca** (gap fact global × tag Offering), tidak dimaterialisasi per workspace | Materialisasi = 200 ws × 5 juta × ±3 gap | Tabel opportunity per tenant | Murah dan selalu konsisten dengan Offering. Snapshot opportunity ikut tersimpan di faktor skor | Proposed | D-04, FR-INTL-007 |
 | ADR-16 | **Skor disimpan per epoch** (`intel.score`, partisi HASH per workspace, faktor ringkas `smallint[]`). Epoch baru diaktifkan secara atomik | Recompute ≤ 10 menit tanpa mengganggu pembaca (NFR-PERF-05) | UPDATE in-place; JSON penjelasan per baris | ±75 juta baris tetap ±17 GB. Penjelasan dibangun ulang dari faktor + config | Proposed | FR-INTL-008/009/011 |
 | ADR-17 | **Peta: vector tile batas wilayah statis (PMTiles per `area_set_version`) + metrik via JSON**, di-join di client (MapLibre `feature-state`) | Geometri publik dan tidak berubah. Metrik bersifat tenant-specific | `ST_AsMVT` dinamis per tenant | Tile bisa di-cache selamanya. Endpoint `ST_AsMVT` hanya untuk dev/fallback | Proposed | FR-GEO-002 |
-| ADR-18 | **Dedicated server di DC Indonesia**: Docker Compose + Traefik (`app-01`, kelak `app-02`), PostgreSQL 16 + PostGIS self-managed (`db-01` primary, `db-02` streaming replica, pgBackRest PITR), Redis self-managed (AOF), **MinIO** (S3 API), provisioning Ansible | Residensi data dan biaya. Tidak ada layanan cloud terkelola | AWS ap-southeast-3 (ECS/RDS/ElastiCache/S3) | Tim mengoperasikan sendiri backup, failover, patching. Deploy blue/green via Traefik (`06-ci-cd.md`). Abstraksi S3 dipertahankan | Accepted (dedicated) / Proposed (stack) | **D-19**, D-18, D-14, NFR-PRIV-03 |
+| ADR-18 | **Dedicated server di DC Indonesia**: Docker Compose + Traefik (`app-01`, kelak `app-02`), PostgreSQL 16 + PostGIS self-managed (`db-01` primary, `db-02` streaming replica, pgBackRest PITR), Redis (opsional, cache), **SeaweedFS** (master + volume + filer + S3 gateway; alternatif: Garage), provisioning Ansible | Residensi data dan biaya. Tidak ada layanan cloud terkelola | AWS ap-southeast-3 (ECS/RDS/ElastiCache/S3) | Tim mengoperasikan sendiri backup, failover, patching. Deploy blue/green via Traefik (`06-ci-cd.md`). Abstraksi S3 dipertahankan | Accepted (dedicated) / Proposed (stack) | **D-19**, D-18, D-14, NFR-PRIV-03 |
 | ADR-19 | **Port identitas provider-agnostic** (OIDC atau Kratos session → *server session milik aplikasi*). Rekomendasi: **Ory Kratos self-hosted** | Auth SaaS akan memindahkan data identitas user ke luar negeri | Auth SaaS; Keycloak | Aplikasi hanya bergantung pada klaim `sub`, `email`, `email_verified`, level MFA | **Open** | **D-20**, FR-AUTH-001/006 |
 | ADR-20 | **Seluruh request keluar ke URL milik customer** lewat worker khusus → validasi aplikasi + `net.Dialer.Control` yang memeriksa ulang IP hasil resolve di setiap koneksi → **egress proxy (Smokescreen)** → aturan **nftables** (blok private/metadata/LAN) | Tidak ada security group cloud di dedicated server (NFR-SEC-05) | Validasi aplikasi saja | Tiga lapis kontrol SSRF. Proxy juga dipakai untuk egress AI/email (allowlist) | Proposed | FR-EXP-003, Crawler §12 |
 | ADR-21 | **Observability self-hosted**: OpenTelemetry Go SDK + `log/slog` JSON → OpenTelemetry Collector → Prometheus + Grafana + Loki + Tempo + Alertmanager; **GlitchTip** untuk error tracking | Residensi data dan biaya; selaras D-19 | SaaS observability | Retensi dan PII di log dikontrol sendiri | Proposed | NFR-OBS-01 |
-| ADR-22 | **Secret via SOPS + age** (didekripsi saat deploy ke tmpfs). **Enkripsi at-rest**: LUKS full-disk + repo pgBackRest terenkripsi + MinIO SSE. Enkripsi aplikasi (AES-256-GCM) untuk secret webhook | Tidak ada cloud KMS/secret manager | Vault (HashiCorp/OpenBao) | Operasi sederhana di MVP. Vault/OpenBao dipertimbangkan di V1 | Proposed | NFR-SEC-02/04 |
+| ADR-22 | **Secret via SOPS + age** (didekripsi saat deploy ke tmpfs). **Enkripsi at-rest**: LUKS full-disk + repo pgBackRest terenkripsi + enkripsi data volume SeaweedFS (diverifikasi saat PoC, TQ-17). Enkripsi aplikasi (AES-256-GCM) untuk secret webhook | Tidak ada cloud KMS/secret manager | Vault (HashiCorp/OpenBao) | Operasi sederhana di MVP. Vault/OpenBao dipertimbangkan di V1 | Proposed | NFR-SEC-02/04 |
 | ADR-23 | **Record upload customer = overlay privat**: MATCHED → link ke entity global; NEW → *private prospect* (tenant projection), muncul di search hanya bila opt-in | BR-ER-07: upload tidak boleh mengubah global | Merge upload ke global | Upload bernilai tanpa mencemari global. Search melakukan UNION terkontrol (§10.9) | Proposed | FR-DATA-012 |
 | ADR-24 | **Observation disimpan per record** (envelope berisi field-level observation), **tabel dipartisi LIST per snapshot**, snapshot lama di-detach dan diarsip ke object storage | 5 juta record × ±15 field = 75 juta baris per snapshot bila disimpan per field | Satu baris per field | Partisi dapat di-drop/arsip. Evidence menunjuk ke record + field | Proposed | FR-DATA-001, G-19 |
 | ADR-25 | **Scoping workspace via header `MSP-Workspace`** + web memakai **cookie same-origin** (`/api` di-route Traefik) | Satu user bisa anggota >1 workspace (FR-AUTH-002) | Path `/v1/workspaces/{id}/...` | Setiap tab membawa workspace eksplisit. API key (V1) terikat satu workspace | Proposed | FR-AUTH-002 |
@@ -107,7 +107,7 @@ Semua ADR berstatus **Proposed** kecuali ditandai lain. Kolom "Ref" menautkan ke
 
 ```
  Internet --443--> +=========================== app-01 (Docker Compose) ===========================+
-                   | traefik  (TLS; app.<dom> -> web; app.<dom>/api -> api; files.<dom> -> MinIO)   |
+                   | traefik  (TLS; app.<dom> -> web; app.<dom>/api -> api; files.<dom> -> S3 gw)   |
                    |   web (Next.js SSR, x2)            api (`msp api`, x2) <-> kratos (D-20)        |
                    |   worker-pipeline  worker-scoring  worker-export  worker-ai  worker-maintenance |
                    |   (`msp worker --queues=…`; River: retry, periodic job, leader election)        |
@@ -118,8 +118,8 @@ Semua ADR berstatus **Proposed** kecuali ditandai lain. Kolom "Ref" menautkan ke
               +-------------------+--------------+                      |
               v                   v                                     v
    +----- db-01 -----+  stream  +----- db-02 -----+          +-------- stor-01 --------+
-   | PostgreSQL 16   |--------->| hot standby     |          | MinIO (S3 API, SSE)     |
-   | PostGIS, pgtrgm |   WAL    | (read replica:  |          | msp-snapshots (WORM)    |
+   | PostgreSQL 16   |--------->| hot standby     |          | SeaweedFS (S3 gateway)  |
+   | PostGIS, pgtrgm |   WAL    | (read replica:  |          | msp-snapshots           |
    | PgBouncer       |          |  search/profil) |          | msp-uploads, msp-exports|
    | pgBackRest -----+----------+-----------------+--------->| msp-tiles, pgbackrest   |
    +-----------------+                                       +-------------------------+
@@ -135,7 +135,7 @@ Semua ADR berstatus **Proposed** kecuali ditandai lain. Kolom "Ref" menautkan ke
 | `app-01` | Aplikasi | traefik, web, api, kratos, worker pools (River), redis (opsional), unbound, smokescreen, otel-collector | SPOF di MVP (99,5% masih tercapai dengan restore cepat). `app-02` ditambahkan untuk HA (Traefik di dua node + DNS failover/VRRP, Redis replica + Sentinel) |
 | `db-01` | DB primary | PostgreSQL 16 + PostGIS, PgBouncer (transaction mode), pgBackRest, postgres_exporter | Satu-satunya target write. Juga menyimpan antrean River |
 | `db-02` | DB replica | Hot standby (streaming, async), `hot_standby_feedback=on` | Melayani read search/profil. Failover manual via runbook (Patroni dipertimbangkan saat ada node ketiga) |
-| `stor-01` | Object storage | MinIO single-node multi-drive (erasure coding) | Bucket privat, presigned URL via `files.<domain>` |
+| `stor-01` | Object storage | SeaweedFS single-node (master, volume, filer, S3 gateway) di atas RAID10 + LUKS. Erasure coding/replikasi SeaweedFS saat ada node kedua | Bucket privat, presigned URL via `files.<domain>`. Replikasi off-site via `weed filer.sync` |
 | `ops-01` | Ops | GitLab CE + registry, Prometheus, Alertmanager, Grafana, Loki, Tempo, GlitchTip, Tang | Detail CI di `06-ci-cd.md` |
 | `ci-01` | CI | GitLab runners | — |
 
@@ -155,7 +155,7 @@ Semua ADR berstatus **Proposed** kecuali ditandai lain. Kolom "Ref" menautkan ke
 `PUT /v1/icps/{id}` → `icp_version` baru + `score_job(QUEUED)` + job River antrean `scoring` prioritas 1 (insert transaksional) → seleksi kandidat lewat SQL (filter wajib) → scoring per chunk 50.000 baris → `COPY` ke `intel.score` (epoch n+1) → `icp_area_metric` → aktifkan epoch n+1 secara atomik → `icp.scoring_completed`. Selama proses, UI melakukan polling `GET /v1/icps/{id}/scoring-status` dan menampilkan "Menghitung skor".
 
 **(d) Export (FR-EXP-001/002, NFR-PERF-04)**
-`POST /v1/exports/preview` (biaya) → `POST /v1/exports` + `Idempotency-Key` → **hold** credit untuk record yang belum di-unlock → job `export` mengalirkan query (server-side cursor) → file ke MinIO `msp-exports/{ws}/…` → **capture** + buat unlock → `export.completed` → `GET /v1/exports/{id}/download` mengembalikan 302 ke presigned URL (24 jam). Bila gagal → **release** + status `FAILED` yang dapat di-retry.
+`POST /v1/exports/preview` (biaya) → `POST /v1/exports` + `Idempotency-Key` → **hold** credit untuk record yang belum di-unlock → job `export` mengalirkan query (server-side cursor) → file ke object storage `msp-exports/{ws}/…` → **capture** + buat unlock → `export.completed` → `GET /v1/exports/{id}/download` mengembalikan 302 ke presigned URL (24 jam). Bila gagal → **release** + status `FAILED` yang dapat di-retry.
 
 **(e) Kirim ke webhook (FR-EXP-004)**
 `POST /v1/webhook-sends` → hold → satu `event(prospect.sent)` per prospek + job `event.dispatch` → worker membuat `webhook_delivery` + job `webhook.deliver` → `worker-webhook` mengirim lewat Smokescreen → 2xx → capture. DLQ (setelah ±20,6 jam) → release.
@@ -326,11 +326,11 @@ STAGED ---------> VALIDATING ---------> VALIDATED ------------------------------
 
 | State | Arti | Aksi sistem |
 |---|---|---|
-| `STAGED` | Manifest terdaftar. File diunggah ke `msp-snapshots/{source}/{version}/` (object lock/WORM, sha256 per file) | Versi `ds-YYYY.MM.n` dialokasikan (unik per source; `n` = urutan dalam bulan) |
+| `STAGED` | Manifest terdaftar. File diunggah ke `msp-snapshots/{source}/{version}/` (object lock/WORM bila didukung; fallback: kredensial tanpa hak overwrite/delete + salinan append-only ke repo off-site; sha256 per file di manifest) | Versi `ds-YYYY.MM.n` dialokasikan (unik per source; `n` = urutan dalam bulan) |
 | `VALIDATING` | Parse + mapping + validasi berjalan | Mengisi partisi `ingest.observation` baru dan `validation_report` |
 | `VALIDATED` | Laporan siap; gate dievaluasi | Ops meninjau. Override gate wajib alasan (audit). Pipeline (§6) dijalankan pada state ini |
 | `PUBLISHED` | `pipeline_run` sukses sampai swap projection | `current_snapshot` untuk source diperbarui → event `snapshot.published` → re-score fan-out (§7.9) |
-| `SUPERSEDED` | Snapshot lebih baru sudah publish | Partisi observation dipertahankan sesuai `observation_online_snapshots`, lalu di-detach dan diarsip ke MinIO (Parquet) |
+| `SUPERSEDED` | Snapshot lebih baru sudah publish | Partisi observation dipertahankan sesuai `observation_online_snapshots`, lalu di-detach dan diarsip ke object storage (Parquet) |
 | `REJECTED` | Ditolak | Partisi di-drop. File mentah disimpan untuk audit sesuai retensi |
 
 Gate default (dapat dikonfigurasi per source):
@@ -470,7 +470,7 @@ null_tokens: ["", "-", "n/a", "null", "none", "tidak ada"]
 
 ### 4.5 Laporan validasi
 
-Dihasilkan saat `VALIDATING` dan disimpan di `ingest.validation_report` (JSONB) + MinIO. Ditampilkan di ops console (FR-DATA-001, FR-OPS-001).
+Dihasilkan saat `VALIDATING` dan disimpan di `ingest.validation_report` (JSONB) + object storage. Ditampilkan di ops console (FR-DATA-001, FR-OPS-001).
 
 ```json
 {
@@ -502,8 +502,8 @@ PENDING_UPLOAD -> UPLOADED -> PARSING -> MAPPING_REQUIRED -> PREVIEW_READY -> PR
        +--------------+-----------+------------------> FAILED / CANCELLED <--------+
 ```
 
-1. `POST /v1/uploads` (nama file, ukuran, tipe) → cek entitlement dan flag `upload.create` → baris `ingest.upload` + **presigned PUT URL** MinIO (`msp-uploads/{workspace_id}/{upload_id}/source.<ext>`, berlaku 15 menit, `Content-Length` ≤ 20 MB).
-2. Browser mengunggah langsung ke `files.<domain>` (Traefik → MinIO). `POST /v1/uploads/{id}/complete` memicu job `PARSING`.
+1. `POST /v1/uploads` (nama file, ukuran, tipe) → cek entitlement dan flag `upload.create` → baris `ingest.upload` + **presigned PUT URL** object storage (S3 gateway SeaweedFS, `msp-uploads/{workspace_id}/{upload_id}/source.<ext>`, berlaku 15 menit, `Content-Length` ≤ 20 MB).
+2. Browser mengunggah langsung ke `files.<domain>` (Traefik → S3 gateway). `POST /v1/uploads/{id}/complete` memicu job `PARSING`.
 3. Parsing di worker antrean `maintenance`:
    - CSV (`encoding/csv` + `x/text/encoding/charmap`): deteksi encoding (UTF-8/UTF-8-BOM/Windows-1252), sniff delimiter (`,` `;` tab), baris header wajib.
    - XLSX (`excelize`, iterator `Rows()` streaming): hanya `.xlsx` (bukan `.xlsm`/`.xls`), nilai formula dibaca dari cache, sheet pertama atau sheet yang dipilih.
@@ -1326,7 +1326,7 @@ Hasil ditulis ke `intel.icp_area_metric` (≤ ±91 ribu baris per ICP untuk L4+L
 ### 9.5 Pengiriman peta (ADR-17, FR-GEO-002)
 
 - Saat import `area_set_version`: geometri disederhanakan per rentang zoom (z4–6 provinsi/kab, z7–10 kecamatan, z11–14 kelurahan) dengan simplifikasi *topology-aware* (tanpa celah antar polygon), lalu dibangun menjadi **PMTiles** (`msp-tiles/areas/{area_set_version}.pmtiles`). Setiap fitur hanya memuat `code`, `level`, dan `name`.
-- Disajikan dari MinIO via `files.<domain>` dengan `Cache-Control: public, max-age=31536000, immutable` (data publik non-personal; CDN opsional).
+- Disajikan dari object storage (S3 gateway SeaweedFS) via `files.<domain>` dengan `Cache-Control: public, max-age=31536000, immutable` (data publik non-personal; CDN opsional).
 - Nilai metrik: `GET /v1/areas/metrics?level=4&parent=51.71&metric=market_opportunity&icp_id=…` → `{ "values": { "51.71.01.1001": 72.4, … }, "legend": {…}, "reference_period": "2025-S1" }`. Client MapLibre GL menerapkannya lewat `feature-state` berdasarkan `code`.
 - Fallback dev/debug: `GET /v1/tiles/areas/{z}/{x}/{y}.mvt` dengan `ST_AsMVT(ST_AsMVTGeom(ST_Transform(geom, 3857), ST_TileEnvelope(z, x, y)))`.
 - Basemap opsional (TQ-11). Choropleth tetap berfungsi tanpa basemap.
@@ -1819,12 +1819,12 @@ Desain aplikasi agnostik terhadap pilihan ini: port `IdentityProvider` dengan ad
 
 ### 15.3 Isolasi tenant (FR-AUD-006, NFR-SEC-03)
 
-Ada tiga lapis: (1) RLS + role DB (§5.8); (2) repository selalu memfilter `workspace_id`, dan ID di path di-resolve ke workspace pemilik (milik workspace lain → 404); (3) cache key selalu diawali `ws:{id}:`, dan objek MinIO tenant berada di prefix `{workspace_id}/` yang hanya diakses lewat presigned URL dari API. Uji lintas tenant otomatis di CI (RG-7).
+Ada tiga lapis: (1) RLS + role DB (§5.8); (2) repository selalu memfilter `workspace_id`, dan ID di path di-resolve ke workspace pemilik (milik workspace lain → 404); (3) cache key selalu diawali `ws:{id}:`, dan objek tenant di object storage berada di prefix `{workspace_id}/` yang hanya diakses lewat presigned URL dari API. Uji lintas tenant otomatis di CI (RG-7).
 
 ### 15.4 Secret & enkripsi (NFR-SEC-02/04, ADR-22)
 
-- **In transit:** TLS 1.2+ di Traefik (sertifikat ACME). LAN: PostgreSQL `sslmode=verify-full` (CA internal), Redis TLS + ACL, MinIO TLS.
-- **At rest:** LUKS2 full-disk di semua server (unlock otomatis via Clevis/Tang di ops-01, fallback passphrase dari konsol remote). Repo pgBackRest `repo-cipher-type=aes-256-cbc`. MinIO SSE (kunci dari KMS bridge/static key yang dikelola SOPS).
+- **In transit:** TLS 1.2+ di Traefik (sertifikat ACME). LAN: PostgreSQL `sslmode=verify-full` (CA internal), Redis TLS + ACL, S3 gateway SeaweedFS via HTTPS, gRPC internal SeaweedFS dengan mTLS (`security.toml`).
+- **At rest:** LUKS2 full-disk di semua server (unlock otomatis via Clevis/Tang di ops-01, fallback passphrase dari konsol remote). Repo pgBackRest `repo-cipher-type=aes-256-cbc`. Object storage: LUKS di stor-01 (wajib) + enkripsi data volume SeaweedFS bila lolos verifikasi PoC (kunci dikelola SOPS). Semantik SSE-S3 tidak diasumsikan (TQ-17).
 - **Secret:** SOPS + age di repo infra. Kunci privat age hanya ada di host deploy. Deploy (Ansible) mendekripsi ke `/run/msp/secrets/*.env` (tmpfs, 0600) → `env_file`/Docker secrets. Rotasi dicatat. Secret scanning di CI (NFR-SEC-04).
 - **Secret webhook:** AES-256-GCM di aplikasi dengan master key berversi (`secret_kid`). Dekripsi hanya di `worker-webhook` dan endpoint `rotate-secret`.
 
@@ -1833,7 +1833,7 @@ Ada tiga lapis: (1) RLS + role DB (§5.8); (2) repository selalu memfilter `work
 `platform.audit_log(id, occurred_at, workspace_id NULL, actor_type (USER, API_KEY, OPS, SYSTEM), actor_id, actor_ip, user_agent, action, target_type, target_id, reason, metadata jsonb (sudah diredaksi), correlation_id, prev_hash, hash)`, dipartisi bulanan.
 - Aksi wajib: login/logout, perubahan role/anggota/undangan, export, unlock, konfigurasi webhook/API key, suppression, keputusan merge/split, grant credit/plan, akses support, perubahan flag, override gate snapshot, authz.denied.
 - Append-only: role app hanya `INSERT`. Trigger menolak `UPDATE`/`DELETE`. Tidak ada endpoint ubah/hapus.
-- **Hash chain** (opsional, aktif default): `hash = sha256(prev_hash ‖ canonical_json(entry))` per partisi bulan. Verifikasi harian. Ekspor harian ke MinIO bucket object-lock (retensi = TQ-14). Kolom P1 (`actor_ip`, `user_agent`) disimpan di tabel samping `audit_log_pii` agar pseudonimisasi (FR-AUD-005) tidak memutus hash chain.
+- **Hash chain** (opsional, aktif default): `hash = sha256(prev_hash ‖ canonical_json(entry))` per partisi bulan. Verifikasi harian. Ekspor harian ke bucket audit di object storage dengan object lock/WORM bila didukung; fallback: salinan append-only ke repo off-site (retensi = TQ-14). Kolom P1 (`actor_ip`, `user_agent`) disimpan di tabel samping `audit_log_pii` agar pseudonimisasi (FR-AUD-005) tidak memutus hash chain.
 - Berbeda dari `action.activity`, yang merupakan timeline produk dan terlihat user.
 
 ### 15.6 Klasifikasi data & redaksi log (BR-PRIV-01, NFR-PRIV-01)
@@ -1869,7 +1869,7 @@ Data upload tenant **tidak** di-suppress otomatis karena tenant adalah pengendal
 
 - **DSR** (FR-AUD-004): intake form publik (captcha + verifikasi email pemohon) atau email ops → `ops.data_subject_request` (RECEIVED → VERIFYING → IN_PROGRESS → [FORWARDED_TO_TENANT] → COMPLETED | REJECTED). Subjek dicari via `value_hash`. Tipe akses (laporan data yang ada), koreksi (laporan data → ops), hapus/keberatan (suppression + penghapusan nilai P1 dari global). Pengakuan penerimaan ≤ 1 hari kerja (email otomatis). Tenggat per tipe dikonfigurasi berdasarkan review hukum (beberapa hak bertenggat 3×24 jam, FR-AUD-004) dan dipantau di FR-OPS-008. Bila subjek ditemukan di data upload tenant, permintaan diteruskan ke Owner/Admin workspace tersebut (notifikasi + status `FORWARDED_TO_TENANT`) dan dieksekusi atas instruksi tenant (BR-PRIV-02).
 - **Laporan data** (FR-DATA-014): `ops.data_issue_report` dengan `claim_ref`. Hasilnya bisa berupa koreksi ops (evidence `OPS_CORRECTION`, FR-OPS-009, §5.6), merge/split, atau tolak. Laporan yang mengonfirmasi kontak INVALID juga memicu cek refund BR-CRED-05.
-- **Penutupan workspace** (FR-AUD-005): `PENDING_DELETION` (akses diblokir kecuali Owner dapat membatalkan) → hari ke-30 job `purge_workspace` memanggil handler purge yang didaftarkan setiap modul (semua tabel tenant), menghapus prefix MinIO `{ws}/`, key Redis, dan sesi → verifikasi hitungan = 0 → `audit(workspace.purged)`. **Pengecualian** (FR-AUD-005): `audit_log` serta `credit_ledger`/`usage_event` dipertahankan selama masa retensi hukum, lalu **dipseudonimkan** (ID aktor diganti HMAC ber-pepper, baris `audit_log_pii` dihapus, metadata P1 dibuang). Backup PITR menua dan keluar sesuai retensi pgBackRest (14 hari full + WAL), dan hal ini dinyatakan di kebijakan privasi.
+- **Penutupan workspace** (FR-AUD-005): `PENDING_DELETION` (akses diblokir kecuali Owner dapat membatalkan) → hari ke-30 job `purge_workspace` memanggil handler purge yang didaftarkan setiap modul (semua tabel tenant), menghapus prefix object storage `{ws}/`, key Redis, dan sesi → verifikasi hitungan = 0 → `audit(workspace.purged)`. **Pengecualian** (FR-AUD-005): `audit_log` serta `credit_ledger`/`usage_event` dipertahankan selama masa retensi hukum, lalu **dipseudonimkan** (ID aktor diganti HMAC ber-pepper, baris `audit_log_pii` dihapus, metadata P1 dibuang). Backup PITR menua dan keluar sesuai retensi pgBackRest (14 hari full + WAL), dan hal ini dinyatakan di kebijakan privasi.
 
 ### 15.9 Akses support (FR-OPS-006)
 
@@ -1898,7 +1898,7 @@ Memenuhi NFR-OBS-01, RG-5, FR-OPS-001..004, dan ADR-21.
 
 ### 16.1 Stack
 
-OTel Go SDK (`otelhttp` untuk server/klien HTTP, tracer pgx, middleware River yang meneruskan `traceparent` + `correlation_id` di metadata job, Redis) → **OTel Collector** di setiap host → `ops-01`: **Prometheus** (metrik, retensi 30 hari) + **Loki** (log JSON, 30 hari) + **Tempo** (trace, 7 hari; sampling 10% + 100% error) + **Grafana** (dashboard) + **Alertmanager** (on-call: email + kanal chat tim) + **GlitchTip** (error, kompatibel SDK Sentry). Exporter: node, postgres, redis, MinIO, Traefik, cAdvisor, pgBackRest (umur backup).
+OTel Go SDK (`otelhttp` untuk server/klien HTTP, tracer pgx, middleware River yang meneruskan `traceparent` + `correlation_id` di metadata job, Redis) → **OTel Collector** di setiap host → `ops-01`: **Prometheus** (metrik, retensi 30 hari) + **Loki** (log JSON, 30 hari) + **Tempo** (trace, 7 hari; sampling 10% + 100% error) + **Grafana** (dashboard) + **Alertmanager** (on-call: email + kanal chat tim) + **GlitchTip** (error, kompatibel SDK Sentry). Exporter: node, postgres, redis, SeaweedFS (metrik Prometheus master/volume/filer), Traefik, cAdvisor, pgBackRest (umur backup).
 
 ### 16.2 Standar field log (Crawler §19.2 diadopsi)
 
@@ -1964,7 +1964,7 @@ Memenuhi NFR-SCAL-01 (5 juta establishment, ±84 ribu kelurahan/desa, 200 worksp
 | intel.score (200 ws × ±2,5 ICP × ±150 rb) | ±75 jt | ±17 GB |
 | tenant lain (activity, audit, delivery, ledger, upload) | ±30 jt | ±12 GB |
 | **Total DB** | | **±90 GB**; ×2 headroom (shadow table, bloat, index rebuild) = ±200 GB |
-| MinIO: snapshot mentah (Parquet), arsip observation, upload, export, tile, repo pgBackRest | | ±1,5–3 TB |
+| Object storage (SeaweedFS): snapshot mentah (Parquet), arsip observation, upload, export, tile, repo pgBackRest | | ±1,5–3 TB |
 
 ### 17.2 Spesifikasi server (usulan D-19)
 
@@ -1973,11 +1973,11 @@ Memenuhi NFR-SCAL-01 (5 juta establishment, ±84 ribu kelurahan/desa, 200 worksp
 | `app-01` (kelak `app-02` identik) | 32 core (64 thread) | 64 GB | 2 × 1,92 TB NVMe RAID1 | Worker pipeline memakai semua core saat run. Proses Go hemat memori (±1–4 GB per pool). Redis `maxmemory` 8 GB |
 | `db-01` | 32 core | 256 GB ECC | 4 × 1,92 TB NVMe RAID10 (±3,8 TB) | `shared_buffers` 64 GB, `effective_cache_size` 192 GB |
 | `db-02` | Sama dengan db-01 | 256 GB | Sama | Target failover + read search |
-| `stor-01` | 16 core | 64 GB | 4 × 8 TB SSD/HDD enterprise, erasure coding (EC:2) → ±16 TB usable + 1 NVMe OS | Bucket backup memakai object lock |
+| `stor-01` | 16 core | 64 GB | 4 × 8 TB SSD/HDD enterprise (RAID10 + LUKS → ±16 TB usable) + NVMe untuk OS dan metadata filer | SeaweedFS single-node. Object lock bila didukung (TQ-17) |
 | `ops-01` | 16 core | 64 GB | 2 × 3,84 TB NVMe RAID1 | GitLab + registry + stack observability |
 | `ci-01` | 16 core | 64 GB | 2 × 1,92 TB NVMe | Runner Docker |
 
-Jaringan: VLAN privat 10 GbE antar server, uplink publik hanya ke app-01 (dan ops-01 untuk akses GitLab via VPN/WireGuard). Backup off-site (repo2 pgBackRest + replikasi bucket MinIO) ke lokasi kedua di Indonesia (TQ-15).
+Jaringan: VLAN privat 10 GbE antar server, uplink publik hanya ke app-01 (dan ops-01 untuk akses GitLab via VPN/WireGuard). Backup off-site (repo2 pgBackRest + `weed filer.sync` ke cluster SeaweedFS kedua) ke lokasi kedua di Indonesia (Q-09).
 
 ### 17.3 Tata letak proses (app-01)
 
@@ -1990,7 +1990,7 @@ Semua container `msp` memakai image yang sama dengan subcommand berbeda.
 | api | `msp api` | 2 replika (`GOMAXPROCS` 4) | Pool pgx 20/replika via PgBouncer. Blue/green via Traefik |
 | worker-pipeline | `msp worker --queues=pipeline` | `MaxWorkers` 32 | Aktif penuh saat pipeline run |
 | worker-scoring | `msp worker --queues=scoring` | `MaxWorkers` 8 | Prioritas 1 (ICP interaktif) selalu didahulukan atas prioritas 4 (fan-out) |
-| worker-export | `msp worker --queues=export` | `MaxWorkers` 4 | Streaming ke MinIO multipart |
+| worker-export | `msp worker --queues=export` | `MaxWorkers` 4 | Streaming multipart ke S3 API (SeaweedFS) |
 | worker-webhook | `msp worker --queues=webhook` | `MaxWorkers` 32 | Network terisolasi (§12.5) |
 | worker-ai | `msp worker --queues=ai` | `MaxWorkers` 16 | I/O bound |
 | worker-maintenance | `msp worker --queues=maintenance` | `MaxWorkers` 8 | Upload, email, refund, purge, periodic job (River leader election menggantikan scheduler) |
@@ -2015,7 +2015,7 @@ Semua container `msp` memakai image yang sama dengan subcommand berbeda.
 
 ### 17.6 Backup & DR (NFR-AVAIL-02: RPO ≤ 15 menit, RTO ≤ 4 jam)
 
-pgBackRest: full mingguan, diff harian, archive WAL kontinu (`archive_timeout = 60s`) → RPO ≤ 1–2 menit (repo1 MinIO, repo2 off-site). Restore ±200 GB pada NVMe ±15–30 menit + replay WAL. Skenario utama adalah failover ke db-02 (promote) dengan RTO < 30 menit. MinIO: versioning + object lock untuk bucket snapshot/backup/audit, plus replikasi ke off-site. Uji restore bulanan otomatis ke host staging (bukti NFR-AVAIL-02). Redis hanya cache/rate limit dan tidak di-backup. Antrean River ikut backup/PITR Postgres.
+pgBackRest: full mingguan, diff harian, archive WAL kontinu (`archive_timeout = 60s`) → RPO ≤ 1–2 menit (repo1 SeaweedFS via S3 API, repo2 off-site). Restore ±200 GB pada NVMe ±15–30 menit + replay WAL. Skenario utama adalah failover ke db-02 (promote) dengan RTO < 30 menit. SeaweedFS: replikasi ke off-site via `weed filer.sync`. Versioning/object lock untuk bucket snapshot/backup/audit bila didukung; fallback: salinan append-only ke repo off-site (TQ-17). Uji restore bulanan otomatis ke host staging (bukti NFR-AVAIL-02). Redis hanya cache/rate limit dan tidak di-backup. Antrean River ikut backup/PITR Postgres.
 
 ---
 
@@ -2033,7 +2033,7 @@ Semua konfigurasi berasal dari environment variable (di-parse ke struct config G
 | Database | `DATABASE_URL_APP`, `DATABASE_URL_PIPELINE`, `DATABASE_URL_OPS`, `DATABASE_URL_REPLICA`, `DATABASE_URL_DIRECT` (River listener, migrate) |
 | Worker | `MSP_WORKER_QUEUES` (mis. `pipeline,scoring`), `MSP_WORKER_MAX_<QUEUE>` |
 | Redis (opsional) | `REDIS_URL` (cache, rate limit, counter fair-use). Kosong → cache in-process (dev) |
-| Object storage | `S3_ENDPOINT_URL`, `S3_PUBLIC_ENDPOINT` (`files.<domain>`), `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_BUCKET_{SNAPSHOTS,UPLOADS,EXPORTS,TILES}` |
+| Object storage | `S3_ENDPOINT_URL`, `S3_PUBLIC_ENDPOINT` (`files.<domain>`), `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_FORCE_PATH_STYLE`, `S3_BUCKET_{SNAPSHOTS,UPLOADS,EXPORTS,TILES,AUDIT}` |
 | Auth (D-20) | `IDP_KIND` (kratos, oidc), `KRATOS_PUBLIC_URL`, `KRATOS_ADMIN_URL`, `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `SESSION_PEPPER` |
 | Kriptografi | `CURSOR_HMAC_KEY`, `VALUE_HASH_PEPPER`, `WEBHOOK_SECRET_MASTER_KEYS` (berversi) |
 | AI | `LLM_PROVIDER`, `LLM_API_KEY`, `LLM_MODEL_BRIEF`, `LLM_MODEL_CLASSIFY`, `AI_DAILY_BUDGET_USD`, `AI_PRICE_TABLE` |
@@ -2044,7 +2044,7 @@ Semua konfigurasi berasal dari environment variable (di-parse ke struct config G
 
 | Env | Infrastruktur | Data | Integrasi eksternal |
 |---|---|---|---|
-| local | docker compose (`infra/docker/`): postgres+postgis, redis, minio, kratos, mailpit, smokescreen | Fixture + dataset sintetis kecil | LLM `fake`, webhook ke receiver lokal |
+| local | docker compose (`infra/docker/`): postgres+postgis, redis, seaweedfs (`weed server` all-in-one + S3), kratos, mailpit, smokescreen | Fixture + dataset sintetis kecil | LLM `fake`, webhook ke receiver lokal |
 | ci | Container ephemeral (service GitLab CI) | Fixture, golden set ER, eval AI rekaman | `fake` |
 | staging | Host staging di DC yang sama (VM/server terpisah, spesifikasi diperkecil) | Dataset sintetis 5 juta baris (uji beban) + subset dataset tanpa person/kontak pribadi | LLM asli dengan cap kecil, receiver webhook uji |
 | production | Topologi §2.2 | Produksi | Asli |
@@ -2093,7 +2093,7 @@ Crawler kelak memproduksi **snapshot bergulir** (mis. per batch mingguan `ds-202
 |---|---|---|
 | §5 CrawlJob lifecycle | `AdapterRun` + `dataset_snapshot` (STAGED…) | Kontrak siap |
 | §11 Evidence & provenance | `EvidencePointer` `CRAWL_PAGE` + `identity.evidence` (`snippet_hash`, `extractor_version`, `pointer.source_url/final_url/selector_hint`) | **Sudah di skema** |
-| §16 RawPage (immutable, content_hash) | Bucket `msp-raw-pages` (object lock) + `record_hash` | Bucket direncanakan |
+| §16 RawPage (immutable, content_hash) | Bucket `msp-raw-pages` (object lock bila didukung; fallback append-only off-site) + `record_hash` | Bucket direncanakan |
 | §16 PageObservation (field, value, selector_hint, confidence) | `Observation` (`field`, `raw_value`, `extraction_confidence`, `evidence`) | **Sudah di kontrak** |
 | §12 SSRF | `internal/platform/netguard` + Smokescreen + nftables (§12.5), dengan role ACL `crawler` terpisah | **Dibangun di MVP** (untuk webhook) |
 | §8.3/§13 Retry, backoff, DLQ | Retry River (`NextRetry`), job `discarded` + retry dari ops console | **Dibangun di MVP** |
@@ -2149,7 +2149,8 @@ Opportunity yang otomatis aktif bila crawler mengisi fieldnya: OPP-BOOKING-NONE 
 | TQ-12 | Provider email transaksional (verifikasi Kratos, undangan) dan residensinya | SMTP relay; vendor ditentukan |
 | TQ-13 | Definisi kuota fair-use: jumlah profil **berbeda** per siklus (usulan SDD) atau setiap pembukaan? Perilaku 100% sudah ditetapkan BR-CRED-01 | Profil berbeda |
 | TQ-14 | Retensi: audit log, snapshot mentah, evidence snapshot lama, log | Audit 2 tahun, snapshot 2 tahun, log 30 hari (review hukum) |
-| TQ-15 | Status lisensi/distribusi MinIO community (AGPL) dan lokasi off-site (Q-09) | DC kedua di Indonesia; evaluasi alternatif S3-compatible (Garage/SeaweedFS/Ceph RGW) bila perlu |
+| TQ-15 | Pengganti MinIO (community edition berhenti merilis binary/image Okt 2025, maintenance mode Des 2025, repo diarsip Feb 2026, menurut sumber sekunder) | **Resolved:** SeaweedFS (Apache-2.0; sub-keputusan D-19, Proposed; alternatif Garage). Verifikasi fitur object lock & enkripsi saat PoC (TQ-17) |
+| TQ-17 | PoC SeaweedFS: (a) S3 Object Lock/WORM untuk bucket snapshot/audit; (b) semantik enkripsi data volume / SSE dan rotasi kunci; (c) presigned PUT/GET + multipart dengan SDK S3 Go dan repo S3 pgBackRest; (d) `weed filer.sync` ke off-site | Bila (a)/(b) tidak didukung: kredensial tanpa hak overwrite/delete + salinan append-only ke repo off-site; enkripsi mengandalkan LUKS |
 | TQ-16 | ~~Re-skor karena drift freshness~~ | **Ditutup** oleh BR-SCORE-13 (cek harian kelas freshness, §7.9) |
 
 ### 20.3 Catatan untuk PRD/analisis
