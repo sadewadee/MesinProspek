@@ -62,8 +62,8 @@ Semua ADR berstatus **Proposed** kecuali ditandai lain. Kolom "Ref" menautkan ke
 | ADR-04 | **Company 1—N Establishment**. Skor per establishment, rollup company = maks (BR-SCORE-01) | Domain yang sama untuk cabang berbeda tidak boleh di-merge (G-04) | Satu tabel Company | ER dua level (§6.4). Baris hasil = company + establishment terbaik | Proposed | D-05 |
 | ADR-05 | **Postgres FTS (`simple` + `unaccent`) + `pg_trgm` + PostGIS**; tanpa OpenSearch di MVP | Volume 5 juta baris muat di RAM DB. Mengurangi beban operasional | OpenSearch sejak awal | Satu sistem untuk konsistensi data. Projection dirancang agar bisa dipindah ke OpenSearch (V2) tanpa ubah API | Proposed | D-12, NFR-PERF-01 |
 | ADR-06 | **River** (queue berbasis Postgres, Go) untuk semua job: retry + backoff, unique job (idempotensi), periodic job (leader election), dan **insert transaksional**. Antrean: `pipeline`, `scoring`, `export`, `webhook`, `ai`, `maintenance`; prioritas 1–4 dalam antrean. Redis hanya untuk cache, rate limit, dan counter (opsional) | Butuh retry/backoff/DLQ (Crawler §13) dan job yang tidak hilang saat restart | Dramatiq/Celery + Redis broker; Temporal | State job ada di Postgres (`river_job`) sehingga ikut backup/PITR. Job habis percobaan → state `discarded` (= DLQ) yang dapat di-*retry* dari ops console. Beban tambahan di Postgres dipantau (§17.4) | Proposed | FR-OPS-002 |
-| ADR-07 | **Outbox = River insert transaksional**: perubahan domain + baris `platform.event` + job `event.dispatch` di-commit dalam **satu transaksi** (`InsertTx`). Worker dispatch melakukan fan-out ke handler internal dan webhook delivery | Event tidak boleh hilang atau terkirim tanpa commit (dual-write) | Tabel outbox + dispatcher polling; publish ke broker setelah commit | Tanpa komponen dispatcher terpisah. At-least-once; konsumen men-dedupe dengan `event_id` (MVP Pack §12) | Proposed | FR-EXP-003 |
-| ADR-08 | **OpenAPI-first**: `contracts/openapi/openapi.yaml` direview lebih dulu. Server Go di-generate dengan **oapi-codegen (strict-server)** di atas `net/http` (routing 1.22+). Client TS untuk Next.js di-generate dari spec yang sama (`openapi-typescript` + `openapi-fetch`) ke `packages/api-client`. Next.js hanya UI; API Go disajikan same-origin di `/api` via Traefik (tanpa CORS) | Web dan integrasi butuh kontrak stabil (MVP Pack §12) | Code-first (spec dihasilkan dari kode) | Handler wajib memenuhi interface hasil generate. CI: regenerasi tanpa diff + `oasdiff` untuk breaking change. Schemathesis menguji kontrak | Proposed | PRD §12.2 |
+| ADR-07 | **Outbox = River insert transaksional**: perubahan domain + baris `platform.event` + job `event.dispatch` di-commit dalam **satu transaksi** (`InsertTx`). Worker dispatch melakukan fan-out ke handler internal dan webhook delivery | Event tidak boleh hilang atau terkirim tanpa commit (dual-write) | Tabel outbox + dispatcher polling; publish ke broker setelah commit | Tanpa komponen dispatcher terpisah. At-least-once; konsumen men-dedupe dengan `id` event (envelope §12.1, header `MSP-Event-Id`; MVP Pack §12) | Proposed | FR-EXP-003 |
+| ADR-08 | **OpenAPI-first**: `contracts/openapi/openapi.yaml` direview lebih dulu. Server Go di-generate dengan **oapi-codegen (strict-server)** di atas `net/http` (routing 1.22+). Client TS untuk Next.js di-generate dari spec yang sama (`openapi-typescript` + `openapi-fetch`) ke `packages/api-client`. Next.js hanya UI; API Go disajikan same-origin di `/api` via Traefik (tanpa CORS) | Web dan integrasi butuh kontrak stabil (MVP Pack §12) | Code-first (spec dihasilkan dari kode) | Handler wajib memenuhi interface hasil generate. CI: regenerasi tanpa diff + `oasdiff` untuk breaking change. Schemathesis menguji kontrak. Spec ditulis dalam **OpenAPI 3.1**, tetapi dukungan 3.1 di oapi-codegen masih awal (sejak v2.8.0, butuh Go ≥ 1.25), sehingga spec hanya memakai fitur yang didukung generator; spike Sprint 0 memvalidasi toolchain, fallback 3.0.3 (TQ-18) | Proposed | PRD §12.2 |
 | ADR-09 | **Abstraksi provider AI** (port `LLMProvider`, alias model dapat dikonfigurasi) + **grounding validator** deterministik + redaksi PII | Biaya, eval, dan risiko halusinasi (G-14) | Panggil SDK provider langsung dari endpoint | Provider bisa diganti tanpa ubah domain. Adapter memakai SDK Go resmi provider. Alias default: kelas Sonnet (brief), kelas Haiku (klasifikasi) | Proposed (provider: Open) | D-15, FR-AI-001..006 |
 | ADR-10 | **Credit ledger double-entry append-only** dengan akun `available`/`held`/`consumed` dan alur *hold → capture/release* | Idempotensi, refund, dan rekonsiliasi 100% (RG-4) | Kolom saldo yang di-update langsung | Saldo = Σ ledger. Operasi gagal → release (tanpa tagihan) | Proposed | D-08, FR-BILL-001..005 |
 | ADR-11 | Error **RFC 9457 `application/problem+json`** + katalog `code` stabil | Error berkode wajib untuk entitlement (FR-BILL-003) | Format error ad-hoc | Client menangani error berdasarkan `code`, bukan teks | Proposed | FR-BILL-003 |
@@ -133,7 +133,7 @@ Semua ADR berstatus **Proposed** kecuali ditandai lain. Kolom "Ref" menautkan ke
 | Host | Peran | Layanan | Catatan |
 |---|---|---|---|
 | `app-01` | Aplikasi | traefik, web, api, kratos, worker pools (River), redis (opsional), unbound, smokescreen, otel-collector | SPOF di MVP (99,5% masih tercapai dengan restore cepat). `app-02` ditambahkan untuk HA (Traefik di dua node + DNS failover/VRRP, Redis replica + Sentinel) |
-| `db-01` | DB primary | PostgreSQL 16 + PostGIS, PgBouncer (transaction mode), pgBackRest, postgres_exporter | Satu-satunya target write. Juga menyimpan antrean River |
+| `db-01` | DB primary | PostgreSQL 16 + PostGIS, PgBouncer (transaction mode, untuk trafik request API), pgBackRest, postgres_exporter | Satu-satunya target write. Juga menyimpan antrean River; client River (worker) terhubung langsung ke `:5432`, bukan lewat PgBouncer (§17.4) |
 | `db-02` | DB replica | Hot standby (streaming, async), `hot_standby_feedback=on` | Melayani read search/profil. Failover manual via runbook (Patroni dipertimbangkan saat ada node ketiga) |
 | `stor-01` | Object storage | SeaweedFS single-node (master, volume, filer, S3 gateway) di atas RAID10 + LUKS. Erasure coding/replikasi SeaweedFS saat ada node kedua | Bucket privat, presigned URL via `files.<domain>`. Replikasi off-site via `weed filer.sync` |
 | `ops-01` | Ops | GitLab CE + registry, Prometheus, Alertmanager, Grafana, Loki, Tempo, GlitchTip, Tang | Detail CI di `06-ci-cd.md` |
@@ -567,7 +567,7 @@ Memenuhi D-03, D-05, BR-TRUST, MVP-01..03, FR-AUD-006, dan NFR-DATA-01.
 | `ops` | Internal (sebagian ber-`workspace_id`) | ops | DSR, laporan data, metrik |
 
 Konvensi:
-- **ID:** `uuid` (UUIDv7, dibangkitkan aplikasi). Di API diekspos sebagai `prefix_` + 26 karakter base32 Crockford (ADR-14). Prefix: `wsp usr mem inv cmp est per cpt evd src snp ofr icp lst seg tag nte asg upl exp whe whd evt job brf use led unl aud dsr rpt mrg`. Kode wilayah memakai natural key Kemendagri.
+- **ID:** `uuid` (UUIDv7, dibangkitkan aplikasi). Di API diekspos sebagai `prefix_` + 26 karakter base32 Crockford (ADR-14). Prefix: `wsp usr mem inv cmp est per cpt evd src snp ofr icp gap lst seg tag nte asg upl upr exp whe whd evt job brf use led unl aud dsr rpt mrg` (`gap` = gap fact §8.2, `upr` = private prospect dari baris upload §10.9). Kode wilayah memakai natural key Kemendagri.
 - **Waktu:** `timestamptz` dalam UTC (NFR-L10N-01). Tanggal referensi data disimpan sebagai teks periode (`2025-S1`).
 - **Enum stabil** memakai PostgreSQL `ENUM`. Daftar yang sering berubah (alasan reject, kode opportunity) memakai `text` + validasi aplikasi/katalog.
 - **Tenant table:** kolom pertama `workspace_id uuid NOT NULL`, RLS `ENABLE` + `FORCE`, dan setiap index diawali `workspace_id`.
@@ -1468,12 +1468,22 @@ Memenuhi MVP Pack §12 (diperluas), FR-AUTH-004, FR-BILL-001/003/004, FR-EXP-*, 
 | 409 | `CONFLICT`, `IDEMPOTENCY_IN_PROGRESS`, `CURSOR_STALE`, `VERSION_MISMATCH` | — |
 | 413/422 | `UPLOAD_TOO_LARGE`, `UPLOAD_INVALID`, `WEBHOOK_URL_REJECTED` (SSRF), `IDEMPOTENCY_KEY_REUSED` | — |
 | 429 | `RATE_LIMITED`, `FAIR_USE_EXCEEDED` | — |
+| 500 | `INTERNAL_ERROR` | Error tak terduga (tanpa kode domain, panic). Respons generik: `title`/`detail` tetap, hanya `correlation_id` untuk pelacakan; tidak pernah memuat pesan error asli, stack trace, SQL, nama host, atau detail internal lain (NFR-SEC-01). Dilaporkan ke GlitchTip |
 | 502/503/504 | `AI_GROUNDING_FAILED`, `AI_UNAVAILABLE`, `FEATURE_DISABLED` (kill switch), `DEPENDENCY_TIMEOUT` | — |
 
 ```json
 { "type": "https://docs.mesinprospek.id/errors/insufficient-credits", "title": "Credit tidak cukup", "status": 402,
   "code": "INSUFFICIENT_CREDITS", "detail": "Butuh 120 credit, saldo tersedia 80.",
   "instance": "/v1/exports", "correlation_id": "c0f3…", "required": 120, "available": 80 }
+```
+
+**Error validasi (422 `VALIDATION_FAILED`).** Sesuai aturan *extension member* RFC 9457 (§3.2: member tambahan boleh ditambahkan, client yang tidak mengenalnya wajib mengabaikannya), problem validasi membawa extension `errors[]` dengan satu entri per pelanggaran: `pointer` (JSON Pointer RFC 6901 ke lokasi di body) **atau** `field` (nama query/path/header parameter), `code` (kode validasi stabil, mis. `REQUIRED`, `TOO_LONG`, `ENUM_INVALID`, `FORMAT_INVALID`), dan `detail` (pesan terlokalisasi, aman dibaca user). Skema `Problem` dan `ValidationProblem` didefinisikan sekali di OpenAPI dan dirujuk semua operasi.
+
+```json
+{ "type": "https://docs.mesinprospek.id/errors/validation-failed", "title": "Input tidak valid", "status": 422,
+  "code": "VALIDATION_FAILED", "instance": "/v1/icps", "correlation_id": "c0f3…",
+  "errors": [ { "pointer": "/criteria/categories/0", "code": "ENUM_INVALID", "detail": "Kategori tidak dikenal." },
+              { "field": "limit", "code": "OUT_OF_RANGE", "detail": "Maksimal 100." } ] }
 ```
 
 ### 11.3 Idempotensi (BR-CRED-04, FR-BILL-001)
@@ -1619,7 +1629,7 @@ err := tenancy.WithTx(ctx, ws, func(tx pgx.Tx) error {
 })
 ```
 
-- Event dan job `event.dispatch` di-commit **atomik** dengan perubahan domain. Rollback → tidak ada event. Tidak ada dispatcher polling terpisah: River membangunkan worker via `LISTEN/NOTIFY` (latensi sub-detik).
+- Event dan job `event.dispatch` di-commit **atomik** dengan perubahan domain. Rollback → tidak ada event. Tidak ada dispatcher polling terpisah: River membangunkan worker via `LISTEN/NOTIFY` (latensi sub-detik). `InsertTx` dari `api` berjalan di transaksi aplikasi (lewat PgBouncer; `NOTIFY` aman di transaction mode), sedangkan client River di worker memakai koneksi langsung ke db-01 karena `LISTEN` butuh koneksi tingkat sesi (§17.4).
 - Worker `event.dispatch`: (1) meng-*enqueue* job per handler internal yang terdaftar (`UniqueOpts` per `(event_id, consumer)` → dedupe); (2) untuk event yang dapat di-webhook, membuat `webhook_delivery(PENDING)` untuk setiap endpoint aktif yang berlangganan + job `webhook.deliver`. Semuanya dalam satu transaksi.
 - Handler internal harus idempoten (upsert pada natural key). `platform.event` disimpan 30 hari (sumber payload untuk *redeliver* dan audit pengiriman). Job `completed` dibersihkan River setelah 24 jam.
 
@@ -1648,7 +1658,7 @@ Tiga lapis, karena dedicated server tidak memiliki security group cloud (D-19):
    - **Pemeriksaan saat connect:** `http.Transport` memakai `net.Dialer{Control: netguard.Check}` yang memvalidasi IP tujuan pada **setiap koneksi** (termasuk koneksi baru akibat redirect pada klien yang mengizinkan redirect). Dengan begitu DNS rebinding antara validasi dan koneksi tidak lolos. Di produksi, satu-satunya tujuan dial adalah Smokescreen (alamat proxy di-allowlist di `Control`), dan Smokescreen yang memeriksa IP akhir. Mode direct (dev/fallback) menjalankan pemeriksaan penuh di `Control`.
    - Redirect **dimatikan** untuk webhook (`CheckRedirect` → `http.ErrUseLastResponse`; 3xx = gagal, dicatat). TLS diverifikasi (minimal TLS 1.2). Timeout connect 3 s, total 10 s. Respons maksimal 64 KB. Tanpa dekompresi.
 2. **Egress proxy Smokescreen**: `worker-webhook` hanya dapat keluar lewat `smokescreen:4750` (HTTP CONNECT). Smokescreen me-resolve sendiri dan menolak IP privat/terlarang (mencegah DNS rebinding/TOCTOU). ACL per role: `webhook` = internet publik minus daftar blok; `ai` = allowlist host provider LLM; `mail` = host SMTP provider.
-3. **nftables di host** (chain `DOCKER-USER`/forward): subnet network `webhook-net` hanya boleh ke `smokescreen`, PgBouncer `db-01:6432`, dan Redis. Container Smokescreen hanya boleh keluar ke internet publik, dengan blok eksplisit untuk RFC1918, CGNAT, link-local/metadata, loopback, multicast, dan subnet LAN DC. Container lain default-deny egress internet, kecuali Unbound (53/udp+tcp) dan Traefik (ACME).
+3. **nftables di host** (chain `DOCKER-USER`/forward): subnet network `webhook-net` hanya boleh ke `smokescreen`, PostgreSQL primary `db-01:5432` (koneksi langsung client River + pool kecil khusus, §17.4), PgBouncer `db-01:6432`, dan Redis. Container worker lain dan `migrate` juga diizinkan ke `db-01:5432`; container `api` hanya ke PgBouncer `db-01:6432` dan replica `db-02:5432`. Container Smokescreen hanya boleh keluar ke internet publik, dengan blok eksplisit untuk RFC1918, CGNAT, link-local/metadata, loopback, multicast, dan subnet LAN DC. Container lain default-deny egress internet, kecuali Unbound (53/udp+tcp) dan Traefik (ACME).
 
 Fixture uji SSRF (05): URL ke IP privat, nama yang resolve ke 127.0.0.1, rebinding, redirect ke metadata, IPv6-mapped, port terlarang. Semua harus ditolak.
 
@@ -1825,7 +1835,7 @@ Ada tiga lapis: (1) RLS + role DB (§5.8); (2) repository selalu memfilter `work
 
 - **In transit:** TLS 1.2+ di Traefik (sertifikat ACME). LAN: PostgreSQL `sslmode=verify-full` (CA internal), Redis TLS + ACL, S3 gateway SeaweedFS via HTTPS, gRPC internal SeaweedFS dengan mTLS (`security.toml`).
 - **At rest:** LUKS2 full-disk di semua server (unlock otomatis via Clevis/Tang di ops-01, fallback passphrase dari konsol remote). Repo pgBackRest `repo-cipher-type=aes-256-cbc`. Object storage: LUKS di stor-01 (wajib) + enkripsi data volume SeaweedFS bila lolos verifikasi PoC (kunci dikelola SOPS). Semantik SSE-S3 tidak diasumsikan (TQ-17).
-- **Secret:** SOPS + age di repo infra. Kunci privat age hanya ada di host deploy. Deploy (Ansible) mendekripsi ke `/run/msp/secrets/*.env` (tmpfs, 0600) → `env_file`/Docker secrets. Rotasi dicatat. Secret scanning di CI (NFR-SEC-04).
+- **Secret:** SOPS + age di repo infra. Kunci privat age hanya ada di runner deploy. Deploy (Ansible) mendekripsi setiap secret menjadi **file** di tmpfs `/run/msp/<warna>/` (0400) yang di-mount sebagai Compose `secrets:` (`/run/secrets/<nama>`); binary membacanya lewat `MSP_<NAMA>_FILE` (§18.1, `06-ci-cd.md` §12.3). Nilai secret tidak pernah dikirim sebagai env biasa. Rotasi dicatat. Secret scanning di CI (NFR-SEC-04).
 - **Secret webhook:** AES-256-GCM di aplikasi dengan master key berversi (`secret_kid`). Dekripsi hanya di `worker-webhook` dan endpoint `rotate-secret`.
 
 ### 15.5 Audit log (FR-AUD-001/002, I-14)
@@ -1998,7 +2008,7 @@ Semua container `msp` memakai image yang sama dengan subcommand berbeda.
 
 ### 17.4 Baseline PostgreSQL
 
-`max_connections` 300 (PgBouncer `default_pool_size` 40), `work_mem` 32–64 MB, `maintenance_work_mem` 4 GB, `max_parallel_workers_per_gather` 4, `max_parallel_maintenance_workers` 8, `random_page_cost` 1.1 (NVMe), `wal_compression` on, `archive_mode` on (pgBackRest async archive-push), autovacuum agresif untuk `score`, `river_job`, `event`, `webhook_delivery`, `stage_run`. River memakai **koneksi langsung** ke db-01 (bukan lewat PgBouncer transaction mode) untuk `LISTEN/NOTIFY` dan leader election, sedangkan query aplikasi lewat PgBouncer. Data bulk (score, projection) memakai `COPY`.
+`max_connections` 300 (PgBouncer `default_pool_size` 40), `work_mem` 32–64 MB, `maintenance_work_mem` 4 GB, `max_parallel_workers_per_gather` 4, `max_parallel_maintenance_workers` 8, `random_page_cost` 1.1 (NVMe), `wal_compression` on, `archive_mode` on (pgBackRest async archive-push), autovacuum agresif untuk `score`, `river_job`, `event`, `webhook_delivery`, `stage_run`. **PgBouncer vs River:** trafik request API memakai PgBouncer transaction mode (RLS memakai `set_config(…, true)` = `SET LOCAL`, sehingga kompatibel; `InsertTx` River dari api ikut transaksi ini). Setiap proses yang menjalankan client River (`msp worker`: fetch, `LISTEN/NOTIFY`, leader election, periodic job) terhubung **langsung** ke primary `db-01:5432` dengan pool kecil khusus (`MSP_DATABASE_URL_DIRECT_FILE`, ±4 koneksi per container), karena `LISTEN` membutuhkan koneksi tingkat sesi yang rusak di transaction pooling; query domain worker tetap boleh lewat PgBouncer. Fallback terdokumentasi bila koneksi langsung tidak tersedia: River `PollOnly` (`MSP_RIVER_POLL_ONLY=true`, tanpa `LISTEN`; latensi = interval poll). `msp migrate` juga memakai koneksi langsung. Data bulk (score, projection) memakai `COPY`.
 
 ### 17.5 Bottleneck & mitigasi
 
