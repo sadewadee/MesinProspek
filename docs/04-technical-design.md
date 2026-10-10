@@ -112,31 +112,31 @@ Semua ADR berstatus **Proposed** kecuali ditandai lain. Kolom "Ref" menautkan ke
                    |   worker-pipeline  worker-scoring  worker-export  worker-ai  worker-maintenance |
                    |   (`msp worker --queues=…`; River: retry, periodic job, leader election)        |
                    |   worker-webhook --(hanya)--> smokescreen (egress proxy) --nftables--> Internet |
-                   |   redis (cache/rate limit, opsional)  unbound (resolver DNS)  otel-collector    |
+                   |   pgbouncer -> db-primary.internal  redis (opsional)  unbound  otel  wg-admin#2 |
                    +============================+======================+===========================+
                                 LAN privat (VLAN) |                      |
               +-------------------+--------------+                      |
               v                   v                                     v
    +----- db-01 -----+  stream  +----- db-02 -----+          +-------- stor-01 --------+
-   | PostgreSQL 16   |--------->| hot standby     |          | SeaweedFS (S3 gateway)  |
+   | PostgreSQL 16   |--------->| hot standby     |          | SeaweedFS S3 gw + Tang#2|
    | PostGIS, pgtrgm |   WAL    | (read replica:  |          | msp-snapshots           |
-   | PgBouncer       |          |  search/profil) |          | msp-uploads, msp-exports|
+   | db-primary(DNS) |          |  search/profil) |          | msp-uploads, msp-exports|
    | pgBackRest -----+----------+-----------------+--------->| msp-tiles, pgbackrest   |
    +-----------------+                                       +-------------------------+
                      +-------------- ops-01 --------------+   +---- ci-01 ----+
                      | GitLab CE + registry | Prometheus  |   | GitLab runners|
                      | Grafana, Loki, Tempo, Alertmanager |   +---------------+
-                     | GlitchTip | Tang (unlock LUKS)     |
+                     | GlitchTip | Tang#1, WireGuard#1    |
                      +------------------------------------+
 ```
 
 | Host | Peran | Layanan | Catatan |
 |---|---|---|---|
-| `app-01` | Aplikasi | traefik, web, api, kratos, worker pools (River), redis (opsional), unbound, smokescreen, otel-collector | MVP 0–M-2: `app-01` tunggal, SPOF (restore cepat via Ansible). `app-02` aktif sebelum M-3 (R-08) untuk HA (Traefik di dua node + DNS failover/VRRP, Redis replica + Sentinel) |
-| `db-01` | DB primary | PostgreSQL 16 + PostGIS, PgBouncer (transaction mode, untuk trafik request API), pgBackRest, postgres_exporter | Satu-satunya target write. Juga menyimpan antrean River; client River (worker) terhubung langsung ke `:5432`, bukan lewat PgBouncer (§17.4) |
+| `app-01` | Aplikasi | traefik, web, api, kratos, worker pools (River), **pgbouncer** (lokal, transaction mode → `db-primary.internal:5432`), redis (opsional), unbound (juga menyajikan `db-primary.internal`), smokescreen, otel-collector, endpoint **WireGuard cadangan** (hanya peer admin, §15.4) | MVP 0–M-2: `app-01` tunggal, SPOF (restore cepat via Ansible). `app-02` aktif sebelum M-3 (R-08) untuk HA (Traefik di dua node + DNS failover/VRRP, Redis replica + Sentinel) |
+| `db-01` | DB primary | PostgreSQL 16 + PostGIS, pgBackRest, postgres_exporter | Satu-satunya target write, selalu dirujuk lewat nama internal **`db-primary.internal`** (record Unbound/hosts di setiap app host), sehingga failover cukup memindahkan nama ini (§17.6). Juga menyimpan antrean River; client River (worker) terhubung langsung ke `db-primary.internal:5432`, bukan lewat PgBouncer (§17.4). PgBouncer berjalan di setiap app host, bukan di host DB (tidak ikut mati bersama primary) |
 | `db-02` | DB replica | Hot standby (streaming, async), `hot_standby_feedback=on` | Melayani read search/profil. Failover manual via runbook (Patroni dipertimbangkan saat ada node ketiga) |
-| `stor-01` | Object storage | SeaweedFS single-node (master, volume, filer, S3 gateway) di atas RAID10 + LUKS. Erasure coding/replikasi SeaweedFS saat ada node kedua | Bucket privat, presigned URL via `files.<domain>`. Replikasi off-site via `weed filer.sync` |
-| `ops-01` | Ops | GitLab CE + registry, Prometheus, Alertmanager, Grafana, Loki, Tempo, GlitchTip, Tang | Detail CI di `06-ci-cd.md` |
+| `stor-01` | Object storage | SeaweedFS single-node (master, volume, filer, S3 gateway) di atas RAID10 + LUKS. Erasure coding/replikasi SeaweedFS saat ada node kedua. **Tang #2** (unlock LUKS, §15.4) | Bucket privat, presigned URL via `files.<domain>`. Replikasi off-site via `weed filer.sync` |
+| `ops-01` | Ops | GitLab CE + registry, Prometheus, Alertmanager, Grafana, Loki, Tempo, GlitchTip, Tang #1, WireGuard utama | Detail CI di `06-ci-cd.md`. Bukan SPOF untuk akses admin dan unlock LUKS: Tang #2 di `stor-01`, WireGuard cadangan di `app-01`, konsol out-of-band provider (§15.4) |
 | `ci-01` | CI | GitLab runners | — |
 
 ### 2.3 Contoh alur request
@@ -168,7 +168,7 @@ Semua ADR berstatus **Proposed** kecuali ditandai lain. Kolom "Ref" menautkan ke
 
 ```
 apps/api/
-  cmd/msp/                 main: subcommand `api`, `worker`, `migrate`, dan `tool …` (ops: healthcheck, snapshot-load, snapshot-publish, score-model-activate, score-reproduce, taxonomy-suggest; dipakai pipeline `06-ci-cd.md`)
+  cmd/msp/                 main: subcommand `api`, `worker`, `migrate`, dan `tool …` (ops: healthcheck, snapshot-load, snapshot-publish (juga re-publish snapshot `SUPERSEDED`, §4.2), score-model-activate [--to <versi-sebelumnya> = rollback], geo-activate, prompt-activate, score-reproduce, taxonomy-suggest, ledger-reconcile, dlq-redrive --queue --filter (bulk), credit-refund; dipakai pipeline `06-ci-cd.md` dan runbook `09`; aksi yang mengubah state selalu menulis `audit_log`)
   internal/
     app/                   composition root: wiring server HTTP (oapi-codegen strict), client + worker River, DAG pipeline, config
     platform/              auth, tenancy, rbac, audit, flags, events, jobs (helper River, DAG runner), idempotency, netguard,
@@ -216,7 +216,7 @@ Nama schema Postgres sama dengan nama modul (`intelligence` → schema `intel`).
 | `geo` | Referensi wilayah, crosswalk, penetapan area, metrik area global, fungsi formula, tile | `geo`: area_set, area, area_boundary, area_population, area_crosswalk, establishment_area, area_metric | `Assign`, `AreaMetrics`, `MarketOpportunity` (fungsi murni) | intelligence-service (geo) |
 | `query` | Projection `prospect_search`, search/filter/sort/count, perakitan profil + masking, saved search, private prospect | `query`: prospect_search, private_prospect_search, saved_search | `Search`, `GetProfile`, `Count` | query-service |
 | `action` | List, segment, tag, catatan, assignment, status kerja, export, webhook (endpoint + delivery), activity, orkestrasi refresh | `action`: list, list_item, segment, tag, prospect_tag, note, assignment, prospect_status, export_job, distribution_log, webhook_endpoint, webhook_delivery, activity | `Export`, `SendToWebhook`, `RecordActivity` | action-service |
-| `ai` | Port provider, prompt registry, input builder, grounding validator, cache, biaya | `ai`: ai_artifact, ai_call | `GenerateBrief` | intelligence-service (AI) |
+| `ai` | Port provider, prompt registry, input builder, grounding validator, cache, biaya | `ai`: ai_artifact, ai_call, prompt_version | `GenerateBrief` | intelligence-service (AI) |
 | `usage` | Plan, entitlement, fair-use, usage event, ledger, hold/capture, unlock, refund | `usage`: plan, plan_entitlement, subscription, credit_lot, credit_ledger, credit_balance, usage_event, unlock, profile_view | `Hold`, `Capture`, `Release`, `UnlockCompanies`, `CheckEntitlement` | usage-service |
 | `ops` | API konsol internal: data/pipeline/intelligence/cost health, DLQ (job River `discarded`), merge review, admin tenant, support access, DSR, laporan data | `ops`: data_issue_report, data_subject_request, metric_snapshot | (konsumen saja) | ops-console |
 
@@ -318,6 +318,8 @@ Guardrail Rev 1.2 §8 (data turunan Google Places) dan BR-PRIV-04 diterapkan **h
 ### 4.2 Siklus hidup dataset snapshot (G-19)
 
 ```
+                                                                                       + re-publish / rollback (ops, audit) -+
+                                                                                       v                                     |
  register (ops)        job validate           ops approve + pipeline_run selesai          snapshot berikutnya publish
 STAGED ---------> VALIDATING ---------> VALIDATED -------------------------------> PUBLISHED --------------------------> SUPERSEDED
                       |                     |
@@ -330,7 +332,7 @@ STAGED ---------> VALIDATING ---------> VALIDATED ------------------------------
 | `VALIDATING` | Parse + mapping + validasi berjalan | Mengisi partisi `ingest.observation` baru dan `validation_report` |
 | `VALIDATED` | Laporan siap; gate dievaluasi | Ops meninjau. Override gate wajib alasan (audit). Pipeline (§6) dijalankan pada state ini |
 | `PUBLISHED` | `pipeline_run` sukses sampai swap projection | `current_snapshot` untuk source diperbarui → event `snapshot.published` → re-score fan-out (§7.9) |
-| `SUPERSEDED` | Snapshot lebih baru sudah publish | Partisi observation dipertahankan sesuai `observation_online_snapshots`, lalu di-detach dan diarsip ke object storage (Parquet) |
+| `SUPERSEDED` | Snapshot lebih baru sudah publish | Partisi observation dipertahankan sesuai `observation_online_snapshots`, lalu di-detach dan diarsip ke object storage (Parquet). **Re-publish** (`SUPERSEDED → PUBLISHED`, rollback snapshot): hanya ops/Maintainer, alasan wajib, teraudit (`POST /v1/ops/snapshots/{id}/publish` atau `msp tool snapshot-publish`); snapshot yang sedang aktif menjadi `SUPERSEDED`, `current_snapshot` dipindah, lalu recompute skor stale + rebuild projection seperti publish biasa. Partisi yang sudah diarsip dipasang kembali dari Parquet lebih dulu |
 | `REJECTED` | Ditolak | Partisi di-drop. File mentah disimpan untuk audit sesuai retensi |
 
 Gate default (dapat dikonfigurasi per source):
@@ -1448,7 +1450,7 @@ Memenuhi MVP Pack §12 (diperluas), FR-AUTH-004, FR-BILL-001/003/004, FR-EXP-*, 
 | Pagination | Cursor (`?cursor=&limit=` maks 100) → `{items, next_cursor, count?}` |
 | Idempotensi | Header `Idempotency-Key` (UUID/ULID, ≤ 64 karakter) **wajib** di semua POST berbayar dan disarankan di POST lainnya (§11.3) |
 | Async | `202 Accepted` + `Location: /v1/jobs/{id}` (atau resource spesifik) + body job `{id, type, status, progress{done,total}, result, error}` |
-| Rate limit | Token bucket Redis per user + per workspace: search 60/mnt/user, profil 120/mnt/user, default 600/mnt/workspace, export 10/jam/workspace. Header `RateLimit-Policy`, `RateLimit`, `Retry-After` |
+| Rate limit | Token bucket Redis per user + per workspace: search 60/mnt/user, profil 120/mnt/user, default 600/mnt/workspace, export 10/jam/workspace. Header `RateLimit-Policy`, `RateLimit`, `Retry-After`. **Redis down:** fail-open ke limiter in-process per replika api dengan batas lebih rendah (50% dari batas di atas per replika), dan counter fair-use dibaca dari Postgres (§14.4) |
 | ETag | Opsional: `ETag` pada profil (hash `entity_seq`, epoch, status unlock) → `If-None-Match` → 304. `If-Match` pada PUT ICP/Offering mencegah *lost update* |
 | Lokal | `Accept-Language: id-ID` (default) / `en-US` untuk `title` error dan rationale |
 | Korelasi | `MSP-Correlation-Id` diterima/dibangkitkan dan dikembalikan di setiap respons |
@@ -1469,7 +1471,7 @@ Memenuhi MVP Pack §12 (diperluas), FR-AUTH-004, FR-BILL-001/003/004, FR-EXP-*, 
 | 413/422 | `UPLOAD_TOO_LARGE`, `UPLOAD_INVALID`, `WEBHOOK_URL_REJECTED` (SSRF), `IDEMPOTENCY_KEY_REUSED` | — |
 | 429 | `RATE_LIMITED`, `FAIR_USE_EXCEEDED` | — |
 | 500 | `INTERNAL_ERROR` | Error tak terduga (tanpa kode domain, panic). Respons generik: `title`/`detail` tetap, hanya `correlation_id` untuk pelacakan; tidak pernah memuat pesan error asli, stack trace, SQL, nama host, atau detail internal lain (NFR-SEC-01). Dilaporkan ke GlitchTip |
-| 502/503/504 | `AI_GROUNDING_FAILED`, `AI_UNAVAILABLE`, `FEATURE_DISABLED` (kill switch), `DEPENDENCY_TIMEOUT` | — |
+| 502/503/504 | `AI_GROUNDING_FAILED`, `AI_UNAVAILABLE`, `FEATURE_DISABLED` (kill switch), `MAINTENANCE_READ_ONLY` (flag `maintenance.read_only`, §18.3), `DEPENDENCY_TIMEOUT` | — |
 
 ```json
 { "type": "https://docs.mesinprospek.id/errors/insufficient-credits", "title": "Credit tidak cukup", "status": 402,
@@ -1563,14 +1565,14 @@ Role = role minimum (urutan Viewer < Member < Manager < Admin < Owner, mengikuti
 | GET | `/v1/audit-log` | Penampil audit | AUD-002 | — | Admin |
 | GET | `/v1/jobs`, `/v1/jobs/{id}` | Job export/upload/refresh: milik sendiri (Member) / semua job workspace (Manager+) | PRD §8.1.1 | — | Member |
 | POST | `/v1/public/data-subject-requests` | Intake DSR (tanpa login; captcha + verifikasi email) | AUD-004 | — | publik |
-| GET · POST · PATCH | `/v1/ops/sources`, `/v1/ops/snapshots`, `/{id}/validate`, `/{id}/report`, `/{id}/publish`, `/{id}/reject` | Source Registry & snapshot | DATA-001 | — | ops |
+| GET · POST · PATCH | `/v1/ops/sources`, `/v1/ops/snapshots`, `/{id}/validate`, `/{id}/report`, `/{id}/publish` (juga re-publish `SUPERSEDED`, §4.2), `/{id}/reject` | Source Registry & snapshot | DATA-001 | — | ops |
 | POST | `/v1/ops/reference/{areas,boundaries,population,crosswalk}/imports` | Import referensi wilayah | DATA-008 | — | ops |
-| GET · POST | `/v1/ops/pipeline-runs`, `/{id}`, `/v1/ops/dlq`, `/v1/ops/dlq/{id}/redrive` | Pipeline health, re-run stage, DLQ | OPS-002 | — | ops |
+| GET · POST | `/v1/ops/pipeline-runs`, `/{id}`, `/v1/ops/dlq`, `/v1/ops/dlq/{id}/redrive`, `/v1/ops/dlq/redrive` (bulk: filter `queue`, `kind`, rentang waktu; batch) | Pipeline health, re-run stage, DLQ | OPS-002 | — | ops |
 | GET | `/v1/ops/health/{data,pipeline,intelligence,cost}` | Dashboard internal | OPS-001..004 | — | ops |
 | GET · POST | `/v1/ops/merge-candidates`, `/{id}/decision`, `/v1/ops/entities/{id}/split` | Review merge/split | OPS-005, DATA-004 | — | ops |
 | GET · POST · DELETE | `/v1/ops/suppressions` | Suppression global | AUD-003 | — | ops |
 | GET · PATCH | `/v1/ops/data-subject-requests`, `/v1/ops/data-reports` | Antrean DSR & laporan data | OPS-008, AUD-004 | — | ops |
-| GET · POST · PUT | `/v1/ops/workspaces`, `/{id}/credit-grants`, `/{id}/plan`, `/v1/ops/support-access` | Admin tenant, grant credit, akses support | OPS-006, BILL-006 | — | ops |
+| GET · POST · PUT | `/v1/ops/workspaces`, `/{id}/credit-grants`, `/{id}/credit-refunds` (refund manual per `usage_event`, `Idempotency-Key`, alasan wajib; = `msp tool credit-refund`), `/{id}/plan`, `/v1/ops/support-access` | Admin tenant, grant/refund credit, akses support | OPS-006, BILL-006 | — | ops |
 | GET · PUT | `/v1/ops/feature-flags/{key}` · GET/POST `/v1/ops/score-models` | Flag & kill switch; versi model | OPS-007, INTL-009 | — | ops |
 
 \* Member hanya bila setting workspace `member_can_export = true` (PRD §8.1.1). Endpoint `/v1/ops/*` hanya untuk akun internal dengan MFA (FR-AUTH-006), memakai audience sesi terpisah, dan selalu diaudit. `GET /healthz` dan `GET /readyz` berada di luar `/v1`.
@@ -1629,7 +1631,7 @@ err := tenancy.WithTx(ctx, ws, func(tx pgx.Tx) error {
 })
 ```
 
-- Event dan job `event.dispatch` di-commit **atomik** dengan perubahan domain. Rollback → tidak ada event. Tidak ada dispatcher polling terpisah: River membangunkan worker via `LISTEN/NOTIFY` (latensi sub-detik). `InsertTx` dari `api` berjalan di transaksi aplikasi (lewat PgBouncer; `NOTIFY` aman di transaction mode), sedangkan client River di worker memakai koneksi langsung ke db-01 karena `LISTEN` butuh koneksi tingkat sesi (§17.4).
+- Event dan job `event.dispatch` di-commit **atomik** dengan perubahan domain. Rollback → tidak ada event. Tidak ada dispatcher polling terpisah: River membangunkan worker via `LISTEN/NOTIFY` (latensi sub-detik). `InsertTx` dari `api` berjalan di transaksi aplikasi (lewat PgBouncer; `NOTIFY` aman di transaction mode), sedangkan client River di worker memakai koneksi langsung ke `db-primary.internal` karena `LISTEN` butuh koneksi tingkat sesi (§17.4).
 - Worker `event.dispatch`: (1) meng-*enqueue* job per handler internal yang terdaftar (`UniqueOpts` per `(event_id, consumer)` → dedupe); (2) untuk event yang dapat di-webhook, membuat `webhook_delivery(PENDING)` untuk setiap endpoint aktif yang berlangganan + job `webhook.deliver`. Semuanya dalam satu transaksi.
 - Handler internal harus idempoten (upsert pada natural key). `platform.event` disimpan 30 hari (sumber payload untuk *redeliver* dan audit pengiriman). Job `completed` dibersihkan River setelah 24 jam.
 
@@ -1658,7 +1660,7 @@ Tiga lapis, karena dedicated server tidak memiliki security group cloud (D-19):
    - **Pemeriksaan saat connect:** `http.Transport` memakai `net.Dialer{Control: netguard.Check}` yang memvalidasi IP tujuan pada **setiap koneksi** (termasuk koneksi baru akibat redirect pada klien yang mengizinkan redirect). Dengan begitu DNS rebinding antara validasi dan koneksi tidak lolos. Di produksi, satu-satunya tujuan dial adalah Smokescreen (alamat proxy di-allowlist di `Control`), dan Smokescreen yang memeriksa IP akhir. Mode direct (dev/fallback) menjalankan pemeriksaan penuh di `Control`.
    - Redirect **dimatikan** untuk webhook (`CheckRedirect` → `http.ErrUseLastResponse`; 3xx = gagal, dicatat). TLS diverifikasi (minimal TLS 1.2). Timeout connect 3 s, total 10 s. Respons maksimal 64 KB. Tanpa dekompresi.
 2. **Egress proxy Smokescreen**: `worker-webhook` hanya dapat keluar lewat `smokescreen:4750` (HTTP CONNECT). Smokescreen me-resolve sendiri dan menolak IP privat/terlarang (mencegah DNS rebinding/TOCTOU). ACL per role: `webhook` = internet publik minus daftar blok; `ai` = allowlist host provider LLM; `mail` = host SMTP provider.
-3. **nftables di host** (chain `DOCKER-USER`/forward): subnet network `webhook-net` hanya boleh ke `smokescreen`, PostgreSQL primary `db-01:5432` (koneksi langsung client River + pool kecil khusus, §17.4), PgBouncer `db-01:6432`, dan Redis. Container worker lain dan `migrate` juga diizinkan ke `db-01:5432`; container `api` hanya ke PgBouncer `db-01:6432` dan replica `db-02:5432`. Container Smokescreen hanya boleh keluar ke internet publik, dengan blok eksplisit untuk RFC1918, CGNAT, link-local/metadata, loopback, multicast, dan subnet LAN DC. Container lain default-deny egress internet, kecuali Unbound (53/udp+tcp) dan Traefik (ACME).
+3. **nftables di host** (chain `DOCKER-USER`/forward): subnet network `webhook-net` hanya boleh ke `smokescreen`, PgBouncer lokal di host (`:6432`), PostgreSQL primary `db-primary.internal:5432` (koneksi langsung client River + pool kecil khusus, §17.4), dan Redis. Container worker lain dan `migrate` juga diizinkan ke `db-primary.internal:5432`; container `api` hanya ke PgBouncer lokal dan replica `db-02:5432`. Aturan memakai set IP **kedua** host DB sehingga tetap berlaku setelah `db-primary.internal` dipindah (§17.6). Container Smokescreen hanya boleh keluar ke internet publik, dengan blok eksplisit untuk RFC1918, CGNAT, link-local/metadata, loopback, multicast, dan subnet LAN DC. Container lain default-deny egress internet, kecuali Unbound (53/udp+tcp) dan Traefik (ACME).
 
 Fixture uji SSRF (05): URL ke IP privat, nama yang resolve ke 127.0.0.1, rebinding, redirect ke metadata, IPv6-mapped, port terlarang. Semua harus ditolak.
 
@@ -1687,7 +1689,7 @@ type LLMProvider interface {
 
 ### 13.2 Prompt registry
 
-`apps/api/internal/ai/prompts/{brief,sales_angle}/<semver>/` (di-*embed* via `embed.FS`) berisi `system.md`, `user.tmpl` (`text/template`), `output.schema.json`, dan `meta.yaml` (alias model, max_tokens, bahasa yang didukung, versi validator). Versi = `brief-1.0.0`, `angle-1.0.0`. Versi aktif dipilih lewat config. Perubahan prompt = versi baru + eval offline lulus (§13.7) sebelum diaktifkan. `ai_artifact` menyimpan `prompt_version` dan `provider_model` (label "Dibuat AI" + versi di UI, FR-AI-001).
+`apps/api/internal/ai/prompts/{brief,sales_angle}/<semver>/` (di-*embed* via `embed.FS`) berisi `system.md`, `user.tmpl` (`text/template`), `output.schema.json`, dan `meta.yaml` (alias model, max_tokens, bahasa yang didukung, versi validator). Versi = `brief-1.0.0`, `angle-1.0.0`. Versi aktif per jenis (`brief`, `angle`) dicatat di registry versi (`versions.lock` di repo + baris status `draft`/`active`/`retired` beserta sha256 di tabel `ai.prompt_version`, setara `intel.score_model`) dan diaktifkan dengan `msp tool prompt-activate` dari pipeline tag `brief-*`/`angle-*` (teraudit); rollback = mengaktifkan versi sebelumnya. Feature flag tidak dipakai untuk memilih versi prompt; flag AI hanya kill switch `ai.generation` (§18.3). Perubahan prompt = versi baru + eval offline lulus (§13.7) sebelum diaktifkan. `ai_artifact` menyimpan `prompt_version` dan `provider_model` (label "Dibuat AI" + versi di UI, FR-AI-001).
 
 ### 13.3 Input builder & redaksi (FR-AI-005, NFR-PRIV-04)
 
@@ -1798,7 +1800,7 @@ Saldo tersedia = Σ baris (`workspace`, `meter`, `available`). Konsumsi mengalok
 
 ### 14.4 Entitlement & fair-use (FR-BILL-003, BR-CRED-01)
 
-Middleware `usage.RequireEntitlement(key, increment)` (dipasang per operasi lewat metadata OpenAPI `x-msp-entitlement`) membaca plan + override + pemakaian berjalan (seat = anggota + undangan aktif; ICP tersimpan; endpoint webhook; baris export per job). Pelanggaran → `403 ENTITLEMENT_EXCEEDED {limit, current}`. Fair-use profil (BR-CRED-01): pada 100% kuota, search tetap berjalan. Membuka profil yang **belum** dibuka di siklus ini → `429 FAIR_USE_EXCEEDED` (dengan pesan upgrade). Profil yang sudah dibuka, sudah di-unlock, atau di-assign tetap dapat diakses. Ops dapat menaikkan batas (override, audit). `/v1/entitlements` mengembalikan batas + pemakaian + flag efektif untuk gating UI.
+Middleware `usage.RequireEntitlement(key, increment)` (dipasang per operasi lewat metadata OpenAPI `x-msp-entitlement`) membaca plan + override + pemakaian berjalan (seat = anggota + undangan aktif; ICP tersimpan; endpoint webhook; baris export per job). Pelanggaran → `403 ENTITLEMENT_EXCEEDED {limit, current}`. Fair-use profil (BR-CRED-01): pada 100% kuota, search tetap berjalan. Membuka profil yang **belum** dibuka di siklus ini → `429 FAIR_USE_EXCEEDED` (dengan pesan upgrade). Profil yang sudah dibuka, sudah di-unlock, atau di-assign tetap dapat diakses. Ops dapat menaikkan batas (override, audit). `/v1/entitlements` mengembalikan batas + pemakaian + flag efektif untuk gating UI. **Redis down:** counter fair-use dihitung dari Postgres (`usage.profile_view`, sumber kebenaran; Redis hanya cache counter), sehingga kuota tetap ditegakkan dengan latensi sedikit lebih tinggi; rate limit memakai fallback in-process (§11.1). Alert AL-16 (`09`).
 
 ### 14.5 Konkurensi (mencegah overspend)
 
@@ -1834,9 +1836,10 @@ Ada tiga lapis: (1) RLS + role DB (§5.8); (2) repository selalu memfilter `work
 ### 15.4 Secret & enkripsi (NFR-SEC-02/04, ADR-22)
 
 - **In transit:** TLS 1.2+ di Traefik (sertifikat ACME). LAN: PostgreSQL `sslmode=verify-full` (CA internal), Redis TLS + ACL, S3 gateway SeaweedFS via HTTPS, gRPC internal SeaweedFS dengan mTLS (`security.toml`).
-- **At rest:** LUKS2 full-disk di semua server (unlock otomatis via Clevis/Tang di ops-01, fallback passphrase dari konsol remote). Repo pgBackRest `repo-cipher-type=aes-256-cbc`. Object storage: LUKS di stor-01 (wajib) + enkripsi data volume SeaweedFS bila lolos verifikasi PoC (kunci dikelola SOPS). Semantik SSE-S3 tidak diasumsikan (TQ-17).
+- **At rest:** LUKS2 full-disk di semua server. Unlock otomatis via Clevis **SSS threshold 1-of-2** atas dua server Tang (**ops-01** dan **stor-01**), sehingga satu host Tang mati tidak menghalangi boot host lain (ops-01 sendiri di-unlock oleh Tang di stor-01, dan sebaliknya). Break-glass: konsol out-of-band provider (IPMI/KVM) + passphrase LUKS dari salinan offline, atau dropbear-initramfs. Repo pgBackRest `repo-cipher-type=aes-256-cbc`. Object storage: LUKS di stor-01 (wajib) + enkripsi data volume SeaweedFS bila lolos verifikasi PoC (kunci dikelola SOPS). Semantik SSE-S3 tidak diasumsikan (TQ-17).
 - **Secret:** SOPS + age di repo infra. Kunci privat age hanya ada di runner deploy. Deploy (Ansible) mendekripsi setiap secret menjadi **file** di tmpfs `/run/msp/<warna>/` (0400) yang di-mount sebagai Compose `secrets:` (`/run/secrets/<nama>`); binary membacanya lewat `MSP_<NAMA>_FILE` (§18.1, `06-ci-cd.md` §12.3). Nilai secret tidak pernah dikirim sebagai env biasa. Rotasi dicatat. Secret scanning di CI (NFR-SEC-04).
 - **Secret webhook:** AES-256-GCM di aplikasi dengan master key berversi (`secret_kid`). Dekripsi hanya di `worker-webhook` dan endpoint `rotate-secret`.
+- **Akses admin:** WireGuard utama di `ops-01` + **endpoint WireGuard cadangan** di `app-01` (port UDP terpisah, hanya peer admin/Maintainer, hanya boleh SSH ke host prod) sehingga `ops-01` mati tidak memutus akses admin. Konsol out-of-band provider (IPMI/KVM) adalah jalur break-glass terakhir untuk akses dan unlock (`09` RB-01).
 
 ### 15.5 Audit log (FR-AUD-001/002, I-14)
 
@@ -1873,13 +1876,13 @@ ops/DSR -> identity.suppression (+ value_hash) + event suppression.created      
    -> sweep per jam: kebocoran (nilai ter-suppress di projection, file export aktif, delivery pending) = 0 -> set propagated_at
 ```
 
-Data upload tenant **tidak** di-suppress otomatis karena tenant adalah pengendali data tersebut (MSP = prosesor). Permintaan subjek data atas data upload diteruskan ke tenant (§15.8), sedangkan nilai yang sama di global layer tetap di-suppress. Metrik `suppression_leak_count` > 0 atau `propagated_at − created_at` > 24 jam → alert.
+Data upload tenant **tidak** di-suppress otomatis karena tenant adalah pengendali data tersebut (MSP = prosesor). Permintaan subjek data atas data upload diteruskan ke tenant (§15.8), sedangkan nilai yang sama di global layer tetap di-suppress. Metrik `msp_suppression_leak_count` > 0 atau `msp_suppression_propagation_lag_seconds` > 86.400 (`propagated_at − created_at` > 24 jam) → alert.
 
 ### 15.8 DSR, laporan data, penutupan workspace
 
 - **DSR** (FR-AUD-004): intake form publik (captcha + verifikasi email pemohon) atau email ops → `ops.data_subject_request` (RECEIVED → VERIFYING → IN_PROGRESS → [FORWARDED_TO_TENANT] → COMPLETED | REJECTED). Subjek dicari via `value_hash`. Tipe akses (laporan data yang ada), koreksi (laporan data → ops), hapus/keberatan (suppression + penghapusan nilai P1 dari global). Pengakuan penerimaan ≤ 1 hari kerja (email otomatis). Tenggat per tipe dikonfigurasi berdasarkan review hukum (beberapa hak bertenggat 3×24 jam, FR-AUD-004) dan dipantau di FR-OPS-008. Bila subjek ditemukan di data upload tenant, permintaan diteruskan ke Owner/Admin workspace tersebut (notifikasi + status `FORWARDED_TO_TENANT`) dan dieksekusi atas instruksi tenant (BR-PRIV-02).
 - **Laporan data** (FR-DATA-014): `ops.data_issue_report` dengan `claim_ref`. Hasilnya bisa berupa koreksi ops (evidence `OPS_CORRECTION`, FR-OPS-009, §5.6), merge/split, atau tolak. Laporan yang mengonfirmasi kontak INVALID juga memicu cek refund BR-CRED-05.
-- **Penutupan workspace** (FR-AUD-005): `PENDING_DELETION` (akses diblokir kecuali Owner dapat membatalkan) → hari ke-30 job `purge_workspace` memanggil handler purge yang didaftarkan setiap modul (semua tabel tenant), menghapus prefix object storage `{ws}/`, key Redis, dan sesi → verifikasi hitungan = 0 → `audit(workspace.purged)`. **Pengecualian** (FR-AUD-005): `audit_log` serta `credit_ledger`/`usage_event` dipertahankan selama masa retensi hukum, lalu **dipseudonimkan** (ID aktor diganti HMAC ber-pepper, baris `audit_log_pii` dihapus, metadata P1 dibuang). Backup PITR menua dan keluar sesuai retensi pgBackRest (14 hari full + WAL), dan hal ini dinyatakan di kebijakan privasi.
+- **Penutupan workspace** (FR-AUD-005): `PENDING_DELETION` (akses diblokir kecuali Owner dapat membatalkan) → hari ke-30 job `purge_workspace` memanggil handler purge yang didaftarkan setiap modul (semua tabel tenant), menghapus prefix object storage `{ws}/`, key Redis, dan sesi → verifikasi hitungan = 0 → `audit(workspace.purged)`. **Pengecualian** (FR-AUD-005): `audit_log` serta `credit_ledger`/`usage_event` tidak dihapus, tetapi **dipseudonimkan saat purge hari ke-30** (ID aktor diganti HMAC ber-pepper, baris `audit_log_pii` dihapus, metadata P1 dibuang), lalu dipertahankan dalam bentuk pseudonim selama masa retensi hukum (TQ-14). Backup PITR menua dan keluar sesuai retensi pgBackRest (14 hari full + WAL), dan hal ini dinyatakan di kebijakan privasi.
 
 ### 15.9 Akses support (FR-OPS-006)
 
@@ -1922,9 +1925,10 @@ OTel Go SDK (`otelhttp` untuk server/klien HTTP, tracer pgx, middleware River ya
 | Data health (per snapshot, ditulis ke `ops.metric_snapshot`) | total company/establishment, verified contact rate, stale rate, duplicate candidate rate, merge review backlog/umur, evidence coverage, % kategori "Lainnya", % establishment ber-area |
 | Intelligence | Distribusi skor/band per `model_version`, distribusi coverage, % UNSCORED, opportunity acceptance per tipe, durasi job skor (p95), grounding pass rate |
 | Produk | Latensi search/profil p95/p99, time-to-first-result, actioned prospects/minggu (dari `activity`) |
-| Biaya | `msp_ai_cost_usd_total{prompt_version,model}`, biaya per brief, token, query DNS, biaya per enriched record |
-| Webhook | Attempt, success ratio, latensi, DLQ per endpoint (label = ID endpoint), endpoint disabled |
-| Billing/privasi | Selisih rekonsiliasi ledger, `suppression_leak_count`, lag propagasi suppression |
+| Biaya | `msp_ai_cost_usd_total{prompt_version,model}`, `msp_ai_briefs_total{outcome}`, biaya per brief, token, query DNS, biaya per enriched record |
+| Webhook | `msp_webhook_attempts_total{outcome}` (success ratio), latensi, DLQ per endpoint (label = ID endpoint), endpoint disabled |
+| Billing/privasi | Selisih rekonsiliasi ledger (`msp_ledger_reconciliation_mismatch`), `msp_suppression_leak_count`, `msp_suppression_propagation_lag_seconds` |
+| Keamanan | `msp_tenant_guard_violations_total` (cek aplikasi lintas tenant), `msp_ai_prompt_redaction_violations_total`, deny egress Smokescreen per role, kegagalan login/MFA (Kratos) |
 | Infra | Lag replikasi db-02, umur backup/WAL terakhir, disk/IO, memori Redis, sertifikat TLS kedaluwarsa |
 
 ### 16.4 SLO & alert (RG-5)
@@ -1941,6 +1945,19 @@ OTel Go SDK (`otelhttp` untuk server/klien HTTP, tracer pgx, middleware River ya
 | Suppression ≤ 24 jam | Leak > 0 atau lag > 24 jam | 1 j |
 | Ledger | Selisih rekonsiliasi ≠ 0 | harian |
 | Infra | Lag replika > 60 s; backup terakhir > 26 jam; WAL archive gagal; disk > 80% | 5 m |
+| Burn-rate (interpretasi) *(usulan, AL-01)* | Fast burn 2% budget/jam (14,4×, rasio 5xx > 7,2%) pada 1 j **dan** 5 m → page; slow burn 5% budget/6 jam (6×, rasio 5xx > 3%) pada 6 j → ticket | 1 j + 5 m / 6 j |
+| Probe & watchdog *(usulan, AL-03)* | `probe_success == 0` untuk `https://app.<domain>` (probe eksternal + blackbox); watchdog Alertmanager tidak diterima probe eksternal | 3 m / 10 m |
+| Lonjakan DLQ *(usulan, AL-06)* | `msp_dlq_size` naik > 20 per antrean | 15 m |
+| Budget AI *(usulan, AL-09)* | ≥ 80% budget harian → peringatan; 100% → kill switch otomatis (§13.7); budget direset 00:00 WIB | harian |
+| Disk (tren) *(usulan, AL-14)* | > 90% di `db-01`/`stor-01` atau `predict_linear` habis < 24 jam → page | 5 m |
+| SeaweedFS *(usulan, AL-15)* | Disk data > 80% atau slot volume bebas < 10%; lag `filer.sync` off-site > 1 jam | 15 m |
+| Redis down *(usulan, AL-16)* | `redis_up == 0` (mode degradasi §11.1, §14.4) | 2 m |
+| Sertifikat TLS *(usulan, AL-17)* | `probe_ssl_earliest_cert_expiry` < 21 hari (ticket) / < 7 hari (page), publik + internal | 1 j |
+| Egress deny *(usulan, AL-18)* | Deny Smokescreen role `webhook` > 10 per 15 menit atau > 5× baseline; deny apa pun untuk role `ai`/`mail` | 15 m |
+| Autentikasi *(usulan, AL-19)* | Login gagal > 50/5 menit global atau > 10/5 menit per akun/IP ter-hash; gagal MFA akun ops > 5/15 menit | 5–15 m |
+| Isolasi tenant *(usulan, AL-22)* | `msp_tenant_guard_violations_total` naik, atau SQLSTATE `42501` (RLS) dari role `msp_app` → page SEV1 | 1 m |
+| Audit *(usulan, AL-23)* | Verifikasi hash chain harian gagal atau ekspor audit harian gagal | harian |
+| Redaksi prompt *(usulan, AL-24)* | `msp_ai_prompt_redaction_violations_total` naik (panggilan di-abort) | 1 m |
 
 Drill alert di staging adalah bukti RG-5 (`05-test-strategy.md`).
 
@@ -1983,11 +2000,11 @@ Memenuhi NFR-SCAL-01 (5 juta establishment, ±84 ribu kelurahan/desa, 200 worksp
 | `app-01` (`app-02` identik, aktif sebelum M-3, R-08) | 32 core (64 thread) | 64 GB | 2 × 1,92 TB NVMe RAID1 | Worker pipeline memakai semua core saat run. Proses Go hemat memori (±1–4 GB per pool). Redis `maxmemory` 8 GB |
 | `db-01` | 32 core | 256 GB ECC | 4 × 1,92 TB NVMe RAID10 (±3,8 TB) | `shared_buffers` 64 GB, `effective_cache_size` 192 GB |
 | `db-02` | Sama dengan db-01 | 256 GB | Sama | Target failover + read search |
-| `stor-01` | 16 core | 64 GB | 4 × 8 TB SSD/HDD enterprise (RAID10 + LUKS → ±16 TB usable) + NVMe untuk OS dan metadata filer | SeaweedFS single-node. Object lock bila didukung (TQ-17) |
+| `stor-01` | 16 core | 64 GB | 4 × 8 TB SSD/HDD enterprise (RAID10 + LUKS → ±16 TB usable) + NVMe untuk OS dan metadata filer | SeaweedFS single-node. Object lock bila didukung (TQ-17). Tang #2 |
 | `ops-01` | 16 core | 64 GB | 2 × 3,84 TB NVMe RAID1 | GitLab + registry + stack observability |
 | `ci-01` | 16 core | 64 GB | 2 × 1,92 TB NVMe | Runner Docker |
 
-Jaringan: VLAN privat 10 GbE antar server, uplink publik hanya ke app-01 (dan ops-01 untuk akses GitLab via VPN/WireGuard). Backup off-site (repo2 pgBackRest + `weed filer.sync` ke cluster SeaweedFS kedua) ke lokasi kedua di Indonesia (Q-09).
+Jaringan: VLAN privat 10 GbE antar server, uplink publik hanya ke app-01 (juga endpoint WireGuard cadangan khusus peer admin) dan ops-01 (WireGuard utama untuk akses GitLab/admin). Akses out-of-band provider (IPMI/KVM) untuk semua host sebagai break-glass (§15.4). Backup off-site (repo2 pgBackRest + `weed filer.sync` ke cluster SeaweedFS kedua) ke lokasi kedua di Indonesia (Q-09).
 
 ### 17.3 Tata letak proses (app-01)
 
@@ -1997,18 +2014,19 @@ Semua container `msp` memakai image yang sama dengan subcommand berbeda.
 |---|---|---|---|
 | traefik | — | 1 | TLS, routing `/api` → api |
 | web (Next.js) | — | 2 replika | UI saja |
-| api | `msp api` | 2 replika (`GOMAXPROCS` 4) | Pool pgx 20/replika via PgBouncer. Blue/green via Traefik |
+| api | `msp api` | 2 replika (`GOMAXPROCS` 4) | Pool pgx 20/replika via PgBouncer lokal. Blue/green via Traefik |
 | worker-pipeline | `msp worker --queues=pipeline` | `MaxWorkers` 32 | Aktif penuh saat pipeline run |
 | worker-scoring | `msp worker --queues=scoring` | `MaxWorkers` 8 | Prioritas 1 (ICP interaktif) selalu didahulukan atas prioritas 4 (fan-out) |
 | worker-export | `msp worker --queues=export` | `MaxWorkers` 4 | Streaming multipart ke S3 API (SeaweedFS) |
 | worker-webhook | `msp worker --queues=webhook` | `MaxWorkers` 32 | Network terisolasi (§12.5) |
 | worker-ai | `msp worker --queues=ai` | `MaxWorkers` 16 | I/O bound |
 | worker-maintenance | `msp worker --queues=maintenance` | `MaxWorkers` 8 | Upload, email, refund, purge, periodic job (River leader election menggantikan scheduler) |
-| kratos, redis (opsional), unbound, smokescreen, otel-collector | — | 1 | — |
+| pgbouncer | — | 1 per app host | Transaction mode → `db-primary.internal:5432`; reload saat failover (§17.6) |
+| kratos, redis (opsional), unbound, smokescreen, otel-collector | — | 1 | Unbound menyajikan record internal `db-primary.internal` |
 
 ### 17.4 Baseline PostgreSQL
 
-`max_connections` 300 (PgBouncer `default_pool_size` 40), `work_mem` 32–64 MB, `maintenance_work_mem` 4 GB, `max_parallel_workers_per_gather` 4, `max_parallel_maintenance_workers` 8, `random_page_cost` 1.1 (NVMe), `wal_compression` on, `archive_mode` on (pgBackRest async archive-push), autovacuum agresif untuk `score`, `river_job`, `event`, `webhook_delivery`, `stage_run`. **PgBouncer vs River:** trafik request API memakai PgBouncer transaction mode (RLS memakai `set_config(…, true)` = `SET LOCAL`, sehingga kompatibel; `InsertTx` River dari api ikut transaksi ini). Setiap proses yang menjalankan client River (`msp worker`: fetch, `LISTEN/NOTIFY`, leader election, periodic job) terhubung **langsung** ke primary `db-01:5432` dengan pool kecil khusus (`MSP_DATABASE_URL_DIRECT_FILE`, ±4 koneksi per container), karena `LISTEN` membutuhkan koneksi tingkat sesi yang rusak di transaction pooling; query domain worker tetap boleh lewat PgBouncer. Fallback terdokumentasi bila koneksi langsung tidak tersedia: River `PollOnly` (`MSP_RIVER_POLL_ONLY=true`, tanpa `LISTEN`; latensi = interval poll). `msp migrate` juga memakai koneksi langsung. Data bulk (score, projection) memakai `COPY`.
+`max_connections` 300 (PgBouncer `default_pool_size` 40 per app host), `work_mem` 32–64 MB, `maintenance_work_mem` 4 GB, `max_parallel_workers_per_gather` 4, `max_parallel_maintenance_workers` 8, `random_page_cost` 1.1 (NVMe), `wal_compression` on, `archive_mode` on (pgBackRest async archive-push), autovacuum agresif untuk `score`, `river_job`, `event`, `webhook_delivery`, `stage_run`. **PgBouncer vs River:** PgBouncer berjalan di **setiap app host** (lokal, bukan di db-01, sehingga tidak ikut mati bersama primary) dan menunjuk `db-primary.internal:5432`. Trafik request API memakai PgBouncer transaction mode (RLS memakai `set_config(…, true)` = `SET LOCAL`, sehingga kompatibel; `InsertTx` River dari api ikut transaksi ini). Setiap proses yang menjalankan client River (`msp worker`: fetch, `LISTEN/NOTIFY`, leader election, periodic job) terhubung **langsung** ke primary `db-primary.internal:5432` dengan pool kecil khusus (`MSP_DATABASE_URL_DIRECT_FILE`, ±4 koneksi per container), karena `LISTEN` membutuhkan koneksi tingkat sesi yang rusak di transaction pooling; query domain worker tetap boleh lewat PgBouncer. Fallback terdokumentasi bila koneksi langsung tidak tersedia: River `PollOnly` (`MSP_RIVER_POLL_ONLY=true`, tanpa `LISTEN`; latensi = interval poll). `msp migrate` juga memakai koneksi langsung. Data bulk (score, projection) memakai `COPY`.
 
 ### 17.5 Bottleneck & mitigasi
 
@@ -2025,7 +2043,7 @@ Semua container `msp` memakai image yang sama dengan subcommand berbeda.
 
 ### 17.6 Backup & DR (NFR-AVAIL-02: RPO ≤ 15 menit, RTO ≤ 4 jam)
 
-pgBackRest: full mingguan, diff harian, archive WAL kontinu (`archive_timeout = 60s`) → RPO ≤ 1–2 menit (repo1 SeaweedFS via S3 API, repo2 off-site). Restore ±200 GB pada NVMe ±15–30 menit + replay WAL. Skenario utama adalah failover ke db-02 (promote) dengan RTO < 30 menit. SeaweedFS: replikasi ke off-site via `weed filer.sync`. Versioning/object lock untuk bucket snapshot/backup/audit bila didukung; fallback: salinan append-only ke repo off-site (TQ-17). Uji restore bulanan otomatis ke host drill terisolasi `dr-01` (bukan staging, karena staging tidak boleh memuat data produksi; bukti NFR-AVAIL-02, lihat `06-ci-cd.md`). Redis hanya cache/rate limit dan tidak di-backup. Antrean River ikut backup/PITR Postgres.
+pgBackRest: full mingguan, diff harian, archive WAL kontinu (`archive_timeout = 60s`) → RPO ≤ 1–2 menit (repo1 SeaweedFS via S3 API, repo2 off-site). Restore ±200 GB pada NVMe ±15–30 menit + replay WAL. Skenario utama adalah failover ke db-02 (promote) dengan RTO < 30 menit: `db-failover.yml` mem-promote db-02, memindahkan record `db-primary.internal` ke db-02 di Unbound/hosts setiap app host, me-reload PgBouncer lokal, dan me-restart container worker agar pool langsung River tersambung ulang (`09` RB-42); failback/switchover memakai mekanisme yang sama (RB-43). SeaweedFS: replikasi ke off-site via `weed filer.sync`. Versioning/object lock untuk bucket snapshot/backup/audit bila didukung; fallback: salinan append-only ke repo off-site (TQ-17). Uji restore bulanan otomatis ke host drill terisolasi `dr-01` (bukan staging, karena staging tidak boleh memuat data produksi; bukti NFR-AVAIL-02, lihat `06-ci-cd.md`). Redis hanya cache/rate limit dan tidak di-backup. Antrean River ikut backup/PITR Postgres.
 
 ---
 
@@ -2042,7 +2060,7 @@ Semua konfigurasi berasal dari environment variable (di-parse ke struct config G
 | Kelompok | Variabel |
 |---|---|
 | Inti | `MSP_ENV` (local, ci, staging, production), `MSP_VERSION` (disuntikkan saat deploy, 06 §5.1), `MSP_BASE_URL`, `MSP_LOG_LEVEL` |
-| Database | `MSP_DATABASE_URL_APP_FILE`, `MSP_DATABASE_URL_PIPELINE_FILE`, `MSP_DATABASE_URL_OPS_FILE` (via PgBouncer), `MSP_DATABASE_URL_REPLICA_FILE` (db-02), `MSP_DATABASE_URL_DIRECT_FILE` (langsung ke db-01:5432: client River di worker, `migrate`; §17.4) |
+| Database | `MSP_DATABASE_URL_APP_FILE`, `MSP_DATABASE_URL_PIPELINE_FILE`, `MSP_DATABASE_URL_OPS_FILE` (via PgBouncer lokal di app host), `MSP_DATABASE_URL_REPLICA_FILE` (db-02), `MSP_DATABASE_URL_DIRECT_FILE` (langsung ke `db-primary.internal:5432`: client River di worker, `migrate`; §17.4) |
 | Worker | `MSP_WORKER_QUEUES` (mis. `pipeline,scoring`), `MSP_WORKER_MAX_<QUEUE>`, `MSP_RIVER_POLL_ONLY` (fallback tanpa `LISTEN`, default `false`) |
 | Redis (opsional) | `MSP_REDIS_URL_FILE` (cache, rate limit, counter fair-use). Kosong → cache in-process (dev) |
 | Object storage | `MSP_S3_ENDPOINT_URL`, `MSP_S3_PUBLIC_ENDPOINT` (`files.<domain>`), `MSP_S3_ACCESS_KEY_ID_FILE`, `MSP_S3_SECRET_ACCESS_KEY_FILE`, `MSP_S3_FORCE_PATH_STYLE`, `MSP_S3_BUCKET_{SNAPSHOTS,UPLOADS,EXPORTS,TILES,AUDIT}` |
@@ -2077,6 +2095,8 @@ Data produksi yang mengandung P1 tidak pernah disalin ke local/ci/staging.
 | `dns.lookup` | on | Verifikasi email → UNKNOWN (bukan INVALID) |
 | `search.include_private` | on | Toggle private prospect disembunyikan |
 | `scoring.bulk_rescore` | on | Fan-out re-skor ditunda (interaktif tetap jalan) |
+| `unlock.enabled` | on | Unlock kontak langsung (`POST /v1/unlocks`) ditolak `503 FEATURE_DISABLED`; unlock otomatis lewat export/webhook dikendalikan `export.create`/`webhook.delivery` |
+| `maintenance.read_only` | **off** | Bila **on**: mode read-only untuk PITR, switchover, atau DR. Semua operasi tulis API → `503 MAINTENANCE_READ_ONLY` + banner UI; worker berhenti mengambil job baru kecuali antrean `maintenance`; baca (search, profil) tetap jalan |
 
 ---
 

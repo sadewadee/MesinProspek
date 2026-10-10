@@ -374,7 +374,7 @@ Aturan: data disiapkan lewat API/seed, bukan lewat UI (kecuali langkah yang seda
 | Skenario | Cara injeksi | Perilaku yang diharapkan | TC |
 |---|---|---|---|
 | Worker mati di tengah batch pipeline | `docker kill -s KILL` pada container `msp worker` | Job River yang tertinggal berstatus `running` di-rescue setelah batas waktu rescue dan dijalankan ulang; stage idempotent; tanpa entity ganda | TC-OPS-008 |
-| Redis restart (cache/rate limit) | Restart container Redis saat beban | Antrean tidak terpengaruh (River di PostgreSQL); cache miss ditangani; perilaku rate limit/fair-use saat Redis down sesuai `04`; tidak ada 5xx tak tertangani | TC-OPS-008 |
+| Redis restart (cache/rate limit) | Restart container Redis saat beban | Antrean tidak terpengaruh (River di PostgreSQL); cache miss ditangani; rate limit fail-open ke limiter in-process dengan batas lebih rendah dan counter fair-use dari Postgres (`04` §11.1, §14.4); tidak ada 5xx tak tertangani | TC-OPS-008 |
 | PostgreSQL putus | Toxiproxy *(usulan)* memutus koneksi | API mengembalikan 503 eksplisit; job River di-retry setelah koneksi pulih; tanpa commit parsial | TC-OPS-008 |
 | Retry/backoff & DLQ | Worker mengembalikan error retryable vs `river.JobCancel` | `MaxAttempts` dan backoff sesuai `04`; non-retryable → `cancelled`; percobaan habis → `discarded` (= DLQ); re-drive (`JobRetry`) dari ops console | TC-OPS-002 |
 | Unique job | Enqueue job yang sama 2× (mis. refresh per establishment, export per idempotency key) | Opsi unique River mencegah job ganda; hanya 1 eksekusi dan 1 debit | TC-MON-002, TC-BILL-016 |
@@ -456,7 +456,7 @@ Aturan: data disiapkan lewat API/seed, bukan lewat UI (kecuali langkah yang seda
 | Cek | Cara | Kriteria | TC | Tahap |
 |---|---|---|---|---|
 | Backup berjalan & terverifikasi | `pgbackrest check` dan `pgbackrest info`: full/diff backup terjadwal ada, arsip WAL kontinu, repo terenkripsi, salinan off-site ada | Tidak ada celah WAL > 15 menit; backup terakhir ≤ jadwal | TC-OPS-011 | Harian (monitor) + pre-release |
-| Drill restore PITR | Restore `--type=time` ke server drill pada titik T (insiden simulasi); bandingkan baris penanda (canary) yang ditulis tiap menit sebelum T | Data hilang ≤ 15 menit (RPO); layanan pulih ≤ 4 jam dari deklarasi (RTO) | TC-OPS-011 | Pre-release, kuartalan |
+| Drill restore PITR | Restore `--type=time` ke server drill pada titik T (insiden simulasi); bandingkan baris penanda (canary) yang ditulis tiap menit sebelum T | Data hilang ≤ 15 menit (RPO); layanan pulih ≤ 4 jam dari deklarasi (RTO) | TC-OPS-011 | **Bulanan** di `dr-01` (schedule `monthly`, Selasa pertama; `06` §7.1, QG-35 ≤ 35 hari) + pre-release |
 | Restore object storage | Pulihkan bucket upload/export SeaweedFS dari replikasi/backup off-site (mis. `weed filer.backup`) | Objek sampel cocok checksum; bila object lock/WORM didukung SeaweedFS, objek backup tidak dapat dihapus/diubah sebelum masa retensi; jika tidak, verifikasi fallback salinan append-only off-site | TC-OPS-011 | Pre-release |
 | Smoke blue/green | Deploy warna baru → health check → smoke `@smoke` ke warna baru (header/route Traefik khusus) → switch trafik → smoke ulang | Switch hanya setelah smoke lulus; 0 request 5xx saat switch | TC-OPS-015 | Setiap deploy staging & produksi |
 | Drill rollback | Switch kembali ke warna lama; verifikasi versi (`/version`), smoke, dan kompatibilitas schema (fase expand) | Rollback ≤ 5 menit *(usulan)*; smoke lulus; tidak ada data hilang | TC-OPS-016 | Pre-release, setiap rilis mayor |
@@ -892,7 +892,7 @@ Legenda **Level:** U = unit (termasuk property-based dan component frontend), I 
 | TC-OPS-002 | Pipeline Health & redrive DLQ | FR-OPS-002 | I | P0 | Ya | Job selesai/gagal, retry, latensi per stage, backlog sesuai fixture; re-drive job River `discarded` dari UI memproses ulang 1× |
 | TC-OPS-003 | UI merge review | FR-OPS-005, FR-DATA-004 | E2E | P0 | Ya | Ops melihat kandidat + evidence, memilih merge/split/keep; keputusan tersimpan & teraudit (lanjut ke TC-DATA-016) |
 | TC-OPS-004 | Admin tenant & akses support | FR-OPS-006 | I, S | P0 | Ya | Daftar workspace/plan, grant credit; akses support read-only dengan alasan wajib, tercatat di audit; mutasi apa pun → 403; tidak ada impersonation |
-| TC-OPS-005 | Feature flag & kill switch | FR-OPS-007 | I | P0 | Ya | Kill switch AI/export/webhook/upload berlaku ≤ 1 menit *(usulan)* tanpa deploy; UI menampilkan pesan; perubahan teraudit |
+| TC-OPS-005 | Feature flag & kill switch | FR-OPS-007 | I | P0 | Ya | Kill switch AI/export/webhook/upload/unlock (`unlock.enabled`) berlaku ≤ 1 menit *(usulan)* tanpa deploy; UI menampilkan pesan; `maintenance.read_only` on → semua write `503 MAINTENANCE_READ_ONLY`, baca tetap jalan; perubahan teraudit (04 §18.3) |
 | TC-OPS-006 | Antrean laporan data & DSR | FR-OPS-008 | E2E | P0 | Ya | Laporan "Laporkan data" dan DSR muncul di antrean ops dengan status dan penanggung jawab |
 | TC-OPS-007 | Alert drill RG-5 ▸ | RG-5, NFR-OBS-01 | I | P0 | Manual | Empat alert terpicu pada fault injection di staging |
 | TC-OPS-008 | Crash worker / Redis / DB di tengah job | FR-DATA-007, FR-OPS-002 | I | P0 | Ya | Skenario §3.18 → job selesai setelah retry, tanpa entity/event ganda |
@@ -1533,7 +1533,8 @@ R = Responsible, A = Accountable, C = Consulted, I = Informed.
 | Akhir sprint | Regresi penuh otomatis di staging; demo memakai journey E2E; update metrik §9.2 |
 | Per snapshot dataset baru | Suite data quality (§3.9) di staging sebelum snapshot dipublikasikan ke produksi |
 | Per release (hardening 1 minggu) | Regresi penuh, perf 5 juta, soak 24 jam, alert drill, restore drill, rollback drill, ZAP full, AI eval live, a11y manual, usability, UAT; laporan §9.4; go/no-go |
-| Kuartalan | Drill restore pgBackRest dari backup produksi (server drill terisolasi); review ulang risiko §2; relabel 10% golden set |
+| Bulanan | Drill restore pgBackRest dari backup produksi di `dr-01` (terisolasi, `06` §7.1, `09` RB-47) |
+| Kuartalan | Review ulang risiko §2; relabel 10% golden set |
 
 ### 10.3 Komposisi suite regresi
 
