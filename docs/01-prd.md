@@ -470,7 +470,7 @@ MesinProspek adalah platform **sales intelligence multi-tenant** untuk penjual B
 | NFR-PERF-07 | Performa | Re-run pipeline penuh untuk 5 juta establishment ≤ 12 jam. |
 | NFR-SCAL-01 | Skala | Sizing MVP: 5 juta establishment, ±84 ribu kelurahan/desa, 200 workspace, 2.000 user, 50 user konkuren. Revisi setelah Q-02 dijawab. |
 | NFR-AVAIL-01 | Ketersediaan | 99,5% bulanan (MVP 1). Target 99,9% untuk Enterprise (V2). |
-| NFR-AVAIL-02 | Ketersediaan | RPO ≤ 15 menit (PITR), RTO ≤ 4 jam. |
+| NFR-AVAIL-02 | Ketersediaan | RPO ≤ 15 menit (PITR). RTO ≤ 4 jam untuk kegagalan server/DB tunggal. Untuk kehilangan seluruh data center: RTO ≤ 24 jam (restore dari backup off-site ke lokasi cadangan), ditinjau ulang sebelum Enterprise. |
 | NFR-SEC-01 | Keamanan | Baseline OWASP ASVS Level 2. |
 | NFR-SEC-02 | Keamanan | TLS 1.2+ untuk semua trafik. Enkripsi at-rest untuk DB, storage, dan backup. |
 | NFR-SEC-03 | Keamanan | Isolasi tenant ganda (RLS + aplikasi), diuji otomatis di CI (FR-AUD-006). |
@@ -486,7 +486,7 @@ MesinProspek adalah platform **sales intelligence multi-tenant** untuk penjual B
 | NFR-COMP-01 | Kompatibilitas | 2 versi terakhir Chrome, Edge, Firefox, Safari. Desktop ≥ 1280 px sebagai target utama. Profil, list, dan tugas tetap dapat dipakai di 360 px. |
 | NFR-OBS-01 | Observability | Log terstruktur, metrik, dan trace dengan `correlation_id`. Dashboard + alert untuk setiap SLO. |
 | NFR-DATA-01 | Reproducibility | Setiap skor dan metrik area dapat direproduksi dari `snapshot_version` + `model_version`. |
-| NFR-MAINT-01 | Maintainability | Coverage test modul normalisasi, ER, dan scoring ≥ 85% line. Keseluruhan backend ≥ 75%. |
+| NFR-MAINT-01 | Maintainability | Coverage test modul normalisasi, ER, dan scoring ≥ 85% (statement coverage Go; line coverage untuk TypeScript). Keseluruhan backend ≥ 75%. |
 | NFR-COST-01 | Biaya | Batas biaya AI per workspace. Biaya per brief dipantau (FR-OPS-004). |
 
 ---
@@ -542,6 +542,7 @@ Kontrak lengkap ada di `04-technical-design.md` §Input Contract.
 | R-05 | Risiko | Biaya AI tidak terkendali. | Cache, batas per workspace, kill switch. |
 | R-06 | Risiko | Kebocoran data antar tenant. | RLS + uji otomatis + review keamanan. |
 | R-07 | Risiko | Dataset tidak diperbarui → freshness menurun dari waktu ke waktu. | Label freshness jujur. Q-03. Roadmap refresh. |
+| R-08 | Risiko | `app-01` adalah single point of failure. Kerusakan hardware bisa menghabiskan anggaran downtime 99,5% (±3,6 jam/bulan). | Restore cepat via Ansible + image registry. **`app-02` wajib aktif sebelum M-3 (early paid)**. |
 
 ---
 

@@ -47,7 +47,7 @@ Ringkasan default dari D-11, D-12, D-14, D-18, D-19, D-21 beserta pilihan toolin
 |---|---|
 | Repo | Monorepo. Host kode + CI + registry: **GitLab CE self-hosted** (D-18). Repo GitHub saat ini dapat di-mirror (Q-08). |
 | Frontend | Next.js (App Router) + TypeScript (strict), Tailwind CSS yang membaca design tokens, komponen di atas Radix primitives, TanStack Query. Next.js hanya untuk UI. API Go disajikan di origin yang sama (`/api`) lewat Traefik. Client TS di-generate dari OpenAPI (openapi-typescript + openapi-fetch) |
-| Backend | **Go** (D-21; versi stabil terbaru, minimal 1.26). Satu binary `cmd/msp` dengan subcommand `api`, `worker`, `migrate`. `net/http` + **oapi-codegen** (contract-first), **pgx v5 + sqlc**, migrasi **goose**, log `slog` JSON. Modular monolith (D-11) dengan batas modul via `internal/` + `depguard` |
+| Backend | **Go** (D-21; versi stabil terbaru, minimal 1.26). Satu binary `cmd/msp` dengan subcommand `api`, `worker`, `migrate`, `tool` (utilitas ops). `net/http` + **oapi-codegen** (contract-first), **pgx v5 + sqlc**, migrasi **goose**, log `slog` JSON. Modular monolith (D-11) dengan batas modul via `internal/` + `depguard` |
 | Worker & antrean | **River** (antrean berbasis Postgres: retry, backoff, unique job, periodic job, enqueue transaksional, sekaligus outbox event/webhook). Redis hanya untuk cache, rate limit, dan counter fair-use |
 | Database | PostgreSQL 16+ dengan PostGIS, `pg_trgm`, `unaccent`. Full-text search Postgres (MVP) |
 | Storage | S3-compatible self-hosted: **SeaweedFS** (gateway S3; alternatif Garage) untuk export, upload, raw snapshot. MinIO community tidak dipakai karena repo-nya sudah diarsipkan. |

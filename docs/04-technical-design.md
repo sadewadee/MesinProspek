@@ -168,7 +168,7 @@ Semua ADR berstatus **Proposed** kecuali ditandai lain. Kolom "Ref" menautkan ke
 
 ```
 apps/api/
-  cmd/msp/                 main: subcommand `api`, `worker`, `migrate`, dan `tool …` (ops: score-reproduce, taxonomy-suggest, snapshot-load)
+  cmd/msp/                 main: subcommand `api`, `worker`, `migrate`, dan `tool …` (ops: healthcheck, snapshot-load, snapshot-publish, score-model-activate, score-reproduce, taxonomy-suggest; dipakai pipeline `06-ci-cd.md`)
   internal/
     app/                   composition root: wiring server HTTP (oapi-codegen strict), client + worker River, DAG pipeline, config
     platform/              auth, tenancy, rbac, audit, flags, events, jobs (helper River, DAG runner), idempotency, netguard,
@@ -2015,7 +2015,7 @@ Semua container `msp` memakai image yang sama dengan subcommand berbeda.
 
 ### 17.6 Backup & DR (NFR-AVAIL-02: RPO ≤ 15 menit, RTO ≤ 4 jam)
 
-pgBackRest: full mingguan, diff harian, archive WAL kontinu (`archive_timeout = 60s`) → RPO ≤ 1–2 menit (repo1 SeaweedFS via S3 API, repo2 off-site). Restore ±200 GB pada NVMe ±15–30 menit + replay WAL. Skenario utama adalah failover ke db-02 (promote) dengan RTO < 30 menit. SeaweedFS: replikasi ke off-site via `weed filer.sync`. Versioning/object lock untuk bucket snapshot/backup/audit bila didukung; fallback: salinan append-only ke repo off-site (TQ-17). Uji restore bulanan otomatis ke host staging (bukti NFR-AVAIL-02). Redis hanya cache/rate limit dan tidak di-backup. Antrean River ikut backup/PITR Postgres.
+pgBackRest: full mingguan, diff harian, archive WAL kontinu (`archive_timeout = 60s`) → RPO ≤ 1–2 menit (repo1 SeaweedFS via S3 API, repo2 off-site). Restore ±200 GB pada NVMe ±15–30 menit + replay WAL. Skenario utama adalah failover ke db-02 (promote) dengan RTO < 30 menit. SeaweedFS: replikasi ke off-site via `weed filer.sync`. Versioning/object lock untuk bucket snapshot/backup/audit bila didukung; fallback: salinan append-only ke repo off-site (TQ-17). Uji restore bulanan otomatis ke host drill terisolasi `dr-01` (bukan staging, karena staging tidak boleh memuat data produksi; bukti NFR-AVAIL-02, lihat `06-ci-cd.md`). Redis hanya cache/rate limit dan tidak di-backup. Antrean River ikut backup/PITR Postgres.
 
 ---
 
