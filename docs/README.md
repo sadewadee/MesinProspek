@@ -50,13 +50,13 @@ Ringkasan default dari D-11, D-12, D-14, D-18, D-19, D-21 beserta pilihan toolin
 | Backend | **Go** (D-21; versi stabil terbaru, minimal 1.26). Satu binary `cmd/msp` dengan subcommand `api`, `worker`, `migrate`. `net/http` + **oapi-codegen** (contract-first), **pgx v5 + sqlc**, migrasi **goose**, log `slog` JSON. Modular monolith (D-11) dengan batas modul via `internal/` + `depguard` |
 | Worker & antrean | **River** (antrean berbasis Postgres: retry, backoff, unique job, periodic job, enqueue transaksional, sekaligus outbox event/webhook). Redis hanya untuk cache, rate limit, dan counter fair-use |
 | Database | PostgreSQL 16+ dengan PostGIS, `pg_trgm`, `unaccent`. Full-text search Postgres (MVP) |
-| Storage | S3-compatible: **MinIO** self-hosted (export, upload, raw snapshot) |
+| Storage | S3-compatible self-hosted: **SeaweedFS** (gateway S3; alternatif Garage) untuk export, upload, raw snapshot. MinIO community tidak dipakai karena repo-nya sudah diarsipkan. |
 | Kontrak | OpenAPI 3.1 (`contracts/openapi/`), JSON Schema untuk event, webhook, dan Input Contract (`contracts/events/`, `contracts/input/`) |
 | JS tooling | Node 24 LTS, pnpm workspaces, Turborepo, ESLint, Prettier |
 | Go tooling | gofmt/goimports, golangci-lint (termasuk gosec, staticcheck, depguard), govulncheck, sqlc, oapi-codegen. Build `CGO_ENABLED=0` → image distroless/static |
 | Test | `go test` (+ `-race`, fuzzing native), rapid (property-based), golden file, Schemathesis, Vitest + Testing Library, Playwright + axe-core, k6 |
 | CI/CD | **GitLab CI** (runner Docker self-hosted), GitLab Container Registry. Deploy staging → production via job manual pada tag rilis terproteksi. **Tanpa GitHub** (D-18). |
-| Hosting | **Dedicated server** di data center Indonesia (D-19): Docker Compose di belakang Traefik, PostgreSQL + PostGIS self-managed (replika + pgBackRest PITR), Redis, MinIO. Provisioning dengan Ansible. Secret: SOPS + age. |
+| Hosting | **Dedicated server** di data center Indonesia (D-19): Docker Compose di belakang Traefik, PostgreSQL + PostGIS self-managed (replika + pgBackRest PITR), Redis, SeaweedFS (S3). Provisioning dengan Ansible. Secret: SOPS + age. |
 | Observability | OpenTelemetry → Prometheus/Grafana/Loki/Tempo (self-hosted), log JSON terstruktur, error tracking GlitchTip (kompatibel Sentry SDK) |
 | Versioning | Aplikasi SemVer `vX.Y.Z` · API `/v1` · skor `priority-X.Y.Z` · geo `geo-X.Y.Z` · prompt AI `brief-X.Y.Z` · snapshot `ds-YYYY.MM.n` · design tokens SemVer paket |
 

@@ -172,7 +172,7 @@ MesinProspek adalah platform **sales intelligence multi-tenant** untuk penjual B
 | FR-DATA-009 | Penetapan area: setiap Establishment dipetakan ke kelurahan/desa melalui point-in-polygon (bila ada batas) atau pencocokan alamat, dengan `geo_confidence`. | P0 | MVP0 | ≥ 90% establishment ber-koordinat terpetakan ke kelurahan. |
 | FR-DATA-010 | Digital presence lite: klasifikasi nilai website (domain sendiri / subdomain platform gratis / profil sosial / link aggregator / link pesan / tidak ada) dan klasifikasi email (domain sendiri / webmail gratis). | P0 | MVP0 | Unit test klasifikasi lulus untuk daftar pola (SDD). |
 | FR-DATA-011 | Lookup DNS (MX, SPF) untuk domain milik company → petunjuk penyedia email dan tool marketing. | P1 | MVP1 | Hasil DNS di-cache dengan TTL dan dicatat sebagai evidence. |
-| FR-DATA-012 | **Upload customer** CSV/XLSX (≤ 50.000 baris per file di MVP 1): mapping kolom, preview validasi, proses async, pencocokan ke entity global (link, bukan merge), laporan match-rate. Data upload privat untuk workspace. | P0 | MVP1 | Data upload tidak pernah terbaca workspace lain. Laporan menampilkan matched/new/rejected. |
+| FR-DATA-012 | **Upload customer** CSV/XLSX (≤ 50.000 baris per file di MVP 1): mapping kolom, preview validasi, proses async, pencocokan ke entity global (link, bukan merge), laporan match-rate. Data upload privat untuk workspace. Baris yang tidak cocok dengan entity global menjadi **prospek privat** workspace: tampil di search workspace tersebut dengan label "Dari upload Anda" dan dinilai dengan aturan yang sama. | P0 | MVP1 | Data upload tidak pernah terbaca workspace lain. Laporan menampilkan matched/new/rejected. |
 | FR-DATA-013 | Diff antar snapshot → change record (input untuk signal). | P1 | V1 | Change record merujuk kedua snapshot. |
 | FR-DATA-014 | User dapat melaporkan data salah ("Laporkan data") dari profil. Laporan masuk antrean ops. | P1 | MVP1 | Laporan tercatat dengan claim yang dirujuk. |
 
@@ -363,8 +363,8 @@ MesinProspek adalah platform **sales intelligence multi-tenant** untuk penjual B
 |---|---|---|---|
 | VERIFIED | Lolos verifikasi provider (deliverable) | Dikonfirmasi sumber terpercaya (V1) | Tidak dipakai di MVP |
 | LIKELY_VALID | Syntax valid + domain memiliki MX | Format valid untuk Indonesia + tipe terdeteksi | — |
-| RISKY | Catch-all, role-based (info@, admin@), atau domain baru/tidak stabil | Format valid tetapi tipe tidak dikenal | — |
-| INVALID | Syntax gagal / tidak ada MX / provider undeliverable | Format tidak valid | — |
+| RISKY | Catch-all, role-based (info@, admin@), domain baru/tidak stabil, atau tanpa MX tetapi memiliki A/AAAA (implicit MX, RFC 5321) | Format valid tetapi tipe tidak dikenal | — |
+| INVALID | Syntax gagal / domain tidak ada (NXDOMAIN) atau tanpa MX maupun A/AAAA / provider undeliverable | Format tidak valid | — |
 | UNKNOWN | Belum dicek / gagal sementara | Belum dicek | Default |
 
 - **BR-VER-01:** Ketersediaan WhatsApp dari nomor seluler (+628…) berstatus **INFERRED** ("Kemungkinan WhatsApp"), tidak pernah VERIFIED di MVP.
@@ -430,12 +430,13 @@ MesinProspek adalah platform **sales intelligence multi-tenant** untuk penjual B
 | BR-REV-03 | Revenue v0 berstatus INFERRED, dihitung dari prior kategori × kota dan pengali ukuran (jumlah cabang, persentil volume ulasan, price level bila ada). Confidence maksimum 70 kecuali ada evidence finansial observed. |
 | BR-REV-04 | Point estimate tidak ditampilkan di MVP. Yang ditampilkan hanya band + confidence + basis + as-of. |
 | BR-REV-05 | Basis harus dapat dibaca. Contoh: "Kategori klinik gigi, 3 cabang, volume ulasan persentil 85 di Kota Denpasar." |
+| BR-REV-06 | **Tier kota** (dipakai prior revenue dan persentil komersial) berdasarkan populasi kab/kota: Tier 1 ≥ 1.000.000, Tier 2 250.000–999.999, Tier 3 < 250.000. |
 
 ### 9.8 BR-CRED — Credit & refund (D-08)
 
 | ID | Aturan |
 |---|---|
-| BR-CRED-01 | Search dan lihat profil tidak memakai credit, tetapi dibatasi fair-use per plan (Lampiran E). Saat kuota 100%: hasil search tetap tampil, profil yang belum dibuka di siklus ini diblokir dengan pesan upgrade, sedangkan profil yang sudah dibuka, di-unlock, atau di-assign tetap dapat diakses. |
+| BR-CRED-01 | Search dan lihat profil tidak memakai credit, tetapi dibatasi fair-use per plan (Lampiran E). Kuota menghitung **profil unik** per siklus (membuka profil yang sama berulang kali dihitung satu). Saat kuota 100%: hasil search tetap tampil, profil yang belum dibuka di siklus ini diblokir dengan pesan upgrade, sedangkan profil yang sudah dibuka, di-unlock, atau di-assign tetap dapat diakses. |
 | BR-CRED-02 | **Semua** nilai contact point (telepon, WhatsApp, email) dan nama person ditampilkan ter-mask (contoh `+62 812-****-7890`, `h****@abcdental.co.id`) sampai di-**unlock**. Nama company, kategori, alamat, website, dan role person tetap terlihat. Unlock = 1 credit per Company dan berlaku permanen untuk workspace. Kontak yang berasal dari upload workspace itu sendiri tidak di-mask. |
 | BR-CRED-03 | Export/webhook record yang sudah di-unlock gratis. Record yang belum di-unlock otomatis di-unlock saat export (biaya ditampilkan di pratinjau). |
 | BR-CRED-04 | Operasi berbayar idempotent per `idempotency_key`. Retry tidak menagih ulang. |
@@ -443,6 +444,7 @@ MesinProspek adalah platform **sales intelligence multi-tenant** untuk penjual B
 | BR-CRED-06 | Credit grant bulanan kedaluwarsa di akhir siklus. Credit top-up berlaku 12 bulan (default, menunggu keputusan pricing). |
 | BR-CRED-07 | Operasi berbayar async (export, webhook massal, refresh massal) memakai pola **reserve → capture/release**: credit ditahan saat job dibuat, ditagih saat sukses, dan dilepas bila gagal. Auto-unlock dari export baru berlaku saat export sukses. |
 | BR-CRED-08 | Urutan pemakaian credit: yang paling cepat kedaluwarsa dipakai lebih dulu (grant bulanan, lalu top-up FIFO berdasarkan tanggal kedaluwarsa). |
+| BR-CRED-09 | Bila dua Company yang sama-sama sudah di-unlock oleh satu workspace kemudian di-merge (BR-ER), satu credit unlock dikembalikan otomatis. |
 
 ### 9.9 BR-PRIV — Privasi
 
@@ -553,12 +555,12 @@ coverage = Σ_{k∈K} wₖ / Σ_{semua} wₖ
 | Faktor | Bobot | Definisi sₖ (0–100) | MVP |
 |---|---|---|---|
 | ICP Fit | 25 | Rata-rata tertimbang kecocokan kriteria ICP: match = 1, partial = 0,5, no = 0. Kriteria berstatus Unknown dikeluarkan. Kriteria *wajib* yang `no` → establishment tidak masuk hasil. | ✓ |
-| Data Quality | 10 | 0,4·completeness (field yang relevan untuk Offering) + 0,3·verifikasi (status kontak terbaik) + 0,2·freshness + 0,1·evidence coverage | ✓ |
-| Contactability | 10 | Kanal terbaik: email person VERIFIED 100; email company LIKELY_VALID 80; seluler LIKELY_VALID (WA-likely) 80; telepon tetap LIKELY_VALID 60; hanya profil sosial 30; tidak ada 0. Bonus +10 bila ada kontak decision-maker (maks 100). | ✓ |
+| Data Quality | 10 | 0,4·completeness (field relevan per offering tag, didefinisikan di konfigurasi model; default: telepon, website, alamat, kategori, jam operasional) + 0,3·verifikasi (status kontak terbaik) + 0,2·freshness + 0,1·evidence coverage | ✓ |
+| Contactability | 10 | Kanal terbaik: email person VERIFIED 100; email person LIKELY_VALID 90; email company LIKELY_VALID 80; seluler LIKELY_VALID (WA-likely) 80; telepon tetap LIKELY_VALID 60; hanya profil sosial 30; tidak ada 0. Bonus +10 bila ada kontak decision-maker (maks 100). | ✓ |
 | Commercial Potential | 15 | Persentil proxy skala (band revenue, band karyawan, cabang, volume ulasan) dalam kategori × tier kota, dikali (0,5 + 0,5·confidence/100) | ✓ |
 | Digital Opportunity | 10 | Maks `opportunity_score` keluarga DIGITAL yang relevan. 0 bila data digital diketahui tetapi tidak ada gap relevan. Unknown bila data digital tidak ada. | ✓ (lite) |
 | Geographic Opportunity | 15 | `market_opportunity_score` kelurahan establishment. Fallback kecamatan bila kelurahan LOW. Unknown bila keduanya LOW (FR-INTL-006). | ✓ |
-| Signal Strength | 5 | Maks kekuatan signal relevan dalam 90 hari, dengan decay | Unknown sampai V1 |
+| Signal Strength | 5 | Maks kekuatan signal relevan dalam 90 hari, dengan decay | Unknown sampai V1 (coverage maksimum di MVP = 0,95) |
 | Opportunity Strength | 10 | Maks `opportunity_score` keluarga non-DIGITAL yang relevan | ✓ |
 
 - Versi: `priority-1.2.0`. Setiap perubahan bobot/aturan menaikkan versi (FR-INTL-009).
@@ -594,7 +596,7 @@ Level area: L1 provinsi, L2 kab/kota, L3 kecamatan, L4 kelurahan/desa. Satuan de
 | category_count | establishment kategori X di area | — |
 | category_density | category_count / population × 1.000 | — |
 | peer group | area satu level dalam kab/kota yang sama (L4) atau provinsi yang sama (L3). Bila < 10 area, diperluas satu level ke atas. | — |
-| competition_index | persentil category_density dalam peer group (0–100). Low < 33, Medium 33–66, High > 66. | — |
+| competition_index | persentil category_density dalam peer group (0–100). Low < 33, Medium 33–66, High > 66. | Faktor geo establishment memakai kategori establishment itu sendiri. Territory ranking untuk ICP multi-kategori memakai gabungan kategori ICP (jumlah count). |
 | coverage | **LOW** bila population < 500, atau business_count < 5, atau business_density < 0,25 × median peer padahal population_density ≥ median peer. Selain itu OK. | LOW → white space & opportunity area = Unknown, label "Data terbatas" |
 | white_space_score | pct(population) × (100 − pct(category_density)) / 100 | hanya bila population ≥ 1.000 dan coverage OK |
 | target_business_count | establishment yang lolos filter wajib ICP di area | tenant-specific |

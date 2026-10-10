@@ -9,6 +9,7 @@
 | Tanggal | 2026-10-10 |
 | Basis | `01-prd.md` v0.1 (sumber kebenaran requirement), `00-analisis-dokumen-awal.md`, MVP Pack v1.2 (§04, §05, §11–§13, Rev 1.2), Crawler Spec v1.0 (PAUSED; pola §11, §12, §13, §14.2, §19.2 diadopsi) |
 | Status crawler | **PAUSED** (D-01). Input = dataset snapshot + upload customer + data referensi wilayah (D-02) |
+| Bahasa backend | **Go** (D-21, Accepted): satu binary `msp` (`api`, `worker`, `migrate`). Frontend tetap Next.js + TypeScript |
 | Hosting | **Dedicated server di data center Indonesia** (D-19; dedicated = Accepted, stack = Proposed). CI/registry GitLab CE (D-18). Identity provider = D-20 (Open) |
 | Audience | Engineering (backend, frontend, data), DevOps/SRE, QA, Security |
 | Menutup gap | G-01, G-02, G-04, G-06 (rumus teknis), G-08 (teknis), G-13, G-14 (teknis), G-18, G-19 |
@@ -25,7 +26,7 @@
 
 ### 1.1 Ringkasan
 
-1. **Satu codebase backend Python (`apps/api/msp`) berbentuk modular monolith** dengan 10 modul berbatas tegas (ADR-01). API (FastAPI) dan worker (Dramatiq) adalah entrypoint berbeda dari paket yang sama.
+1. **Satu binary backend Go (`apps/api/cmd/msp`) berbentuk modular monolith** dengan 10 modul berbatas tegas (ADR-01, D-21). Subcommand `api` (HTTP, `net/http` + oapi-codegen strict-server), `worker` (River), dan `migrate` (goose) berasal dari binary yang sama.
 2. **Engine source-agnostic.** Semua input masuk lewat **Input Contract**: Source Registry, dataset snapshot immutable `ds-YYYY.MM.n`, dan skema `ObservationRecord` (ADR-02). Crawler kelak hanya menjadi satu *source adapter* lagi (§19).
 3. **Tenancy dua lapis** (D-03). *Global layer* berisi entity kanonik, evidence, metrik area, dan gap fact; dapat dibaca semua tenant secara read-only. *Tenant layer* berisi ICP, Offering, skor, list, upload, unlock, dan lain-lain, diisolasi dengan **PostgreSQL RLS** ditambah pemeriksaan aplikasi (ADR-03).
 4. **Company 1—N Establishment** (D-05). Establishment adalah unit geo dan unit skor; Company adalah unit unlock dan unit baris hasil pencarian (ADR-04).
@@ -33,7 +34,7 @@
 6. **Pipeline idempotent per stage.** Kunci idempotensi = `hash(input + versi stage)`, checkpoint per batch disimpan di Postgres, dan stage yang gagal menghasilkan `Unknown`, bukan nilai palsu (§6).
 7. **Skor deterministik dan berversi** (`priority-1.2.0`, Lampiran A PRD). Skor disimpan ringkas per epoch dan dipartisi per workspace; penjelasannya dibangun ulang dari faktor yang tersimpan (ADR-16).
 8. **Opportunity = gap fact global × relevansi Offering tenant.** Relevansi dihitung saat dibaca, tidak dimaterialisasi per tenant (ADR-15).
-9. **Event via transactional outbox** (ADR-07). Webhook ditandatangani HMAC (`MSP-Signature`), di-retry hingga ≤ 24 jam, dan dikirim melalui **egress proxy + nftables** dengan kontrol SSRF (ADR-20).
+9. **Event via River** (queue berbasis Postgres) yang di-*enqueue* dalam transaksi yang sama dengan perubahan domain, sehingga River sekaligus berfungsi sebagai transactional outbox (ADR-07). Webhook ditandatangani HMAC (`MSP-Signature`), di-retry hingga ≤ 24 jam, dan dikirim melalui **egress proxy + nftables** dengan kontrol SSRF (ADR-20).
 10. **AI di balik abstraksi provider.** Output terstruktur dengan sitasi per kalimat, divalidasi oleh grounding validator. Nilai kontak pribadi tidak pernah dikirim ke LLM (ADR-09).
 11. **Credit memakai ledger double-entry append-only** dengan mekanisme *hold → capture/release*, sehingga operasi yang gagal tidak pernah menagih (ADR-10).
 12. **Infrastruktur self-hosted di Indonesia** (D-19): Docker Compose + Traefik di `app-01`, PostgreSQL primary/replica di `db-01`/`db-02`, MinIO untuk object storage, monitoring di `ops-01` (ADR-18).
@@ -45,7 +46,7 @@
 | Evidence over magic | Setiap claim tampil memiliki `claim_type` + `evidence_ids`. Evidence coverage diukur sebagai metrik (FR-DATA-006). |
 | Unknown over invented | `UNKNOWN` adalah nilai first-class di enum, skor, API, dan export. Kegagalan sementara → UNKNOWN (BR-VER-02). |
 | One canonical record, many projections | Satu store kanonik → projection `prospect_search`, profil, export, webhook, dan input AI dibangun dari sumber yang sama. |
-| Tenant-aware & auditable | Setiap write tenant dijalankan dalam `tenant_tx(workspace_id)`. Aksi penting menghasilkan `audit_log`. |
+| Tenant-aware & auditable | Setiap write tenant dijalankan dalam `tenancy.WithTx(ctx, workspaceID, fn)`. Aksi penting menghasilkan `audit_log`. |
 | Reproducible | Skor dan metrik area dapat dihitung ulang dari `snapshot` + `model_version`/`geo_version` (NFR-DATA-01). |
 | Modular acquisition | Engine tidak mengenal asal record. Asal record hanya tercatat di evidence. |
 
@@ -55,31 +56,32 @@ Semua ADR berstatus **Proposed** kecuali ditandai lain. Kolom "Ref" menautkan ke
 
 | ID | Keputusan | Konteks | Alternatif ditolak | Konsekuensi | Status | Ref |
 |---|---|---|---|---|---|---|
-| ADR-01 | **Modular monolith** `msp` (10 modul) + worker terpisah; batas modul ditegakkan oleh **import-linter** di CI | Tim kecil, domain belum stabil, butuh transaksi lintas modul (mis. unlock + ledger + audit) | Microservice per §11 MVP Pack | Satu deploy, satu migrasi DB, refactor murah. Pemecahan service nanti mengikuti batas modul yang sudah ada | Proposed | D-11 |
+| ADR-01 | **Backend Go, satu binary modular monolith** (`cmd/msp`: `api`, `worker`, `migrate`; 10 modul di `internal/`). Batas modul ditegakkan oleh visibility Go `internal/` + **golangci-lint `depguard`** | Tim kecil, domain belum stabil, butuh transaksi lintas modul (unlock + ledger + audit). Go: binary statis, konkurensi murah untuk pipeline/webhook, memori kecil di dedicated server, satu bahasa dengan Kratos (D-20) | Python/FastAPI (draf awal); microservice per §11 MVP Pack | Satu deploy, satu riwayat migrasi. Python hanya dipakai offline (notebook kalibrasi ML), di luar service. Pemecahan service nanti mengikuti batas modul | **Accepted** (Go, D-21) / Proposed (struktur) | D-21, D-11 |
 | ADR-02 | Crawler di-pause → **Source Adapter interface + Input Contract** (Source Registry, snapshot, ObservationRecord JSON Schema) | Dataset sudah tersedia. Kontrak input belum pernah didefinisikan (G-01) | Import ad-hoc langsung ke tabel kanonik | Sumber baru (partner, crawler) cukup menulis adapter. Validasi dan provenance seragam | Proposed | D-01, D-02, FR-DATA-001 |
-| ADR-03 | **Tenancy dua lapis + PostgreSQL RLS** (`current_setting('app.workspace_id')`) + filter aplikasi + role DB terpisah | Skor/ICP privat per tenant, data bisnis dipakai bersama (G-02) | DB/schema per tenant; data global disalin per tenant | Isolasi ganda (NFR-SEC-03). Semua query tenant wajib lewat `tenant_tx` | Proposed | D-03, FR-AUD-006 |
+| ADR-03 | **Tenancy dua lapis + PostgreSQL RLS** (`current_setting('app.workspace_id')`) + filter aplikasi + role DB terpisah | Skor/ICP privat per tenant, data bisnis dipakai bersama (G-02) | DB/schema per tenant; data global disalin per tenant | Isolasi ganda (NFR-SEC-03). Semua query tenant wajib lewat `tenancy.WithTx` | Proposed | D-03, FR-AUD-006 |
 | ADR-04 | **Company 1—N Establishment**. Skor per establishment, rollup company = maks (BR-SCORE-01) | Domain yang sama untuk cabang berbeda tidak boleh di-merge (G-04) | Satu tabel Company | ER dua level (§6.4). Baris hasil = company + establishment terbaik | Proposed | D-05 |
 | ADR-05 | **Postgres FTS (`simple` + `unaccent`) + `pg_trgm` + PostGIS**; tanpa OpenSearch di MVP | Volume 5 juta baris muat di RAM DB. Mengurangi beban operasional | OpenSearch sejak awal | Satu sistem untuk konsistensi data. Projection dirancang agar bisa dipindah ke OpenSearch (V2) tanpa ubah API | Proposed | D-12, NFR-PERF-01 |
-| ADR-06 | **Dramatiq + Redis** untuk queue. **State job disimpan di Postgres** (`platform.job`, `stage_run`) sebagai sumber kebenaran | Butuh retry/backoff/DLQ (Crawler §13) dan resume setelah restart | Celery, RQ, Temporal | Pesan Redis yang hilang dipulihkan oleh *reconciler* dari state DB. Queue: `pipeline`, `scoring.interactive`, `scoring.bulk`, `export`, `webhook`, `ai`, `default` | Proposed | FR-OPS-002 |
-| ADR-07 | **Transactional outbox** (`platform.outbox_event`) → dispatcher → handler internal + webhook delivery | Event tidak boleh hilang/terkirim tanpa commit (dual-write) | Publish langsung ke Redis setelah commit | Pengiriman at-least-once. Konsumen men-dedupe dengan `event_id` (MVP Pack §12) | Proposed | FR-EXP-003 |
-| ADR-08 | **OpenAPI-first**: `contracts/openapi/openapi.yaml` direview lebih dulu. FastAPI mengimplementasikan; CI membandingkan spec hasil generate dengan kontrak (diff harus kosong) dan memeriksa breaking change. Client TS di-generate ke `packages/api-client` | Web dan integrasi butuh kontrak stabil (MVP Pack §12) | Code-first tanpa review kontrak | Perubahan API terlihat di PR. Schemathesis menguji kontrak | Proposed | PRD §12.2 |
-| ADR-09 | **Abstraksi provider AI** (port `LLMProvider`, alias model dapat dikonfigurasi) + **grounding validator** deterministik + redaksi PII | Biaya, eval, dan risiko halusinasi (G-14) | Panggil SDK provider langsung dari endpoint | Provider bisa diganti tanpa ubah domain. Alias default: kelas Sonnet (brief), kelas Haiku (klasifikasi) | Proposed (provider: Open) | D-15, FR-AI-001..006 |
+| ADR-06 | **River** (queue berbasis Postgres, Go) untuk semua job: retry + backoff, unique job (idempotensi), periodic job (leader election), dan **insert transaksional**. Antrean: `pipeline`, `scoring`, `export`, `webhook`, `ai`, `maintenance`; prioritas 1–4 dalam antrean. Redis hanya untuk cache, rate limit, dan counter (opsional) | Butuh retry/backoff/DLQ (Crawler §13) dan job yang tidak hilang saat restart | Dramatiq/Celery + Redis broker; Temporal | State job ada di Postgres (`river_job`) sehingga ikut backup/PITR. Job habis percobaan → state `discarded` (= DLQ) yang dapat di-*retry* dari ops console. Beban tambahan di Postgres dipantau (§17.4) | Proposed | FR-OPS-002 |
+| ADR-07 | **Outbox = River insert transaksional**: perubahan domain + baris `platform.event` + job `event.dispatch` di-commit dalam **satu transaksi** (`InsertTx`). Worker dispatch melakukan fan-out ke handler internal dan webhook delivery | Event tidak boleh hilang atau terkirim tanpa commit (dual-write) | Tabel outbox + dispatcher polling; publish ke broker setelah commit | Tanpa komponen dispatcher terpisah. At-least-once; konsumen men-dedupe dengan `event_id` (MVP Pack §12) | Proposed | FR-EXP-003 |
+| ADR-08 | **OpenAPI-first**: `contracts/openapi/openapi.yaml` direview lebih dulu. Server Go di-generate dengan **oapi-codegen (strict-server)** di atas `net/http` (routing 1.22+). Client TS untuk Next.js di-generate dari spec yang sama (`openapi-typescript` + `openapi-fetch`) ke `packages/api-client`. Next.js hanya UI; API Go disajikan same-origin di `/api` via Traefik (tanpa CORS) | Web dan integrasi butuh kontrak stabil (MVP Pack §12) | Code-first (spec dihasilkan dari kode) | Handler wajib memenuhi interface hasil generate. CI: regenerasi tanpa diff + `oasdiff` untuk breaking change. Schemathesis menguji kontrak | Proposed | PRD §12.2 |
+| ADR-09 | **Abstraksi provider AI** (port `LLMProvider`, alias model dapat dikonfigurasi) + **grounding validator** deterministik + redaksi PII | Biaya, eval, dan risiko halusinasi (G-14) | Panggil SDK provider langsung dari endpoint | Provider bisa diganti tanpa ubah domain. Adapter memakai SDK Go resmi provider. Alias default: kelas Sonnet (brief), kelas Haiku (klasifikasi) | Proposed (provider: Open) | D-15, FR-AI-001..006 |
 | ADR-10 | **Credit ledger double-entry append-only** dengan akun `available`/`held`/`consumed` dan alur *hold → capture/release* | Idempotensi, refund, dan rekonsiliasi 100% (RG-4) | Kolom saldo yang di-update langsung | Saldo = Σ ledger. Operasi gagal → release (tanpa tagihan) | Proposed | D-08, FR-BILL-001..005 |
 | ADR-11 | Error **RFC 9457 `application/problem+json`** + katalog `code` stabil | Error berkode wajib untuk entitlement (FR-BILL-003) | Format error ad-hoc | Client menangani error berdasarkan `code`, bukan teks | Proposed | FR-BILL-003 |
 | ADR-12 | **Cursor (keyset) pagination** dengan cursor ber-HMAC yang mengikat `epoch` skor | Offset lambat dan tidak stabil pada 5 juta baris | Offset/limit | Hitungan total terpisah (eksak ≤ 10.000, selebihnya estimasi; FR-SRCH-006) | Proposed | FR-SRCH-006 |
 | ADR-13 | **Claim disimpan sebagai kolom bertipe (nilai pemenang) + `claim_meta` JSONB per field** (claim_type, confidence, observed_at, evidence_ids, alternates). Tidak memakai tabel claim generik (EAV) | Profil p95 ≤ 500 ms dan filter search butuh kolom bertipe. EAV ≈ 125 juta baris | Tabel `claim` generik | Satu baris dibaca per entity. Field baru = migrasi. Integritas `evidence_ids` dijaga oleh pipeline + checker | Proposed | BR-TRUST, NFR-PERF-02 |
-| ADR-14 | **ID = UUIDv7** di DB, diekspos sebagai **ID berprefiks** (`cmp_`, `est_`, …, gaya TypeID). Merge membuat `entity_redirect` | ID stabil lintas re-run (FR-DATA-007), mudah dibaca di log | ID integer, ID deterministik dari hash sumber | Pemetaan sumber→entity lewat `entity_source_link`. ID lama tetap bisa di-resolve | Proposed | FR-DATA-007, MVP-01 |
+| ADR-14 | **ID = UUIDv7** (dibangkitkan di Go) di DB, diekspos sebagai **ID berprefiks** (`cmp_`, `est_`, …, gaya TypeID). Merge membuat `entity_redirect` | ID stabil lintas re-run (FR-DATA-007), mudah dibaca di log | ID integer, ID deterministik dari hash sumber | Pemetaan sumber→entity lewat `entity_source_link`. ID lama tetap bisa di-resolve | Proposed | FR-DATA-007, MVP-01 |
 | ADR-15 | **Relevansi opportunity tenant dihitung saat dibaca** (gap fact global × tag Offering), tidak dimaterialisasi per workspace | Materialisasi = 200 ws × 5 juta × ±3 gap | Tabel opportunity per tenant | Murah dan selalu konsisten dengan Offering. Snapshot opportunity ikut tersimpan di faktor skor | Proposed | D-04, FR-INTL-007 |
 | ADR-16 | **Skor disimpan per epoch** (`intel.score`, partisi HASH per workspace, faktor ringkas `smallint[]`). Epoch baru diaktifkan secara atomik | Recompute ≤ 10 menit tanpa mengganggu pembaca (NFR-PERF-05) | UPDATE in-place; JSON penjelasan per baris | ±75 juta baris tetap ±17 GB. Penjelasan dibangun ulang dari faktor + config | Proposed | FR-INTL-008/009/011 |
 | ADR-17 | **Peta: vector tile batas wilayah statis (PMTiles per `area_set_version`) + metrik via JSON**, di-join di client (MapLibre `feature-state`) | Geometri publik dan tidak berubah. Metrik bersifat tenant-specific | `ST_AsMVT` dinamis per tenant | Tile bisa di-cache selamanya. Endpoint `ST_AsMVT` hanya untuk dev/fallback | Proposed | FR-GEO-002 |
 | ADR-18 | **Dedicated server di DC Indonesia**: Docker Compose + Traefik (`app-01`, kelak `app-02`), PostgreSQL 16 + PostGIS self-managed (`db-01` primary, `db-02` streaming replica, pgBackRest PITR), Redis self-managed (AOF), **MinIO** (S3 API), provisioning Ansible | Residensi data dan biaya. Tidak ada layanan cloud terkelola | AWS ap-southeast-3 (ECS/RDS/ElastiCache/S3) | Tim mengoperasikan sendiri backup, failover, patching. Deploy blue/green via Traefik (`06-ci-cd.md`). Abstraksi S3 dipertahankan | Accepted (dedicated) / Proposed (stack) | **D-19**, D-18, D-14, NFR-PRIV-03 |
 | ADR-19 | **Port identitas provider-agnostic** (OIDC atau Kratos session → *server session milik aplikasi*). Rekomendasi: **Ory Kratos self-hosted** | Auth SaaS akan memindahkan data identitas user ke luar negeri | Auth SaaS; Keycloak | Aplikasi hanya bergantung pada klaim `sub`, `email`, `email_verified`, level MFA | **Open** | **D-20**, FR-AUTH-001/006 |
-| ADR-20 | **Seluruh request keluar ke URL milik customer** lewat worker khusus → **egress proxy (Smokescreen)** + aturan **nftables** (blok private/metadata/LAN) + validasi aplikasi | Tidak ada security group cloud di dedicated server (NFR-SEC-05) | Validasi aplikasi saja | Tiga lapis kontrol SSRF. Proxy juga dipakai untuk egress AI/email (allowlist) | Proposed | FR-EXP-003, Crawler §12 |
-| ADR-21 | **Observability self-hosted**: OpenTelemetry Collector → Prometheus + Grafana + Loki + Tempo + Alertmanager; **GlitchTip** untuk error tracking | Residensi data dan biaya; selaras D-19 | SaaS observability | Retensi dan PII di log dikontrol sendiri | Proposed | NFR-OBS-01 |
+| ADR-20 | **Seluruh request keluar ke URL milik customer** lewat worker khusus → validasi aplikasi + `net.Dialer.Control` yang memeriksa ulang IP hasil resolve di setiap koneksi → **egress proxy (Smokescreen)** → aturan **nftables** (blok private/metadata/LAN) | Tidak ada security group cloud di dedicated server (NFR-SEC-05) | Validasi aplikasi saja | Tiga lapis kontrol SSRF. Proxy juga dipakai untuk egress AI/email (allowlist) | Proposed | FR-EXP-003, Crawler §12 |
+| ADR-21 | **Observability self-hosted**: OpenTelemetry Go SDK + `log/slog` JSON → OpenTelemetry Collector → Prometheus + Grafana + Loki + Tempo + Alertmanager; **GlitchTip** untuk error tracking | Residensi data dan biaya; selaras D-19 | SaaS observability | Retensi dan PII di log dikontrol sendiri | Proposed | NFR-OBS-01 |
 | ADR-22 | **Secret via SOPS + age** (didekripsi saat deploy ke tmpfs). **Enkripsi at-rest**: LUKS full-disk + repo pgBackRest terenkripsi + MinIO SSE. Enkripsi aplikasi (AES-256-GCM) untuk secret webhook | Tidak ada cloud KMS/secret manager | Vault (HashiCorp/OpenBao) | Operasi sederhana di MVP. Vault/OpenBao dipertimbangkan di V1 | Proposed | NFR-SEC-02/04 |
 | ADR-23 | **Record upload customer = overlay privat**: MATCHED → link ke entity global; NEW → *private prospect* (tenant projection), muncul di search hanya bila opt-in | BR-ER-07: upload tidak boleh mengubah global | Merge upload ke global | Upload bernilai tanpa mencemari global. Search melakukan UNION terkontrol (§10.9) | Proposed | FR-DATA-012 |
 | ADR-24 | **Observation disimpan per record** (envelope berisi field-level observation), **tabel dipartisi LIST per snapshot**, snapshot lama di-detach dan diarsip ke object storage | 5 juta record × ±15 field = 75 juta baris per snapshot bila disimpan per field | Satu baris per field | Partisi dapat di-drop/arsip. Evidence menunjuk ke record + field | Proposed | FR-DATA-001, G-19 |
 | ADR-25 | **Scoping workspace via header `MSP-Workspace`** + web memakai **cookie same-origin** (`/api` di-route Traefik) | Satu user bisa anggota >1 workspace (FR-AUTH-002) | Path `/v1/workspaces/{id}/...` | Setiap tab membawa workspace eksplisit. API key (V1) terikat satu workspace | Proposed | FR-AUTH-002 |
+| ADR-26 | **Akses data: pgx v5 + sqlc** (SQL type-safe, tanpa ORM) + **goose** (migrasi SQL). Bulk load via `pgx.CopyFrom`. RLS via `SET LOCAL app.workspace_id` per transaksi | Query berat FTS/pg_trgm/PostGIS/window function lebih jelas sebagai SQL asli | ORM (GORM/ent); query builder | SQL direview sebagai kode. Kode hasil sqlc per modul hanya boleh diimpor repository modul pemilik (depguard) | Proposed | D-21, D-12 |
 
 ---
 
@@ -91,7 +93,7 @@ Semua ADR berstatus **Proposed** kecuali ditandai lain. Kolom "Ref" menautkan ke
                        +-------------------------------------------+
   Sales user --------->|                                           |<--- Ops admin MSP (MFA, FR-AUTH-006)
   (browser, id-ID/en)  |              MesinProspek (MSP)           |
-  Integrasi customer ->|  web (Next.js) + api (FastAPI) + workers  |---> Webhook / CRM customer (HTTPS, via egress proxy)
+  Integrasi customer ->|  web (Next.js) + api (Go) + workers (Go) |---> Webhook / CRM customer (HTTPS, via egress proxy)
   (API key, V1)        |                                           |---> LLM provider (data level company saja, D-14/D-15)
                        +---+-----------------+-----------------+---+---> Email provider (SMTP: verifikasi, undangan)
                            ^                 ^                 ^     ---> DNS publik (MX/A/SPF via resolver Unbound)
@@ -106,11 +108,11 @@ Semua ADR berstatus **Proposed** kecuali ditandai lain. Kolom "Ref" menautkan ke
 ```
  Internet --443--> +=========================== app-01 (Docker Compose) ===========================+
                    | traefik  (TLS; app.<dom> -> web; app.<dom>/api -> api; files.<dom> -> MinIO)   |
-                   |   web (Next.js SSR, x2)          api (FastAPI/uvicorn, x2) <-> kratos (D-20)   |
-                   |   worker-pipeline   worker-scoring   worker-export   worker-ai   worker-default|
+                   |   web (Next.js SSR, x2)            api (`msp api`, x2) <-> kratos (D-20)        |
+                   |   worker-pipeline  worker-scoring  worker-export  worker-ai  worker-maintenance |
+                   |   (`msp worker --queues=…`; River: retry, periodic job, leader election)        |
                    |   worker-webhook --(hanya)--> smokescreen (egress proxy) --nftables--> Internet |
-                   |   dispatcher (outbox)   scheduler (cron + leader lock)   reconciler             |
-                   |   redis (broker + cache, AOF)   unbound (resolver DNS)   otel-collector (agent) |
+                   |   redis (cache/rate limit, opsional)  unbound (resolver DNS)  otel-collector    |
                    +============================+======================+===========================+
                                 LAN privat (VLAN) |                      |
               +-------------------+--------------+                      |
@@ -130,8 +132,8 @@ Semua ADR berstatus **Proposed** kecuali ditandai lain. Kolom "Ref" menautkan ke
 
 | Host | Peran | Layanan | Catatan |
 |---|---|---|---|
-| `app-01` | Aplikasi | traefik, web, api, kratos, worker pools, dispatcher, scheduler, reconciler, redis, unbound, smokescreen, otel-collector | SPOF di MVP (99,5% masih tercapai dengan restore cepat). `app-02` ditambahkan untuk HA (Traefik di dua node + DNS failover/VRRP, Redis replica + Sentinel) |
-| `db-01` | DB primary | PostgreSQL 16 + PostGIS, PgBouncer (transaction mode), pgBackRest, postgres_exporter | Satu-satunya target write |
+| `app-01` | Aplikasi | traefik, web, api, kratos, worker pools (River), redis (opsional), unbound, smokescreen, otel-collector | SPOF di MVP (99,5% masih tercapai dengan restore cepat). `app-02` ditambahkan untuk HA (Traefik di dua node + DNS failover/VRRP, Redis replica + Sentinel) |
+| `db-01` | DB primary | PostgreSQL 16 + PostGIS, PgBouncer (transaction mode), pgBackRest, postgres_exporter | Satu-satunya target write. Juga menyimpan antrean River |
 | `db-02` | DB replica | Hot standby (streaming, async), `hot_standby_feedback=on` | Melayani read search/profil. Failover manual via runbook (Patroni dipertimbangkan saat ada node ketiga) |
 | `stor-01` | Object storage | MinIO single-node multi-drive (erasure coding) | Bucket privat, presigned URL via `files.<domain>` |
 | `ops-01` | Ops | GitLab CE + registry, Prometheus, Alertmanager, Grafana, Loki, Tempo, GlitchTip, Tang | Detail CI di `06-ci-cd.md` |
@@ -140,41 +142,66 @@ Semua ADR berstatus **Proposed** kecuali ditandai lain. Kolom "Ref" menautkan ke
 ### 2.3 Contoh alur request
 
 **(a) Search (FR-SRCH-001..006, NFR-PERF-01)**
-1. Browser → Traefik → `web` (React Server Component) → `GET /api/v1/prospects?icp_id=…&q=…` dengan cookie `__Host-msp_sess` dan header `MSP-Workspace`.
+1. Browser → Traefik → `web` (React Server Component, client TS hasil generate) → `GET /api/v1/prospects?icp_id=…&q=…` (Traefik meneruskan `/api` ke `msp api`) dengan cookie `__Host-msp_sess` dan header `MSP-Workspace`.
 2. `platform.auth` me-resolve sesi (cache Redis, TTL 60 s) → `Principal(user, workspace, role)` → cek permission `PROSPECT_READ`.
 3. `platform.tenancy` membuka transaksi read-only di **db-02**: `SELECT set_config('app.workspace_id', :ws, true)`.
 4. `query.search` menjalankan keyset query pada `query.prospect_search ⋈ intel.score` (epoch aktif). Masking kontak memakai `usage.unlock`.
 5. Respons berisi `items[]`, `next_cursor`, `count` (eksak/estimasi), dan header `MSP-Correlation-Id`.
 
 **(b) Unlock (BR-CRED-02, FR-BILL-001)**
-`POST /v1/unlocks` + `Idempotency-Key` → `usage.unlock_companies()` dalam satu transaksi di db-01: kunci baris `credit_balance` → cek saldo → tulis `usage_event` + baris ledger (`available → consumed`) + baris `unlock` + `audit_log` + `outbox_event(unlock.created)` → commit → 200 berisi kontak yang sudah tidak ter-mask.
+`POST /v1/unlocks` + `Idempotency-Key` → `usage.Service.UnlockCompanies` dalam satu transaksi di db-01: kunci baris `credit_balance` → cek saldo → tulis `usage_event` + baris ledger (`available → consumed`) + baris `unlock` + `audit_log` + `event(unlock.created)` + job River → commit → 200 berisi kontak yang sudah tidak ter-mask.
 
 **(c) Simpan ICP → skor (FR-ICP-002, NFR-PERF-05)**
-`PUT /v1/icps/{id}` → `icp_version` baru + `score_job(QUEUED)` + outbox → aktor `scoring.interactive` → seleksi kandidat lewat SQL (filter wajib) → scoring per chunk 50.000 baris → `COPY` ke `intel.score` (epoch n+1) → `icp_area_metric` → aktifkan epoch n+1 secara atomik → `icp.scoring_completed`. Selama proses, UI melakukan polling `GET /v1/icps/{id}/scoring-status` dan menampilkan "Menghitung skor".
+`PUT /v1/icps/{id}` → `icp_version` baru + `score_job(QUEUED)` + job River antrean `scoring` prioritas 1 (insert transaksional) → seleksi kandidat lewat SQL (filter wajib) → scoring per chunk 50.000 baris → `COPY` ke `intel.score` (epoch n+1) → `icp_area_metric` → aktifkan epoch n+1 secara atomik → `icp.scoring_completed`. Selama proses, UI melakukan polling `GET /v1/icps/{id}/scoring-status` dan menampilkan "Menghitung skor".
 
 **(d) Export (FR-EXP-001/002, NFR-PERF-04)**
 `POST /v1/exports/preview` (biaya) → `POST /v1/exports` + `Idempotency-Key` → **hold** credit untuk record yang belum di-unlock → job `export` mengalirkan query (server-side cursor) → file ke MinIO `msp-exports/{ws}/…` → **capture** + buat unlock → `export.completed` → `GET /v1/exports/{id}/download` mengembalikan 302 ke presigned URL (24 jam). Bila gagal → **release** + status `FAILED` yang dapat di-retry.
 
 **(e) Kirim ke webhook (FR-EXP-004)**
-`POST /v1/webhook-sends` → hold → satu `outbox_event(prospect.sent)` per prospek → dispatcher membuat `webhook_delivery` → `worker-webhook` mengirim lewat Smokescreen → 2xx → capture. DLQ (setelah ±20,6 jam) → release.
+`POST /v1/webhook-sends` → hold → satu `event(prospect.sent)` per prospek + job `event.dispatch` → worker membuat `webhook_delivery` + job `webhook.deliver` → `worker-webhook` mengirim lewat Smokescreen → 2xx → capture. DLQ (setelah ±20,6 jam) → release.
 
 ---
 
-## 3. Modul backend (`apps/api/msp/`)
+## 3. Modul backend (`apps/api/`, Go — D-21)
 
-### 3.1 Struktur paket
+### 3.1 Struktur, build, dan pustaka
 
 ```
-apps/api/msp/
-  app/            composition root: api.py (FastAPI factory), worker.py (broker + aktor), dag.py (wiring stage), settings.py
-  platform/       auth, tenancy, rbac, audit, flags, outbox, jobs (DAG runner, DLQ), idempotency, net (safe_http),
-                  ids, errors (problem+json), pagination, i18n, observability
-  ingest/  identity/  intelligence/  geo/  query/  action/  ai/  usage/  ops/
-     <modul>/public.py    facade layanan + DTO Pydantic — SATU-SATUNYA yang boleh diimpor modul lain
-     <modul>/routes.py    router FastAPI (didaftarkan oleh msp.app)
-     <modul>/tasks.py     aktor Dramatiq / stage pipeline (didaftarkan oleh msp.app)
-     <modul>/internal/    logika domain, repository, model SQLAlchemy
+apps/api/
+  cmd/msp/                 main: subcommand `api`, `worker`, `migrate`, dan `tool …` (ops: score-reproduce, taxonomy-suggest, snapshot-load)
+  internal/
+    app/                   composition root: wiring server HTTP (oapi-codegen strict), client + worker River, DAG pipeline, config
+    platform/              auth, tenancy, rbac, audit, flags, events, jobs (helper River, DAG runner), idempotency, netguard,
+                           ids, problem (RFC 9457), pagination, i18n, telemetry
+    identity/ ingest/ intelligence/ geo/ query/ action/ ai/ usage/ ops/
+       <modul>/service.go  facade publik: interface Service, tipe & DTO — satu-satunya API modul untuk modul lain
+       <modul>/http.go     handler strict-server untuk operasi OpenAPI milik modul
+       <modul>/jobs.go     worker River / stage pipeline milik modul
+       <modul>/internal/   logika domain & repository (visibility Go `internal/`: tidak dapat diimpor dari luar modul)
+    db/<modul>db/          kode hasil sqlc per schema modul (hanya diimpor repository modul pemilik; depguard)
+    api/                   kode hasil oapi-codegen (interface server + tipe) dari contracts/openapi/openapi.yaml
+  db/migrations/           goose SQL (satu riwayat; objek dikelompokkan per schema modul)
+  db/queries/<modul>/      SQL sumber sqlc (FTS, pg_trgm, PostGIS, window function ditulis apa adanya)
 ```
+
+- **Build:** `CGO_ENABLED=0` → binary statis → image `distroless/static` (non-root). Satu image untuk `api`, `worker`, dan `migrate`.
+- **Tooling:** golangci-lint (`depguard`, `gosec`, `staticcheck`, `errcheck`, `govet`, `revive`), `govulncheck`, `go test -race`, `sqlc generate` + `sqlc vet`, dan `oapi-codegen`. CI memastikan regenerasi kode (sqlc, oapi-codegen) tidak menghasilkan diff (`06-ci-cd.md`).
+- **Python** tidak dipakai di service. Python hanya untuk analisis offline (notebook kalibrasi bobot ER, prior revenue, model ML kelak). Hasilnya di-commit sebagai file konfigurasi berversi yang dibaca service Go.
+
+| Kebutuhan | Pustaka/komponen |
+|---|---|
+| HTTP & kontrak | `net/http` (routing 1.22+), `oapi-codegen` strict-server, middleware stdlib |
+| Database | `pgx` v5 (pool, `CopyFrom`), `sqlc`, `goose` |
+| Job & event | `River` (driver pgx v5) |
+| Normalisasi | `nyaruka/phonenumbers` (port libphonenumber, region `ID`), `golang.org/x/net/publicsuffix`, `golang.org/x/text` (normalisasi Unicode NFKC + folding diakritik), `net/mail` |
+| Upload | `encoding/csv`, `excelize` (streaming rows) |
+| Snapshot & arsip | `parquet-go/parquet-go` (baca/tulis Parquet), `pgx.CopyFrom` untuk bulk load |
+| Matching | `adrg/strutil` (Jaro-Winkler) + `similarity()` pg_trgm di SQL |
+| DNS | `miekg/dns` (MX/A/TXT dengan TTL, deteksi null MX) ke resolver Unbound |
+| Observability | `log/slog` (JSON), OpenTelemetry Go SDK, SDK Sentry Go → GlitchTip |
+| ID | `google/uuid` (UUIDv7) + encoder prefix base32 |
+| AI | SDK Go resmi provider di balik interface `LLMProvider` (D-15) |
+| Auth | Klien Go Ory Kratos bila D-20 memilih Kratos (Kratos ditulis dalam Go, sehingga operasional dan debugging satu ekosistem); adapter OIDC (`coreos/go-oidc`) untuk opsi lain |
 
 ### 3.2 Tanggung jawab modul
 
@@ -182,57 +209,59 @@ Nama schema Postgres sama dengan nama modul (`intelligence` → schema `intel`).
 
 | Modul | Tanggung jawab | Tabel milik (schema) | Interface publik (contoh) | MVP Pack §11 |
 |---|---|---|---|---|
-| `platform` | AuthN/sesi, workspace & membership, RBAC, konteks tenant (RLS), audit, feature flag, outbox, job/DAG runner, DLQ, idempotensi, HTTP keluar aman, ID, error, pagination | `platform`: workspace, app_user, membership, invitation, session, api_key (V1), idempotency_record, job, job_dlq, stage_run, outbox_event, feature_flag, audit_log, support_access_grant | `require(Permission)`, `tenant_tx(ws)`, `audit.record()`, `outbox.emit()`, `flags.enabled()`, `jobs.enqueue()`, `safe_http.post()` | lintas modul |
-| `ingest` | Source Registry, snapshot lifecycle, mapping spec, load observation, laporan validasi, parsing upload | `ingest`: source, dataset_snapshot, mapping_spec, observation, validation_report, pipeline_run, upload, upload_row | `register_snapshot()`, `iter_observations(snapshot, batch)`, `get_upload_rows()` | (baru; upstream contract) |
-| `identity` | Normalisasi, ER/dedupe, verifikasi, **klasifikasi industri** (kategori = atribut kanonik "industry", MVP Pack §04), claim builder, evidence, merge review, redirect, suppression, linking upload | `identity`: company, establishment, person, contact_point, evidence, establishment_class, entity_source_link, entity_redirect, merge_candidate, merge_decision, high_value_entity, dns_lookup, suppression, upload_row_link | `get_establishment()`, `resolve_id()`, `claims_for()`, `link_upload_rows()`, `mark_high_value()`, `is_suppressed()` | identity-service (+ klasifikasi dari intelligence-service) |
-| `intelligence` | Digital presence lite, commercial (BR-REV), faktor dasar, gap fact, Offering, ICP, scoring, opportunity (on read), feedback | `intel`: digital_presence, technology, commercial_profile, establishment_factor, gap_fact, field_fill_rate, score_model, offering, icp, icp_version, score, score_context, score_job, icp_area_metric, feedback | `score_icp()`, `explain_score()`, `opportunities_for()`, `icp_candidates_sql()` | intelligence-service |
-| `geo` | Referensi wilayah, crosswalk, penetapan area, metrik area global, fungsi formula, tile | `geo`: area_set, area, area_boundary, area_population, area_crosswalk, establishment_area, area_metric | `assign()`, `area_metrics()`, `market_opportunity()` (fungsi murni) | intelligence-service (geo) |
-| `query` | Projection `prospect_search`, search/filter/sort/count, perakitan profil + masking, saved search, private prospect | `query`: prospect_search, private_prospect_search, saved_search | `search()`, `get_profile()`, `count()` | query-service |
-| `action` | List, segment, tag, catatan, assignment, status kerja, export, webhook (endpoint + delivery), activity, refresh orchestration | `action`: list, list_item, segment, tag, prospect_tag, note, assignment, prospect_status, export_job, webhook_endpoint, webhook_delivery, activity | `export()`, `send_to_webhook()`, `record_activity()` | action-service |
-| `ai` | Port provider, prompt registry, input builder, grounding validator, cache, biaya | `ai`: ai_artifact, ai_call | `generate_brief()` | intelligence-service (AI) |
-| `usage` | Plan, entitlement, fair-use, usage event, ledger, hold/capture, unlock, refund | `usage`: plan, plan_entitlement, subscription, credit_lot, credit_ledger, credit_balance, usage_event, unlock, profile_view | `hold()`, `capture()`, `release()`, `unlock_companies()`, `check_entitlement()` | usage-service |
-| `ops` | API konsol internal: data/pipeline/intelligence/cost health, DLQ redrive, merge review, admin tenant, support access, DSR, laporan data | `ops`: data_issue_report, data_subject_request, metric_snapshot | (konsumen saja) | ops-console |
+| `platform` | AuthN/sesi, workspace & membership, RBAC, konteks tenant (RLS), audit, feature flag, event, helper job/DAG, idempotensi, HTTP keluar aman (netguard), ID, error, pagination | `platform`: workspace, app_user, membership, invitation, session, api_key (V1), idempotency_record, job (resource job untuk user), stage_run, event, feature_flag, audit_log, audit_log_pii, support_access_grant; schema `river` (tabel River) | `rbac.Require(perm)`, `tenancy.WithTx(ctx, ws, fn)`, `audit.Record(ctx, tx, …)`, `events.Emit(ctx, tx, evt)`, `flags.Enabled(ctx, key)`, `jobs.InsertTx(ctx, tx, args)`, `netguard.Client(role)` | lintas modul |
+| `ingest` | Source Registry, snapshot lifecycle, mapping spec, load observation (`CopyFrom`), laporan validasi, parsing upload | `ingest`: source, dataset_snapshot, mapping_spec, observation, validation_report, pipeline_run, upload, upload_row | `RegisterSnapshot`, `IterObservations(ctx, snapshot, batch)`, `UploadRows` | (baru; upstream contract) |
+| `identity` | Normalisasi, ER/dedupe, verifikasi, **klasifikasi industri** (kategori = atribut kanonik "industry", MVP Pack §04), claim builder, evidence, merge review, redirect, suppression, linking upload | `identity`: company, establishment, person, contact_point, evidence, establishment_class, entity_source_link, entity_redirect, merge_candidate, merge_decision, high_value_entity, dns_lookup, suppression, upload_row_link | `GetEstablishment`, `ResolveID`, `ClaimsFor`, `LinkUploadRows`, `MarkHighValue`, `IsSuppressed` | identity-service (+ klasifikasi dari intelligence-service) |
+| `intelligence` | Digital presence lite, commercial (BR-REV), faktor dasar, gap fact, Offering, ICP, scoring, opportunity (on read), feedback | `intel`: digital_presence, technology, commercial_profile, establishment_factor, gap_fact, field_fill_rate, score_model, offering, icp, icp_version, score, score_context, score_job, icp_area_metric, feedback | `ScoreICP`, `ExplainScore`, `OpportunitiesFor`, `ICPCandidateFilter` | intelligence-service |
+| `geo` | Referensi wilayah, crosswalk, penetapan area, metrik area global, fungsi formula, tile | `geo`: area_set, area, area_boundary, area_population, area_crosswalk, establishment_area, area_metric | `Assign`, `AreaMetrics`, `MarketOpportunity` (fungsi murni) | intelligence-service (geo) |
+| `query` | Projection `prospect_search`, search/filter/sort/count, perakitan profil + masking, saved search, private prospect | `query`: prospect_search, private_prospect_search, saved_search | `Search`, `GetProfile`, `Count` | query-service |
+| `action` | List, segment, tag, catatan, assignment, status kerja, export, webhook (endpoint + delivery), activity, orkestrasi refresh | `action`: list, list_item, segment, tag, prospect_tag, note, assignment, prospect_status, export_job, distribution_log, webhook_endpoint, webhook_delivery, activity | `Export`, `SendToWebhook`, `RecordActivity` | action-service |
+| `ai` | Port provider, prompt registry, input builder, grounding validator, cache, biaya | `ai`: ai_artifact, ai_call | `GenerateBrief` | intelligence-service (AI) |
+| `usage` | Plan, entitlement, fair-use, usage event, ledger, hold/capture, unlock, refund | `usage`: plan, plan_entitlement, subscription, credit_lot, credit_ledger, credit_balance, usage_event, unlock, profile_view | `Hold`, `Capture`, `Release`, `UnlockCompanies`, `CheckEntitlement` | usage-service |
+| `ops` | API konsol internal: data/pipeline/intelligence/cost health, DLQ (job River `discarded`), merge review, admin tenant, support access, DSR, laporan data | `ops`: data_issue_report, data_subject_request, metric_snapshot | (konsumen saja) | ops-console |
 
 ### 3.3 Aturan dependensi
 
 ```
-msp.app                          (composition root: boleh impor semua)
-msp.ops
-msp.action | msp.ai              (saudara independen: tidak saling impor)
-msp.query
-msp.intelligence
-msp.geo
-msp.identity
-msp.ingest
-msp.usage
-msp.platform                     (paling bawah)
+internal/app                     (composition root: boleh impor semua)
+internal/ops
+internal/action | internal/ai    (saudara independen: tidak saling impor)
+internal/query
+internal/intelligence
+internal/geo
+internal/identity
+internal/ingest
+internal/usage
+internal/platform                (paling bawah)
 ```
 
-1. Modul hanya boleh mengimpor modul yang berada **di bawahnya**, dan hanya melalui `msp.<modul>.public`.
-2. Kebutuhan dari bawah ke atas (mis. `identity.merge` perlu memberi tahu `action` agar me-rekey list) dipenuhi lewat **event internal** di outbox, bukan import.
-3. Stage pipeline lintas modul tidak saling memanggil. Masing-masing didaftarkan ke registry DAG di `platform.jobs`, lalu disusun di `msp/app/dag.py`.
-4. Query berat lintas modul (builder projection) membaca **view read-only yang dipublikasikan** modul pemilik (`identity.v_establishment_public`, …), bukan tabel internalnya.
+1. Modul hanya boleh mengimpor modul yang berada **di bawahnya**, dan hanya paket akar modul (`service.go`). `internal/<modul>/internal/...` tidak dapat diimpor dari luar modul karena aturan compiler Go.
+2. Kebutuhan dari bawah ke atas (mis. `identity` perlu memberi tahu `action` agar me-rekey list setelah merge) dipenuhi lewat **event** (`events.Emit` → job River), bukan import.
+3. Stage pipeline lintas modul tidak saling memanggil. Setiap modul mendaftarkan worker stage-nya di `jobs.go`, lalu DAG disusun di `internal/app/dag.go`.
+4. Query berat lintas modul (builder projection) membaca **view read-only yang dipublikasikan** modul pemilik (`identity.v_establishment_public`, …), bukan tabel internalnya. Paket sqlc `internal/db/<modul>db` hanya boleh diimpor oleh modul pemilik.
 
-```toml
-# pyproject.toml (cuplikan) — kontrak "forbidden" per modul dibangkitkan tools/gen_importlinter.py
-[tool.importlinter]
-root_package = "msp"
-
-[[tool.importlinter.contracts]]
-name = "Layer modul"
-type = "layers"
-layers = ["msp.app", "msp.ops", "msp.action | msp.ai", "msp.query", "msp.intelligence",
-          "msp.geo", "msp.identity", "msp.ingest", "msp.usage", "msp.platform"]
-
-[[tool.importlinter.contracts]]
-name = "query hanya mengimpor facade publik"
-type = "forbidden"
-source_modules = ["msp.query"]
-forbidden_modules = ["msp.intelligence.internal", "msp.geo.internal", "msp.identity.internal",
-                     "msp.usage.internal", "msp.intelligence.tasks", "msp.identity.tasks"]
+```yaml
+# .golangci.yml (cuplikan) — aturan per modul dibangkitkan tools/gen-depguard dari tabel layer di atas
+linters:
+  enable: [depguard, gosec, staticcheck, errcheck, govet, revive]
+linters-settings:
+  depguard:
+    rules:
+      query-layer:
+        files: ["**/internal/query/**"]
+        deny:
+          - { pkg: "<mod>/internal/action", desc: "query berada di bawah action (§3.3)" }
+          - { pkg: "<mod>/internal/ai",     desc: "query berada di bawah ai (§3.3)" }
+          - { pkg: "<mod>/internal/ops",    desc: "ops adalah lapisan teratas" }
+          - { pkg: "<mod>/internal/db/inteldb", desc: "tabel intel hanya via intelligence.Service" }
+      platform-bottom:
+        files: ["**/internal/platform/**"]
+        deny:
+          - { pkg: "<mod>/internal/identity", desc: "platform tidak boleh bergantung pada modul domain" }
 ```
 
 ---
+
 ## 4. Input Contract (menutup G-01)
 
 Memenuhi FR-DATA-001, FR-DATA-008, FR-DATA-012, BR-ER-07, BR-PRIV-04, dan PRD §11. Artefak kontrak disimpan di `contracts/input/` (JSON Schema 2020-12) dan berversi SemVer (`observation-record/1.0.0`).
@@ -475,13 +504,13 @@ PENDING_UPLOAD -> UPLOADED -> PARSING -> MAPPING_REQUIRED -> PREVIEW_READY -> PR
 
 1. `POST /v1/uploads` (nama file, ukuran, tipe) → cek entitlement dan flag `upload.create` → baris `ingest.upload` + **presigned PUT URL** MinIO (`msp-uploads/{workspace_id}/{upload_id}/source.<ext>`, berlaku 15 menit, `Content-Length` ≤ 20 MB).
 2. Browser mengunggah langsung ke `files.<domain>` (Traefik → MinIO). `POST /v1/uploads/{id}/complete` memicu job `PARSING`.
-3. Parsing di worker `default`:
-   - CSV: deteksi encoding (UTF-8/UTF-8-BOM/Windows-1252), sniff delimiter (`,` `;` tab), baris header wajib.
-   - XLSX: hanya `.xlsx` (bukan `.xlsm`/`.xls`), mode read-only streaming, nilai formula dibaca dari cache, sheet pertama atau sheet yang dipilih.
+3. Parsing di worker antrean `maintenance`:
+   - CSV (`encoding/csv` + `x/text/encoding/charmap`): deteksi encoding (UTF-8/UTF-8-BOM/Windows-1252), sniff delimiter (`,` `;` tab), baris header wajib.
+   - XLSX (`excelize`, iterator `Rows()` streaming): hanya `.xlsx` (bukan `.xlsm`/`.xls`), nilai formula dibaca dari cache, sheet pertama atau sheet yang dipilih.
    - Penjaga zip bomb: total uncompressed ≤ 200 MB, ≤ 1.000 entry. Batas ≤ 50.000 baris data dan ≤ 100 kolom.
    - Hasilnya header + 20 baris sampel + **saran mapping** (kamus sinonim header: "nama usaha"→`name`, "no hp/telp/wa"→`phone`, "alamat"→`address.full`, "web/situs"→`website`, "kota/kab"→`address.city`).
 4. `PUT /v1/uploads/{id}/mapping` → preview validasi 1.000 baris pertama (valid/reject per alasan). Minimum: `name` + (`website` atau `phone` atau `address.full`) (PRD §11).
-5. `POST /v1/uploads/{id}/process` (async): normalisasi (fungsi BR-NORM yang sama) → verifikasi format/DNS → **linking** (`identity.linking`, fitur ER §6.4). Rangkaian ini adalah DAG upload yang disusun di `msp/app/dag.py` (`ingest.parse_upload` → `identity.normalize_link` → `intel.score_private` → `query.project_private`), sehingga `ingest` tidak mengimpor modul di atasnya:
+5. `POST /v1/uploads/{id}/process` (async): normalisasi (fungsi BR-NORM yang sama) → verifikasi format/DNS → **linking** (`identity.linking`, fitur ER §6.4). Rangkaian ini adalah DAG upload yang disusun di `internal/app/dag.go` (`ingest.parse_upload` → `identity.normalize_link` → `intel.score_private` → `query.project_private`), sehingga `ingest` tidak mengimpor modul di atasnya:
 
 | Skor link | Status | Perilaku |
 |---|---|---|
@@ -534,7 +563,7 @@ Memenuhi D-03, D-05, BR-TRUST, MVP-01..03, FR-AUD-006, dan NFR-DATA-01.
 | `geo` | Global | geo | Wilayah, metrik area |
 | `query` | Global (`prospect_search`) + tenant (`private_prospect_search`, `saved_search`) | query | Read model |
 | `action`, `usage`, `ai` | Tenant | modul masing-masing | Workflow, billing, AI |
-| `platform` | Campuran | platform | Workspace, user, audit, outbox, flag, job |
+| `platform` | Campuran | platform | Workspace, user, audit, event, flag, job (+ schema `river` untuk antrean) |
 | `ops` | Internal (sebagian ber-`workspace_id`) | ops | DSR, laporan data, metrik |
 
 Konvensi:
@@ -566,7 +595,7 @@ geo.area_set 1--< geo.area 1--0..1 geo.area_boundary ; geo.area 1--< geo.area_po
 
 ```
 platform.workspace 1--< platform.membership >--1 platform.app_user (global, data akun)
-     |-- platform.invitation, platform.session, platform.api_key (V1), platform.audit_log, platform.outbox_event
+     |-- platform.invitation, platform.session, platform.api_key (V1), platform.audit_log, platform.event
      |-- intel.offering 1--< intel.icp 1--< intel.icp_version
      |                         |--< intel.score (epoch, partisi HASH workspace) >-- identity.establishment
      |                         |--1 intel.score_context ; --< intel.score_job ; --< intel.icp_area_metric >-- geo.area
@@ -731,7 +760,7 @@ Semua tabel di bawah memiliki `workspace_id` + RLS.
 | `usage.*` | §14.2 | — |
 | `ai.ai_artifact` / `ai.ai_call` | §13 | — |
 | `platform.audit_log` | §15.5 | Partisi bulanan |
-| `platform.outbox_event` | id (`evt_`), workspace_id, type, version, payload, occurred_at, published_at | §12.3 |
+| `platform.event` | id (`evt_`), workspace_id, type, version, subject, payload, occurred_at, retained_until (30 hari) | §12.3. Dikirim lewat job River |
 | `ops.data_issue_report` | id (`rpt_`), workspace_id, reporter_id, company_id, claim_ref, reason_code, comment, status, resolution | FR-DATA-014 |
 | `ops.data_subject_request` | id (`dsr_`), type, status, requester (terenkripsi), subject_hashes, due_at, handled_by | Tanpa workspace (FR-AUD-004) |
 | `platform.feature_flag` | key, scope (GLOBAL, PLAN, WORKSPACE), scope_id, enabled, rollout jsonb, updated_by | FR-OPS-007 |
@@ -786,11 +815,12 @@ Nilai pemenang disimpan di kolom bertipe. Metadata per field disimpan di `claim_
 
 | Role DB | Dipakai oleh | Hak |
 |---|---|---|
-| `msp_owner` | Migrasi (Alembic) | Pemilik objek. Tidak dipakai runtime |
+| `msp_owner` | Migrasi (goose, `msp migrate`) | Pemilik objek. Tidak dipakai runtime |
 | `msp_app` | api, worker tenant (scoring, export, webhook, ai) | `NOBYPASSRLS`. Global: `SELECT` saja. Tenant: DML sesuai kebutuhan, di bawah RLS |
 | `msp_pipeline` | worker pipeline | DML pada schema global. **Tidak punya hak** atas tabel tenant mana pun |
-| `msp_ops` | endpoint `/v1/ops/*` | DML merge/suppression/DSR. Akses tenant hanya lewat `tenant_tx` + `support_access_grant` dalam transaksi `READ ONLY` |
+| `msp_ops` | endpoint `/v1/ops/*` | DML merge/suppression/DSR. Akses tenant hanya lewat `tenancy.WithTx` + `support_access_grant` dalam transaksi `READ ONLY` |
 | `msp_readonly_replica` | koneksi ke db-02 | `SELECT` (RLS tetap berlaku) |
+| (schema `river`) | api, worker | DML untuk `msp_app` dan `msp_pipeline` (insert/fetch job). Tabel River tidak berisi data tenant selain ID di argumen job |
 
 ```sql
 -- Pola untuk setiap tabel tenant
@@ -800,7 +830,8 @@ CREATE POLICY tenant_isolation ON action.list
   USING      (workspace_id = current_setting('app.workspace_id', true)::uuid)
   WITH CHECK (workspace_id = current_setting('app.workspace_id', true)::uuid);
 
--- Setiap transaksi tenant (dibungkus platform.tenancy.tenant_tx); aman untuk PgBouncer transaction mode
+-- Setiap transaksi tenant (dibungkus tenancy.WithTx, pgx). Setara SET LOCAL app.workspace_id = …;
+-- set_config dipakai karena menerima parameter bind. Aman untuk PgBouncer transaction mode
 BEGIN;
 SELECT set_config('app.workspace_id', '0192…', true);   -- is_local = true → hilang saat COMMIT
 -- ... query ...
@@ -862,15 +893,15 @@ ingest.load -> identity.normalize -> identity.resolve -> identity.verify -------
 - `platform.stage_run(pipeline_run_id, stage, batch_key, idem_key UNIQUE, status, attempts, records_in, records_out, error_counts jsonb, started_at, finished_at)` berfungsi sebagai checkpoint. Batch dengan `idem_key` yang sudah `SUCCEEDED` dilewati, sehingga pipeline bisa dilanjutkan setelah restart. Mode `force` menghasilkan pipeline_run baru.
 - Setiap write memakai **upsert pada natural key** (`entity_source_link`, `(establishment_id)` pada tabel 1:1, `(snapshot_id, …)` pada tabel per snapshot). Menjalankan batch dua kali menghasilkan state yang sama (FR-DATA-007, MVP-11).
 - **Re-run pada snapshot yang sama** tidak membuat entity baru karena `entity_source_link` dan keputusan manual (`merge_decision`) diterapkan **sebelum** ER otomatis. **Snapshot lebih baru:** record dengan `record_hash` sama dan versi stage sama dilewati di stage `normalize`..`derive`. Evidence baru tetap dibuat agar freshness ikut maju.
-- Dramatiq: `max_retries = 5`, backoff eksponensial 2 s → 5 menit dengan jitter (pola Crawler §8.3). Error non-retryable (validasi, bug data) langsung masuk DLQ. Middleware menyalin pesan yang kehabisan retry ke `platform.job_dlq` (error terakhir, attempts, stage, versi, payload ref) agar dapat ditinjau dan di-*redrive* dari ops console (FR-OPS-002, Crawler §13.1).
-- **Reconciler** (tiap 5 menit) mengantre ulang `stage_run` yang `RUNNING` tanpa heartbeat > 10 menit (misalnya pesan hilang saat Redis crash).
+- **River:** setiap batch = satu job (`MaxAttempts` 5, `NextRetry` eksponensial 2 s → 5 menit + jitter, pola Crawler §8.3), unik per `idem_key` (`UniqueOpts`) sehingga enqueue ganda tidak menjalankan batch dua kali. Error non-retryable dikembalikan sebagai `river.JobCancel(err)` agar tidak di-retry. Job yang kehabisan percobaan berstatus `discarded` (= DLQ) dengan error terakhir, attempt, dan argumen (stage, versi, batch_key). Job ini dapat ditinjau dan di-*retry* dari ops console (FR-OPS-002, Crawler §13.1).
+- Job macet (worker mati) dikembalikan ke antrean oleh *rescuer* River (`RescueStuckJobsAfter` 15 menit). Antrean berada di Postgres, sehingga crash worker atau Redis tidak menghilangkan job.
 - **Refresh prospek** (FR-MON-001) memakai mini-DAG untuk satu company: `normalize` (data snapshot terbaru) → `resolve` (lokal) → `verify` (paksa, abaikan cache > 24 jam) → `derive` → `gap_facts` → `base_factors` → upsert projection → re-score establishment tersebut untuk semua ICP aktif workspace peminta.
 
 ### 6.3 Normalisasi (BR-NORM)
 
 Nilai mentah selalu disimpan di `observation.raw` dan dapat ditampilkan di evidence (FR-DATA-002). Daftar pola berversi di `data/reference/` dan versinya masuk ke `stage_version`.
 
-**Telepon (BR-NORM-01, BR-VER):** library `phonenumbers` (port libphonenumber), region default `ID`.
+**Telepon (BR-NORM-01, BR-VER):** library `nyaruka/phonenumbers` (port Go libphonenumber), region default `ID`.
 
 | Input | Aturan | Hasil |
 |---|---|---|
@@ -887,9 +918,9 @@ Nilai mentah selalu disimpan di `observation.raw` dan dapat ditampilkan di evide
 - **Mobile → WA-likely:** `phone_type = MOBILE` (awalan +628) → `wa_likely = true`, claim INFERRED "Kemungkinan WhatsApp" (BR-VER-01). Nilai observed `wa.me/…` → contact point `WHATSAPP` OBSERVED.
 - **Nomor bersama (BR-ER-08):** `is_shared = true` bila nomor muncul di ≥ 3 establishment milik company berbeda (nama dan domain berbeda) dalam satu snapshot (dihitung di awal `resolve` dari kandidat ternormalisasi, sebelum dipakai sebagai blok), tercantum di `data/reference/phone_shared.yaml`, atau bertipe TOLL_FREE/UAN/SHORT_CODE. Nomor bersama bukan identifier kuat (BR-ER-01).
 
-**Email (BR-NORM-02):** trim, buang `mailto:`, domain di-lowercase + IDNA, local-part dipertahankan untuk tampilan. Ditolak bila domain contoh/placeholder (`example.com`, `test.com`) atau gagal syntax. Domain di `webmail.txt` (gmail.com, yahoo.com, yahoo.co.id, ymail.com, hotmail.com, outlook.com, live.com, icloud.com, proton.me, …) → `WEBMAIL`. Domain di `disposable_email.txt` → `DISPOSABLE`. Local-part di `role_localparts.txt` (info, admin, sales, cs, marketing, office, contact, support, …) → `is_role_based = true`.
+**Email (BR-NORM-02):** trim, buang `mailto:`, domain di-lowercase + IDNA, local-part dipertahankan untuk tampilan. Ditolak bila domain contoh/placeholder (`example.com`, `test.com`) atau gagal syntax (`net/mail` + aturan tambahan). Domain di `webmail.txt` (gmail.com, yahoo.com, yahoo.co.id, ymail.com, hotmail.com, outlook.com, live.com, icloud.com, proton.me, …) → `WEBMAIL`. Domain di `disposable_email.txt` → `DISPOSABLE`. Local-part di `role_localparts.txt` (info, admin, sales, cs, marketing, office, contact, support, …) → `is_role_based = true`.
 
-**Domain/website (BR-NORM-03, FR-DATA-010):** parse URL (tambahkan skema bila tidak ada), host di-lowercase + IDNA, buang `www.`, port default, fragment, dan query tracking (`utm_*`, `fbclid`, `gclid`; daftar izin/tolak, bukan buang semua query, sesuai Crawler §7.2). URL lengkap disimpan untuk tampilan. Registrable domain dihitung dengan **Public Suffix List** yang di-pin (`data/reference/public_suffix_list.dat`, mencakup `co.id`, `my.id`, `web.id`, `or.id`, `ac.id`, `sch.id`, `go.id`, `biz.id`, `net.id`, `desa.id`, `ponpes.id`). Klasifikasi `website_type`:
+**Domain/website (BR-NORM-03, FR-DATA-010):** parse URL (tambahkan skema bila tidak ada), host di-lowercase + IDNA, buang `www.`, port default, fragment, dan query tracking (`utm_*`, `fbclid`, `gclid`; daftar izin/tolak, bukan buang semua query, sesuai Crawler §7.2). URL lengkap disimpan untuk tampilan. Registrable domain dihitung dengan **Public Suffix List** via `golang.org/x/net/publicsuffix` (versi di-pin di `go.mod`; tambahan di `data/reference/public_suffix_extra.dat`), mencakup `co.id`, `my.id`, `web.id`, `or.id`, `ac.id`, `sch.id`, `go.id`, `biz.id`, `net.id`, `desa.id`, `ponpes.id`. Bagian *private* PSL (mis. `blogspot.com`) menjadikan `abc.blogspot.com` registrable domain tersendiri, sehingga `website_type` selalu dicek terhadap daftar platform **sebelum** domain dianggap OWN_DOMAIN. Klasifikasi `website_type`:
 
 | Tipe | Contoh pola (file di `data/reference/domains/`) | Identitas company? |
 |---|---|---|
@@ -901,7 +932,7 @@ Nilai mentah selalu disimpan di `observation.raw` dan dapat ditampilkan di evide
 | MARKETPLACE | tokopedia.com, shopee.co.id, bukalapak.com, lazada.co.id, gofood.co.id | Tidak |
 | NONE / INVALID | kosong / tidak dapat di-parse | — |
 
-**Nama (BR-NORM-04):** NFKC, collapse spasi, normalisasi tanda baca, lowercase untuk `name_norm`. Token bentuk badan usaha (`legal_forms.yaml`: PT, P.T., Perseroan Terbatas, CV, UD, Usaha Dagang, Tbk, (Persero), Koperasi, KSP, Yayasan, PD, Perum, Firma) dan gelar (`titles.yaml`: dr., drg., Dr., Prof., H., Hj., Ir., Sp.\*) dipisahkan. Alias yang dibangkitkan: (1) asli; (2) tanpa badan usaha; (3) tanpa gelar; (4) tanpa kata generik kategori (`klinik`, `apotek`, `toko`, `warung`, `rumah makan`, …), khusus untuk matching; (5) varian sinonim ID↔EN dari `data/taxonomy/synonyms_id_en.yaml` (contoh: "klinik gigi" ↔ "dental clinic") untuk search (FR-SRCH-001). Nilai asli tidak pernah dihapus.
+**Nama (BR-NORM-04):** NFKC (`x/text/unicode/norm`), folding diakritik (`x/text` transform), collapse spasi, normalisasi tanda baca, lowercase untuk `name_norm`. Token bentuk badan usaha (`legal_forms.yaml`: PT, P.T., Perseroan Terbatas, CV, UD, Usaha Dagang, Tbk, (Persero), Koperasi, KSP, Yayasan, PD, Perum, Firma) dan gelar (`titles.yaml`: dr., drg., Dr., Prof., H., Hj., Ir., Sp.\*) dipisahkan. Alias yang dibangkitkan: (1) asli; (2) tanpa badan usaha; (3) tanpa gelar; (4) tanpa kata generik kategori (`klinik`, `apotek`, `toko`, `warung`, `rumah makan`, …), khusus untuk matching; (5) varian sinonim ID↔EN dari `data/taxonomy/synonyms_id_en.yaml` (contoh: "klinik gigi" ↔ "dental clinic") untuk search (FR-SRCH-001). Nilai asli tidak pernah dihapus.
 
 **Alamat (BR-NORM-05):** `address_display` dipertahankan apa adanya. `address_norm` = lowercase, singkatan baku (`jl.`→`jalan`, `kel.`→`kelurahan`, `kec.`→`kecamatan`, `kab.`→`kabupaten`, `no.`→`nomor`), dan kode pos diekstrak. Komponen administratif (dari kolom dataset atau parsing akhir alamat) disimpan di `address_parts`. Pemetaan ke kode Kemendagri dilakukan di stage `geo.assign` (§6.7) agar `identity` tidak bergantung pada `geo`.
 
@@ -921,7 +952,7 @@ Konfigurasi `er-1.0.0` (bobot dan ambang) dikalibrasi pada golden set (RG-6).
 | B4 tanpa koordinat | kode pos/kelurahan teks sama + overlap token alamat ≥ 0,5, atau `name_norm` sama | — |
 
 3. **Fitur pasangan**:
-   - `name_sim` = maks(Jaro-Winkler atas token terurut, trigram, token-set berbobot IDF), dihitung setelah alias (2)–(4). Token generik kategori mendapat bobot rendah via IDF korpus.
+   - `name_sim` = maks(Jaro-Winkler atas token terurut (`adrg/strutil`), trigram (`similarity()` pg_trgm, dihitung saat blocking), token-set berbobot IDF), dihitung setelah alias (2)–(4). Token generik kategori mendapat bobot rendah via IDF korpus.
    - `dist_score` = 1,0 (≤ 25 m), 0,8 (≤ 50 m), 0,4 (≤ 100 m), 0,1 (≤ 200 m), 0 (> 200 m). Bila koordinat tidak ada: 1,0 untuk `address_norm` yang sama, selain itu fitur absen.
    - `phone_agree` ∈ {1, 0, absen}; `domain_agree` ∈ {1, 0, absen}; `sector_agree` (kategori MSP).
 4. **Aturan & skor:**
@@ -929,7 +960,7 @@ Konfigurasi `er-1.0.0` (bobot dan ambang) dikalibrasi pada golden set (RG-6).
    - R1 (BR-ER-02): (identifier kuat sama **atau** `name_sim ≥ 0,90`) **dan** (jarak ≤ 50 m **atau** alamat ternormalisasi sama) → establishment sama.
    - Skor fuzzy: `s = Σ wᵢ·fᵢ / Σ wᵢ` atas fitur yang ada, dengan w = {name 0,50; dist 0,25; phone 0,15; domain 0,10}. `name_sim` wajib ada. Sektor berbeda → `s × 0,85`.
    - BR-ER-04: `s ≥ 0,92` dan tanpa konflik → auto-merge. 0,80 ≤ s < 0,92 → `merge_candidate`. Bila **high value** → queue review; selain itu tetap terpisah (`AUTO_SEPARATE`). `s < 0,80` → terpisah.
-   - *High value* = establishment yang ada di kandidat ICP aktif atau memiliki aktivitas tenant (list, unlock, assignment). `intelligence` (setelah scoring) dan `action`/`usage` (saat aktivitas) memanggil `identity.public.mark_high_value(ids)`, yang menulis `identity.high_value_entity` (hanya ID + jenis alasan). Pipeline global membaca tabel ini tanpa menyentuh tabel tenant.
+   - *High value* = establishment yang ada di kandidat ICP aktif atau memiliki aktivitas tenant (list, unlock, assignment). `intelligence` (setelah scoring) dan `action`/`usage` (saat aktivitas) memanggil `identity.Service.MarkHighValue(ctx, ids)`, yang menulis `identity.high_value_entity` (hanya ID + jenis alasan). Pipeline global membaca tabel ini tanpa menyentuh tabel tenant.
 5. **Clustering:** union-find atas edge merge. Bila sebuah union akan menyatukan pasangan cannot-link, edge terlemah dibuang dan pasangan dikirim ke review. Ini mencegah *chaining* transitif.
 6. **Company grouping:** establishment dengan OWN_DOMAIN yang sama dan berjarak > 200 m → company sama, establishment berbeda (BR-ER-03). Nomor non-shared yang sama + `name_sim ≥ 0,80` → company sama. Field `brand` yang sama di ≥ 2 kab/kota → kandidat grouping (review). **BR-ER-09:** domain sendiri sama pada jarak 50–200 m → tetap satu company; establishment hanya di-merge bila `name_sim ≥ 0,90` **dan** `address_norm` sama, selain itu establishment terpisah dengan flag `geo_ambiguous` (masuk review bila high value).
 7. Bangun ulang claim (§5.6) dan naikkan `entity_seq` untuk entity yang tersentuh.
@@ -945,7 +976,7 @@ Konfigurasi `er-1.0.0` (bobot dan ambang) dikalibrasi pada golden set (RG-6).
 | Domain | A/AAAA, MX, TXT (SPF) | Mengisi `dns_lookup` dan `digital_presence` (`email_provider_hint` dari MX: Google Workspace, Microsoft 365, Zoho, hosting lokal; `spf_includes` → `intel.technology`) |
 | WhatsApp | — | Selalu INFERRED/UNKNOWN di MVP (BR-VER-01) |
 
-- **DNS:** lookup lewat resolver rekursif **Unbound** milik sendiri di app-01 (bukan resolver publik, untuk menghindari rate limit). Library `dnspython` async, timeout 2 s per query, lifetime 4 s, 2 retry, konkurensi global 200 query/s. Hasil disimpan di `identity.dns_lookup` dan sebagai evidence `DNS_LOOKUP`. Cache: positif = min(TTL record, 24 jam) di Redis + tabel. Re-verify bila > 30 hari atau saat refresh. NXDOMAIN di-cache 1 jam. Timeout/SERVFAIL **tidak** di-cache → status UNKNOWN (BR-VER-02).
+- **DNS:** lookup lewat resolver rekursif **Unbound** milik sendiri di app-01 (bukan resolver publik, untuk menghindari rate limit). Library `miekg/dns` (goroutine pool), timeout 2 s per query, lifetime 4 s, 2 retry, konkurensi global 200 query/s. Hasil disimpan di `identity.dns_lookup` dan sebagai evidence `DNS_LOOKUP`. Cache: positif = min(TTL record, 24 jam) di Redis + tabel. Re-verify bila > 30 hari atau saat refresh. NXDOMAIN di-cache 1 jam. Timeout/SERVFAIL **tidak** di-cache → status UNKNOWN (BR-VER-02).
 - `verified_at` = waktu pemeriksaan. `verification_confidence`: LIKELY_VALID email 75, telepon 70; RISKY 40; INVALID 90 (keyakinan atas status invalid).
 - Adapter provider verifikasi email (V1, `VerifierProvider` port) menambahkan status VERIFIED dan deteksi catch-all.
 
@@ -954,7 +985,7 @@ Konfigurasi `er-1.0.0` (bobot dan ambang) dikalibrasi pada golden set (RG-6).
 - Taksonomi dua level di `data/taxonomy/msp-taxonomy-1.0.0.yaml` (sektor → kategori; kode seperti `HLT.DENTAL`, `FNB.CAFE`), dengan label id-ID/en-US dan sinonim.
 - Peta kategori sumber per source di `data/taxonomy/source-maps/<source>.yaml` (contoh `Dentist` → `HLT.DENTAL`, confidence 95).
 - Urutan: (1) peta eksak kategori primer (confidence 90–95); (2) kategori sekunder; (3) aturan kata kunci nama (`klinik gigi`, `drg.`, `dental` → `HLT.DENTAL`, confidence 60–80); (4) tidak terpetakan → `OTH.OTHER` ("Lainnya", confidence 30).
-- **AI hanya untuk string kategori sumber yang belum terpetakan** (ratusan string, bukan per bisnis). Tool ops `msp taxonomy suggest` (modul `ops`, memakai `ai` dengan alias kelas Haiku) mengusulkan mapping secara batch, ops meninjau, lalu usulan di-commit ke source-map. Biaya kecil dan tetap ter-govern. Stage `classify` (modul `identity`) tetap deterministik dan tidak memanggil LLM.
+- **AI hanya untuk string kategori sumber yang belum terpetakan** (ratusan string, bukan per bisnis). Tool ops `msp tool taxonomy-suggest` (modul `ops`, memakai `ai` dengan alias kelas Haiku) mengusulkan mapping secara batch, ops meninjau, lalu usulan di-commit ke source-map. Biaya kecil dan tetap ter-govern. Stage `classify` (modul `identity`) tetap deterministik dan tidak memanggil LLM.
 - Metrik: % establishment aktif non-"Lainnya" (target ≥ 95%, FR-INTL-001) per source, dan akurasi pada sampel berlabel n ≥ 300 (≥ 90%, RG-6).
 
 ### 6.7 Penetapan area (FR-DATA-009)
@@ -977,13 +1008,13 @@ Konflik antara PIP dan nama alamat (beda kecamatan): PIP menang, confidence −0
 
 ### 6.9 Estimasi throughput (NFR-PERF-07: 5 juta establishment ≤ 12 jam)
 
-Asumsi app-01 (32 core): 16 proses pipeline; db-01 (32 core, 256 GB).
+Asumsi app-01 (32 core): worker `pipeline` dengan 32 goroutine kerja; db-01 (32 core, 256 GB).
 
 | Stage | Perkiraan | Catatan |
 |---|---|---|
 | load | 15 mnt | COPY paralel dari Parquet |
-| normalize | 30 mnt | ±3k rec/s/proses × 16 |
-| resolve | 90–120 mnt | 5 juta × ±5 kandidat = 25 juta pasangan; rapidfuzz tervektorisasi; blok per sel |
+| normalize | 20 mnt | ±5k rec/s per core (Go) × ±16 core efektif; bottleneck pada write DB |
+| resolve | 90–120 mnt | 5 juta × ±5 kandidat = 25 juta pasangan; Jaro-Winkler paralel (goroutine) per sel |
 | verify | 80 mnt (paralel dengan classify/assign) | ±1 juta domain unik @ 200 qps; telepon CPU-only |
 | classify + assign | 30 + 40 mnt | PIP dengan `ST_Subdivide` |
 | derive + area_metrics + fill_rate + gap_facts + base_factors | 60 mnt | Sebagian besar SQL set-based |
@@ -997,7 +1028,7 @@ Memenuhi FR-ICP-003/004, FR-INTL-002..006/008/009/011, BR-SCORE-01..08, Lampiran
 
 ### 7.1 Konfigurasi model berversi
 
-File `apps/api/msp/intelligence/internal/scoring/models/priority-1.2.0.yaml` didaftarkan ke `intel.score_model` (sha256). Versi yang sudah aktif bersifat immutable. Perubahan bobot, aturan, atau preset menghasilkan versi baru + job recompute (FR-INTL-009).
+File `apps/api/internal/intelligence/internal/scoring/models/priority-1.2.0.yaml` (di-*embed* ke binary via `embed`) didaftarkan ke `intel.score_model` (sha256). Versi yang sudah aktif bersifat immutable. Perubahan bobot, aturan, atau preset menghasilkan versi baru + job recompute (FR-INTL-009).
 
 ```yaml
 model: priority
@@ -1029,17 +1060,17 @@ icp_fit:
 
 ### 7.2 Antarmuka plugin faktor
 
-```python
-class FactorPlugin(Protocol):
-    key: str
-    version: str
-    requires: frozenset[str]                       # kolom projection/faktor dasar yang dibaca
-    def compute(self, batch: FactorBatch, ctx: ScoringContext) -> FactorResult: ...
-    # FactorResult: values: np.ndarray[float]  (0..100, NaN = UNKNOWN)
-    #               claim_type: np.ndarray[str]; reasons: dict[int, str] (alasan Unknown)
+```go
+type FactorPlugin interface {
+    Key() string
+    Version() string
+    Requires() []string                                 // kolom projection/faktor dasar yang dibaca
+    Compute(b *FactorBatch, sc *ScoringContext) FactorResult
+}
+// FactorResult: Values []float64 (0..100; math.NaN() = UNKNOWN), ClaimType []ClaimType, Reasons map[int]string (alasan Unknown)
 ```
 
-`ScoringContext` berisi workspace, ICP version, Offering tags, preset, `as_of` (tanggal skor), dan metrik area per ICP. Plugin bersifat murni: tidak melakukan I/O dan tidak memakai jam sistem (selalu `ctx.as_of`).
+`ScoringContext` berisi workspace, ICP version, Offering tags, preset, `as_of` (tanggal skor), dan metrik area per ICP. Plugin bersifat murni: tidak melakukan I/O dan tidak memakai jam sistem (selalu `sc.AsOf`).
 
 ### 7.3 Definisi operasional faktor
 
@@ -1123,7 +1154,7 @@ Dalam job scoring, untuk setiap `company_id` di antara establishment yang lolos 
 ### 7.8 Determinisme & reproducibility (FR-INTL-008/009, NFR-DATA-01)
 
 - Fungsi skor murni atas: projection pada snapshot tertentu + `icp_version` + `model_version` + `as_of`. Tidak ada randomness. Aritmetika float64, disimpan 1 desimal, ditampilkan bilangan bulat half-up (BR-SCORE-10). Komponen waktu (freshness) dihitung terhadap `as_of` = `calculated_at` (BR-SCORE-13).
-- Skor lama **tidak disimpan selamanya**. Yang dipertahankan adalah semua versi config model, ICP version, metadata snapshot, dan versi stage. Perintah ops `msp score reproduce --workspace … --icp … --version … --snapshot … --as-of …` menghitung ulang dan membandingkan hasilnya (diuji di CI dengan fixture).
+- Skor lama **tidak disimpan selamanya**. Yang dipertahankan adalah semua versi config model, ICP version, metadata snapshot, dan versi stage. Perintah ops `msp tool score-reproduce --workspace … --icp … --version … --snapshot … --as-of …` menghitung ulang dan membandingkan hasilnya (diuji di CI dengan fixture).
 
 ### 7.9 Recompute, epoch, dan progres (NFR-PERF-05, FR-INTL-011)
 
@@ -1145,16 +1176,16 @@ CREATE INDEX score_rank ON intel.score (workspace_id, icp_id, epoch, value DESC,
 
 | Pemicu | Antrean | Lingkup |
 |---|---|---|
-| Simpan/ubah ICP atau Offering-nya | `scoring.interactive` | ICP tersebut |
-| Snapshot published / area_set atau populasi baru | `scoring.bulk` (staggered) | Semua ICP aktif semua workspace |
-| Versi model baru diaktifkan | `scoring.bulk` | Semua ICP yang memakai model |
-| Refresh prospek, merge/split | `scoring.interactive` | Establishment terkait × ICP workspace terkait |
-| Harian: kelas freshness berpindah (BR-SCORE-13) | `scoring.bulk` | Hanya establishment yang kelas freshness-nya berubah sejak `as_of`. Job menaikkan `entity_seq` (otomatis stale), lalu re-skor inkremental |
+| Simpan/ubah ICP atau Offering-nya | `scoring` prioritas 1 | ICP tersebut |
+| Snapshot published / area_set atau populasi baru | `scoring` prioritas 4 (staggered) | Semua ICP aktif semua workspace |
+| Versi model baru diaktifkan | `scoring` prioritas 4 | Semua ICP yang memakai model |
+| Refresh prospek, merge/split | `scoring` prioritas 1 | Establishment terkait × ICP workspace terkait |
+| Harian: kelas freshness berpindah (BR-SCORE-13) | `scoring` prioritas 4 | Hanya establishment yang kelas freshness-nya berubah sejak `as_of`. Job menaikkan `entity_seq` (otomatis stale), lalu re-skor inkremental |
 
 Alur job (per ICP):
 1. Seleksi kandidat dengan SQL (filter wajib + exclusion) pada projection → ≤ 200.000 baris (asumsi NFR). Kandidat diurutkan berdasarkan skor dasar global (DQ + contactability + commercial) agar **halaman pertama (≥ 50 kandidat teratas pre-ranking) ber-skor ≤ 30 detik** (NFR-PERF-05). Chunk pertama 10.000 baris ditargetkan ±10 detik (FR-ICP-005).
 2. Hitung metrik area per ICP (§9.4) sebelum scoring, karena dipakai faktor Geographic.
-3. Scoring tervektorisasi per chunk 50.000 baris (±50k baris/s) → `COPY` ke epoch `n+1`. Progres `score_job.done/total` diperbarui per chunk.
+3. Scoring per chunk 50.000 baris di goroutine pool (±100k baris/s) → `pgx.CopyFrom` ke epoch `n+1`. Progres `score_job.done/total` diperbarui per chunk.
 4. Tandai `is_company_best`, hitung `icp_area_metric` (territory score butuh hitungan HOT/WARM).
 5. Dalam satu transaksi: `score_context.active_epoch = n+1`. Epoch lama dihapus setelah ≥ 1 jam agar cursor pagination yang masih terbuka tetap konsisten (§10.5).
 6. Target: ≤ 2 menit untuk 200.000 kandidat (batas NFR 10 menit). Skoring pertama ICP baru membaca epoch yang sedang ditulis (progresif). Re-skor menampilkan epoch lama berlabel stale sampai swap.
@@ -1273,7 +1304,7 @@ WINDOW w AS (PARTITION BY peer_group, category_code ORDER BY d);
 | white_space_score | `pct(population) × (100 − pct(category_density)) / 100`, hanya bila population ≥ 1.000 dan coverage OK; selain itu NULL (Unknown) |
 | activity | Persentil median `review_count` per establishment di area dalam peer group. Unknown bila tidak ada data ulasan |
 
-Level L3/L2/L1 dihitung dengan agregasi dari L4 (hitungan) dan populasi level tersebut, bukan rata-rata persentil. Semua `pct()` Lampiran C memakai **mid-rank** (BR-SCORE-09), diimplementasikan sebagai pola window di atas dan fungsi Python yang sama untuk faktor skor (diuji silang).
+Level L3/L2/L1 dihitung dengan agregasi dari L4 (hitungan) dan populasi level tersebut, bukan rata-rata persentil. Semua `pct()` Lampiran C memakai **mid-rank** (BR-SCORE-09), diimplementasikan sebagai pola window di atas dan fungsi Go yang sama untuk faktor skor (diuji silang).
 
 ### 9.3 Guardrail tampilan (FR-GEO-009)
 
@@ -1387,7 +1418,7 @@ Cursor = base64url(JSON `{v, k:[nilai sort, id], e: epoch, qh: hash(query+filter
 
 ### 10.7 Profil & masking (FR-PROF-*, BR-CRED-02, FR-AUD-003)
 
-`query.get_profile(company_id, icp_id)` merakit: company + establishment (≤ 50, terurut skor) + contact point (RLS global menyembunyikan yang ter-suppress) + digital/commercial + gap→opportunity (§8.3) + konteks area + skor/penjelasan ringkas + overlay tenant (upload, catatan, status, tag). Masking dilakukan **di server** (BR-CRED-02): tanpa unlock, **semua** nilai contact point (telepon, WhatsApp, email) dan **nama person** diganti format ter-mask (`+62 812-****-7890`, `h****@abcdental.co.id`, `A*** S***`) sehingga nilai asli tidak pernah dikirim. Nama company, kategori, alamat, website, dan role person tetap terlihat. Kontak dari upload workspace sendiri tidak di-mask. Bagian global di-cache per `(company_id, entity_seq)` selama 1 jam; overlay tenant tidak di-cache. Membuka profil yang belum pernah dibuka di siklus ini mencatat `usage.profile_view` dan dicek terhadap kuota (BR-CRED-01, §14.4). Target p95 ≤ 500 ms (NFR-PERF-02).
+`query.Service.GetProfile(ctx, companyID, icpID)` merakit: company + establishment (≤ 50, terurut skor) + contact point (RLS global menyembunyikan yang ter-suppress) + digital/commercial + gap→opportunity (§8.3) + konteks area + skor/penjelasan ringkas + overlay tenant (upload, catatan, status, tag). Masking dilakukan **di server** (BR-CRED-02): tanpa unlock, **semua** nilai contact point (telepon, WhatsApp, email) dan **nama person** diganti format ter-mask (`+62 812-****-7890`, `h****@abcdental.co.id`, `A*** S***`) sehingga nilai asli tidak pernah dikirim. Nama company, kategori, alamat, website, dan role person tetap terlihat. Kontak dari upload workspace sendiri tidak di-mask. Bagian global di-cache per `(company_id, entity_seq)` selama 1 jam; overlay tenant tidak di-cache. Membuka profil yang belum pernah dibuka di siklus ini mencatat `usage.profile_view` dan dicek terhadap kuota (BR-CRED-01, §14.4). Target p95 ≤ 500 ms (NFR-PERF-02).
 
 ### 10.8 Rencana performa (NFR-PERF-01: p95 ≤ 800 ms, p99 ≤ 2 s, 5 juta baris, 50 user konkuren)
 
@@ -1422,6 +1453,7 @@ Memenuhi MVP Pack §12 (diperluas), FR-AUTH-004, FR-BILL-001/003/004, FR-EXP-*, 
 | Lokal | `Accept-Language: id-ID` (default) / `en-US` untuk `title` error dan rationale |
 | Korelasi | `MSP-Correlation-Id` diterima/dibangkitkan dan dikembalikan di setiap respons |
 | Kontrak | Setiap operasi OpenAPI memiliki `x-msp-permission` dan `x-msp-billable`, dipakai test matriks RBAC (§15.2) |
+| Implementasi | `net/http` + handler oapi-codegen strict-server. Middleware (sesi, workspace, RBAC dari `x-msp-permission`, entitlement, idempotensi, rate limit, OTel) membaca metadata operasi hasil generate |
 
 ### 11.2 Katalog error (`code` stabil)
 
@@ -1577,11 +1609,19 @@ ID immutable, ada `workspace_id`, konsumen men-dedupe berdasarkan `id`, dan `mod
 | `prospect.created`, `prospect.updated` | Perubahan entity global | Internal saja (volume global tidak dikirim ke tenant) | MVP0 |
 | `entity.merged`, `snapshot.published`, `suppression.created`, `unlock.created` | Koordinasi antar modul | Internal | MVP0/1 |
 
-### 12.3 Outbox & dispatcher
+### 12.3 Event via River (outbox transaksional, ADR-07)
 
-- `outbox.emit()` menulis `platform.outbox_event` dalam transaksi bisnis yang sama.
-- **Dispatcher** (satu proses aktif via advisory lock `pg_try_advisory_lock`) di-bangunkan `LISTEN outbox` atau polling 1 detik: `SELECT … WHERE published_at IS NULL ORDER BY id LIMIT 500 FOR UPDATE SKIP LOCKED`. Untuk setiap event: (1) kirim pesan Dramatiq ke handler internal yang terdaftar; (2) untuk event yang dapat di-webhook, buat `webhook_delivery(PENDING)` bagi setiap endpoint aktif yang berlangganan, lalu antre ke `webhook`; (3) set `published_at`.
-- Handler internal idempoten berdasarkan `event_id` (tabel `platform.consumed_event(consumer, event_id)`). Baris outbox dihapus setelah 7 hari.
+```go
+err := tenancy.WithTx(ctx, ws, func(tx pgx.Tx) error {
+    if err := usageRepo.InsertUnlock(ctx, tx, u); err != nil { return err }             // perubahan domain
+    evt := events.New("unlock.created", ws, subject, payload)
+    return events.Emit(ctx, tx, evt) // INSERT platform.event + riverClient.InsertTx(ctx, tx, DispatchArgs{EventID: evt.ID}, nil)
+})
+```
+
+- Event dan job `event.dispatch` di-commit **atomik** dengan perubahan domain. Rollback → tidak ada event. Tidak ada dispatcher polling terpisah: River membangunkan worker via `LISTEN/NOTIFY` (latensi sub-detik).
+- Worker `event.dispatch`: (1) meng-*enqueue* job per handler internal yang terdaftar (`UniqueOpts` per `(event_id, consumer)` → dedupe); (2) untuk event yang dapat di-webhook, membuat `webhook_delivery(PENDING)` untuk setiap endpoint aktif yang berlangganan + job `webhook.deliver`. Semuanya dalam satu transaksi.
+- Handler internal harus idempoten (upsert pada natural key). `platform.event` disimpan 30 hari (sumber payload untuk *redeliver* dan audit pengiriman). Job `completed` dibersihkan River setelah 24 jam.
 
 ### 12.4 Pengiriman webhook
 
@@ -1591,21 +1631,22 @@ ID immutable, ada `workspace_id`, konsumen men-dedupe berdasarkan `id`, dan `mod
 | Signature | `MSP-Signature: t=<unix_ts>,v1=<hex(HMAC-SHA256(secret, "<t>.<raw_body>"))>`. Selama rotasi (24 jam) dikirim dua `v1` (secret lama + baru) |
 | Replay | Penerima menolak bila selisih `now − t` > 300 s dan men-dedupe `MSP-Event-Id` (didokumentasikan + contoh kode verifikasi) |
 | Sukses | 2xx dalam 10 detik. Body respons dibaca maksimal 64 KB lalu dibuang |
-| Retry | Semua non-2xx/timeout/error jaringan kecuali `410 Gone`. Jadwal: **1 m, 5 m, 30 m, 2 j, 6 j, 12 j** (±10% jitter) → 7 percobaan, ±20 j 36 m (≤ 24 jam, FR-EXP-003). `429` menghormati `Retry-After` (≤ 1 jam) dalam jadwal yang sama |
-| DLQ | Percobaan habis → `DLQ` + `release` hold credit. Kirim ulang manual (`/redeliver`) membuat percobaan baru tanpa tagihan baru |
+| Retry | Semua non-2xx/timeout/error jaringan kecuali `410 Gone`. Jadwal: **1 m, 5 m, 30 m, 2 j, 6 j, 12 j** (±10% jitter) → 7 percobaan, ±20 j 36 m (≤ 24 jam, FR-EXP-003), diimplementasikan dengan `NextRetry` kustom + `MaxAttempts` 7 pada job River `webhook.deliver`. `429` menghormati `Retry-After` (≤ 1 jam) dalam jadwal yang sama |
+| DLQ | Percobaan habis (job `discarded`) → delivery `DLQ` + `release` hold credit. Kirim ulang manual (`/redeliver`) membuat percobaan baru tanpa tagihan baru |
 | Kesehatan endpoint | ≥ 20 delivery berturut-turut masuk DLQ → `DISABLED_FAILING` + email ke Admin. `410` → langsung disable |
 | Log | `webhook_delivery` menyimpan attempt, kode respons, latensi, error (tanpa body request), retensi 30 hari (FR-EXP-003) |
-| Kill switch | Flag `webhook.delivery` off → delivery ditahan (`PENDING`). Bila umur > 24 jam saat dilanjutkan → DLQ |
+| Kill switch | Flag `webhook.delivery` off → job di-*snooze* (`river.JobSnooze`), delivery tetap `PENDING`. Bila umur > 24 jam saat dilanjutkan → DLQ |
 
 ### 12.5 Kontrol SSRF & egress (Crawler §12 diadopsi, NFR-SEC-05, RG-7)
 
 Tiga lapis, karena dedicated server tidak memiliki security group cloud (D-19):
 
-1. **Validasi aplikasi** (`platform.net.safe_http`) saat endpoint dibuat **dan** sebelum setiap delivery:
+1. **Validasi aplikasi** (`internal/platform/netguard`) saat endpoint dibuat **dan** sebelum setiap delivery:
    - Hanya `https://`. Tanpa userinfo (`user:pass@`). Host wajib berupa nama (tanpa IP literal). Tolak `localhost`, `*.local`, `*.internal`, `*.localhost`, dan domain milik MSP sendiri.
    - Port 443 atau port ≥ 1024 yang tidak ada di daftar blok (22, 25, 2375/2376, 3306, 5432, 6379, 9000, 9200, 11211, …).
    - Resolve A/AAAA lewat resolver internal. **Semua** IP hasil resolve harus global: blok 0.0.0.0/8, 10/8, 100.64/10, 127/8, 169.254/16 (termasuk metadata 169.254.169.254), 172.16/12, 192.0.0/24, 192.0.2/24, 192.168/16, 198.18/15, 198.51.100/24, 203.0.113/24, 224/4, 240/4, ::1, ::/128, fc00::/7, fe80::/10, ff00::/8, 2001:db8::/32. IPv4-mapped/NAT64 (`::ffff:0:0/96`, `64:ff9b::/96`) diperiksa alamat tertanamnya. Subnet LAN server dan IP publik server MSP sendiri juga diblok.
-   - Redirect **dimatikan** (3xx = gagal, dicatat). TLS diverifikasi (minimal TLS 1.2). Timeout connect 3 s, total 10 s. Respons maksimal 64 KB. Tanpa dekompresi.
+   - **Pemeriksaan saat connect:** `http.Transport` memakai `net.Dialer{Control: netguard.Check}` yang memvalidasi IP tujuan pada **setiap koneksi** (termasuk koneksi baru akibat redirect pada klien yang mengizinkan redirect). Dengan begitu DNS rebinding antara validasi dan koneksi tidak lolos. Di produksi, satu-satunya tujuan dial adalah Smokescreen (alamat proxy di-allowlist di `Control`), dan Smokescreen yang memeriksa IP akhir. Mode direct (dev/fallback) menjalankan pemeriksaan penuh di `Control`.
+   - Redirect **dimatikan** untuk webhook (`CheckRedirect` → `http.ErrUseLastResponse`; 3xx = gagal, dicatat). TLS diverifikasi (minimal TLS 1.2). Timeout connect 3 s, total 10 s. Respons maksimal 64 KB. Tanpa dekompresi.
 2. **Egress proxy Smokescreen**: `worker-webhook` hanya dapat keluar lewat `smokescreen:4750` (HTTP CONNECT). Smokescreen me-resolve sendiri dan menolak IP privat/terlarang (mencegah DNS rebinding/TOCTOU). ACL per role: `webhook` = internet publik minus daftar blok; `ai` = allowlist host provider LLM; `mail` = host SMTP provider.
 3. **nftables di host** (chain `DOCKER-USER`/forward): subnet network `webhook-net` hanya boleh ke `smokescreen`, PgBouncer `db-01:6432`, dan Redis. Container Smokescreen hanya boleh keluar ke internet publik, dengan blok eksplisit untuk RFC1918, CGNAT, link-local/metadata, loopback, multicast, dan subnet LAN DC. Container lain default-deny egress internet, kecuali Unbound (53/udp+tcp) dan Traefik (ACME).
 
@@ -1619,23 +1660,24 @@ Memenuhi FR-AI-001..007, NFR-PERF-06, NFR-PRIV-04, NFR-COST-01, D-14, D-15, dan 
 
 ### 13.1 Abstraksi provider
 
-```python
-class LLMProvider(Protocol):
-    name: str
-    def generate(self, req: LLMRequest) -> LLMResponse: ...
-# LLMRequest: model_alias ("brief-default" | "classify-default"), system, messages,
-#             output_schema (JSON Schema → output terstruktur bila provider mendukung), max_tokens, timeout_s, metadata
-# LLMResponse: content(json), stop_reason, usage{input_tokens, output_tokens, cached_tokens}, provider_model, latency_ms
+```go
+type LLMProvider interface {
+    Name() string
+    Generate(ctx context.Context, req LLMRequest) (LLMResponse, error)
+}
+// LLMRequest: ModelAlias ("brief-default" | "classify-default"), System, Messages,
+//             OutputSchema (JSON Schema → output terstruktur bila provider mendukung), MaxTokens, Timeout, Metadata
+// LLMResponse: Content (JSON), StopReason, Usage{InputTokens, OutputTokens, CachedTokens}, ProviderModel, Latency
 ```
 
 - Alias → ID model diatur lewat konfigurasi (`LLM_MODEL_BRIEF`, `LLM_MODEL_CLASSIFY`). Usulan default (D-15, Open): model Claude **kelas Sonnet** untuk brief/sales angle dan **kelas Haiku** untuk klasifikasi kategori. ID model tidak di-hardcode.
-- Adapter: `anthropic` (usulan default; memakai output terstruktur berbasis JSON Schema dan prompt caching untuk prefix stabil), `fake` (test/CI, deterministik), dan provider lain kelak. Retry dilakukan adapter untuk 429/5xx (maksimal 2) dengan budget waktu total.
+- Adapter: `anthropic` (usulan default, SDK Go resmi provider; memakai output terstruktur berbasis JSON Schema dan prompt caching untuk prefix stabil), `fake` (test/CI, deterministik), dan provider lain kelak. Retry dilakukan adapter untuk 429/5xx (maksimal 2) dengan budget waktu total.
 - Egress ke provider melalui Smokescreen (role `ai`, allowlist host). Data yang keluar dari Indonesia hanya data level company (D-14). Status DPA/region provider = TQ-02.
 - Prefix prompt (system + instruksi + skema) dijaga byte-stabil agar cache prompt provider efektif. Data per prospek selalu diletakkan sesudah prefix.
 
 ### 13.2 Prompt registry
 
-`apps/api/msp/ai/prompts/{brief,sales_angle}/<semver>/` berisi `system.md`, `user.jinja`, `output.schema.json`, dan `meta.yaml` (alias model, max_tokens, bahasa yang didukung, versi validator). Versi = `brief-1.0.0`, `angle-1.0.0`. Versi aktif dipilih lewat config. Perubahan prompt = versi baru + eval offline lulus (§13.7) sebelum diaktifkan. `ai_artifact` menyimpan `prompt_version` dan `provider_model` (label "Dibuat AI" + versi di UI, FR-AI-001).
+`apps/api/internal/ai/prompts/{brief,sales_angle}/<semver>/` (di-*embed* via `embed.FS`) berisi `system.md`, `user.tmpl` (`text/template`), `output.schema.json`, dan `meta.yaml` (alias model, max_tokens, bahasa yang didukung, versi validator). Versi = `brief-1.0.0`, `angle-1.0.0`. Versi aktif dipilih lewat config. Perubahan prompt = versi baru + eval offline lulus (§13.7) sebelum diaktifkan. `ai_artifact` menyimpan `prompt_version` dan `provider_model` (label "Dibuat AI" + versi di UI, FR-AI-001).
 
 ### 13.3 Input builder & redaksi (FR-AI-005, NFR-PRIV-04)
 
@@ -1699,7 +1741,7 @@ POST /v1/ai/briefs {prospect_id, icp_id, kind, language, regenerate}  (+Idempote
 ### 13.7 Kontrol biaya & eval (FR-AI-006, NFR-COST-01, R-05)
 
 - Lapisan batas: (1) saldo `ai_credit` (entitlement plan); (2) **cap biaya bulanan per workspace** (USD, config per plan) → `FEATURE_DISABLED` untuk workspace itu; (3) **budget harian global** → kill switch otomatis `ai.generation` + alert; (4) kill switch manual oleh ops (audit).
-- Eval offline (`apps/api/tests/ai_eval/`): ±100 profil golden (berbagai kelengkapan data, termasuk kasus Unknown). Metrik: lolos validator, presisi sitasi (label manual pada sampel), kebocoran redaksi = 0, kepatuhan hedging. Dijalankan pada setiap perubahan prompt/validator (PR memakai respons rekaman; nightly memakai provider asli dengan cap biaya).
+- Eval offline (`apps/api/internal/ai/eval/`, `go test -tags=eval`): ±100 profil golden (berbagai kelengkapan data, termasuk kasus Unknown). Metrik: lolos validator, presisi sitasi (label manual pada sampel), kebocoran redaksi = 0, kepatuhan hedging. Dijalankan pada setiap perubahan prompt/validator (PR memakai respons rekaman; nightly memakai provider asli dengan cap biaya).
 - Online: feedback 👍/👎 (FR-AI-007) dan sampel 2% brief untuk review manusia di ops console, termasuk AI failure rate untuk alert RG-5.
 
 ---
@@ -1746,7 +1788,7 @@ Saldo tersedia = Σ baris (`workspace`, `meter`, `available`). Konsumsi mengalok
 
 ### 14.4 Entitlement & fair-use (FR-BILL-003, BR-CRED-01)
 
-Dependency FastAPI `require_entitlement(key, increment)` membaca plan + override + pemakaian berjalan (seat = anggota + undangan aktif; ICP tersimpan; endpoint webhook; baris export per job). Pelanggaran → `403 ENTITLEMENT_EXCEEDED {limit, current}`. Fair-use profil (BR-CRED-01): pada 100% kuota, search tetap berjalan. Membuka profil yang **belum** dibuka di siklus ini → `429 FAIR_USE_EXCEEDED` (dengan pesan upgrade). Profil yang sudah dibuka, sudah di-unlock, atau di-assign tetap dapat diakses. Ops dapat menaikkan batas (override, audit). `/v1/entitlements` mengembalikan batas + pemakaian + flag efektif untuk gating UI.
+Middleware `usage.RequireEntitlement(key, increment)` (dipasang per operasi lewat metadata OpenAPI `x-msp-entitlement`) membaca plan + override + pemakaian berjalan (seat = anggota + undangan aktif; ICP tersimpan; endpoint webhook; baris export per job). Pelanggaran → `403 ENTITLEMENT_EXCEEDED {limit, current}`. Fair-use profil (BR-CRED-01): pada 100% kuota, search tetap berjalan. Membuka profil yang **belum** dibuka di siklus ini → `429 FAIR_USE_EXCEEDED` (dengan pesan upgrade). Profil yang sudah dibuka, sudah di-unlock, atau di-assign tetap dapat diakses. Ops dapat menaikkan batas (override, audit). `/v1/entitlements` mengembalikan batas + pemakaian + flag efektif untuk gating UI.
 
 ### 14.5 Konkurensi (mencegah overspend)
 
@@ -1761,11 +1803,11 @@ Memenuhi NFR-SEC-01..06, NFR-PRIV-01..04, FR-AUTH-001..006, FR-AUD-001..006, FR-
 
 | Opsi D-20 | Kelebihan | Kekurangan |
 |---|---|---|
-| **Ory Kratos self-hosted (rekomendasi)** | Data identitas tetap di DC Indonesia. Verifikasi email, login Google (OIDC), TOTP MFA, recovery. Ringan (Go, Postgres) | UI self-service flow dibangun di Next.js. Operasi dan upgrade ditangani tim |
+| **Ory Kratos self-hosted (rekomendasi)** | Data identitas tetap di DC Indonesia. Verifikasi email, login Google (OIDC), TOTP MFA, recovery. Ringan (Go, Postgres), satu ekosistem dengan backend (D-21) | UI self-service flow dibangun di Next.js. Operasi dan upgrade ditangani tim |
 | Keycloak self-hosted | Fitur lengkap (SAML untuk SSO V2), admin UI | Berat (JVM), kustomisasi tema lebih sulit |
 | OIDC SaaS terkelola | Paling cepat, operasi minimal | Data identitas user di luar negeri (bertentangan dengan semangat D-14/NFR-PRIV-03), biaya per MAU |
 
-Desain aplikasi agnostik terhadap pilihan ini: port `IdentityProvider` dengan adapter `kratos` (validasi sesi Kratos via `/sessions/whoami`) dan `oidc` (Authorization Code + PKCE). Keduanya menghasilkan `Identity{subject, email, email_verified, name, aal|amr}`, lalu **aplikasi menerbitkan sesinya sendiri**:
+Desain aplikasi agnostik terhadap pilihan ini: port `IdentityProvider` dengan adapter `kratos` (klien Go Kratos, validasi sesi via `/sessions/whoami`) dan `oidc` (Authorization Code + PKCE). Keduanya menghasilkan `Identity{subject, email, email_verified, name, aal|amr}`, lalu **aplikasi menerbitkan sesinya sendiri**:
 - `platform.session(id_hash, user_id, created_at, last_seen_at, idle_expires_at, absolute_expires_at, revoked_at, ip, ua)`. Cookie `__Host-msp_sess` berisi token acak 256-bit (yang disimpan hanya hash-nya). Cache Redis TTL 60 s.
 - Idle timeout 12 jam, absolut 7 hari. *Logout semua sesi* mencabut semua baris. Mengeluarkan anggota → cache membership dibersihkan via pub/sub dan TTL ≤ 60 s menjamin akses hilang ≤ 1 menit (FR-AUTH-005).
 - Tanpa `email_verified` → `403 EMAIL_NOT_VERIFIED` (FR-AUTH-001). Akun ops wajib MFA (`aal2` / `amr` berisi `otp`/`mfa`); bila tidak → `MFA_REQUIRED` (FR-AUTH-006). Konsol ops memakai audience/cookie terpisah.
@@ -1773,7 +1815,7 @@ Desain aplikasi agnostik terhadap pilihan ini: port `IdentityProvider` dengan ad
 
 ### 15.2 Otorisasi (FR-AUTH-004)
 
-`Permission` enum: `PROSPECT_READ, CONTACT_UNLOCK, ORGANIZE, ASSIGN, EXPORT, ICP_MANAGE, AI_GENERATE, INTEGRATION_MANAGE, MEMBER_MANAGE, USAGE_READ, AUDIT_READ, BILLING_MANAGE, WORKSPACE_DELETE, UPLOAD`. Peta role → permission di `platform/rbac.py` mengikuti PRD §8.1.1 (UPLOAD = Member+, TQ-05; EXPORT untuk Member mengikuti `member_can_export`). Setiap route mendeklarasikan `Depends(require(Permission.X))`. Penolakan → 403 + `audit_log(authz.denied)`. Test matriks dibangkitkan dari OpenAPI (`x-msp-permission`) × 5 role.
+`Permission` enum: `PROSPECT_READ, CONTACT_UNLOCK, ORGANIZE, ASSIGN, EXPORT, ICP_MANAGE, AI_GENERATE, INTEGRATION_MANAGE, MEMBER_MANAGE, USAGE_READ, AUDIT_READ, BILLING_MANAGE, WORKSPACE_DELETE, UPLOAD`. Peta role → permission di `internal/platform/rbac` mengikuti PRD §8.1.1 (UPLOAD = Member+, TQ-05; EXPORT untuk Member mengikuti `member_can_export`). Setiap operasi OpenAPI mendeklarasikan `x-msp-permission`. Middleware membaca metadata operasi hasil generate dan menolak sebelum handler dipanggil; operasi tanpa deklarasi membuat CI gagal. Penolakan → 403 + `audit_log(authz.denied)`. Test matriks dibangkitkan dari OpenAPI (`x-msp-permission`) × 5 role.
 
 ### 15.3 Isolasi tenant (FR-AUD-006, NFR-SEC-03)
 
@@ -1803,7 +1845,7 @@ Ada tiga lapis: (1) RLS + role DB (§5.8); (2) repository selalu memfilter `work
 | T — Data tenant | ICP, catatan, upload, list | Tenant layer (RLS) | ID saja | Offering/ICP saja | Milik tenant |
 | S — Secret | Token sesi, API key, secret webhook, kunci | Hash/terenkripsi | Tidak pernah | Tidak | Tidak |
 
-Processor `structlog` menghapus kunci terlarang (`email`, `phone`, `value`, `raw_value`, `authorization`, `cookie`, `secret`, `token`, `person_name`) dan memindai teks pesan dengan regex email/telepon → `h:<8 hex HMAC>` (masih dapat dikorelasikan, tidak dapat dibaca). Hal yang sama berlaku untuk breadcrumb GlitchTip dan atribut span.
+`slog.Handler` dengan `ReplaceAttr` menghapus kunci terlarang (`email`, `phone`, `value`, `raw_value`, `authorization`, `cookie`, `secret`, `token`, `person_name`) dan memindai teks pesan dengan regex email/telepon → `h:<8 hex HMAC>` (masih dapat dikorelasikan, tidak dapat dibaca). Hal yang sama berlaku untuk breadcrumb GlitchTip dan atribut span.
 
 ### 15.7 Suppression (FR-AUD-003, BR-PRIV-02, NFR-PRIV-02 ≤ 24 jam)
 
@@ -1831,7 +1873,7 @@ Data upload tenant **tidak** di-suppress otomatis karena tenant adalah pengendal
 
 ### 15.9 Akses support (FR-OPS-006)
 
-`platform.support_access_grant(workspace_id, ops_user_id, reason NOT NULL, expires_at ≤ 4 jam)`. Selama grant aktif, konsol ops membuka `tenant_tx` **READ ONLY** untuk workspace tersebut. Setiap request dicatat (`support.read`, path, target). Tidak ada impersonation. Owner/Admin melihat entri ini di audit log workspace mereka.
+`platform.support_access_grant(workspace_id, ops_user_id, reason NOT NULL, expires_at ≤ 4 jam)`. Selama grant aktif, konsol ops membuka `tenancy.WithTx` **READ ONLY** untuk workspace tersebut. Setiap request dicatat (`support.read`, path, target). Tidak ada impersonation. Owner/Admin melihat entri ini di audit log workspace mereka.
 
 ### 15.10 File upload/export
 
@@ -1856,17 +1898,17 @@ Memenuhi NFR-OBS-01, RG-5, FR-OPS-001..004, dan ADR-21.
 
 ### 16.1 Stack
 
-OTel SDK (FastAPI, SQLAlchemy/psycopg, httpx, Redis, middleware Dramatiq yang meneruskan `traceparent` + `correlation_id`) → **OTel Collector** di setiap host → `ops-01`: **Prometheus** (metrik, retensi 30 hari) + **Loki** (log JSON, 30 hari) + **Tempo** (trace, 7 hari; sampling 10% + 100% error) + **Grafana** (dashboard) + **Alertmanager** (on-call: email + kanal chat tim) + **GlitchTip** (error, kompatibel SDK Sentry). Exporter: node, postgres, redis, MinIO, Traefik, cAdvisor, pgBackRest (umur backup).
+OTel Go SDK (`otelhttp` untuk server/klien HTTP, tracer pgx, middleware River yang meneruskan `traceparent` + `correlation_id` di metadata job, Redis) → **OTel Collector** di setiap host → `ops-01`: **Prometheus** (metrik, retensi 30 hari) + **Loki** (log JSON, 30 hari) + **Tempo** (trace, 7 hari; sampling 10% + 100% error) + **Grafana** (dashboard) + **Alertmanager** (on-call: email + kanal chat tim) + **GlitchTip** (error, kompatibel SDK Sentry). Exporter: node, postgres, redis, MinIO, Traefik, cAdvisor, pgBackRest (umur backup).
 
 ### 16.2 Standar field log (Crawler §19.2 diadopsi)
 
-`ts, level, service (web|api|worker-<queue>|dispatcher), env, version, logger, msg, correlation_id, request_id, trace_id, span_id, workspace_id` (bila diizinkan), `user_id` (ID pseudonim), `job_id, stage, snapshot_id, batch_key, entity_id, endpoint_host_hash` (webhook), `url_hash, worker_id, duration_ms, http.method, http.route, http.status, error.code, error.type`. Nilai PII mengikuti §15.6.
+`ts, level, service (web|api|worker-<queue>), env, version, logger, msg, correlation_id, request_id, trace_id, span_id, workspace_id` (bila diizinkan), `user_id` (ID pseudonim), `job_id, stage, snapshot_id, batch_key, entity_id, endpoint_host_hash` (webhook), `url_hash, worker_id, duration_ms, http.method, http.route, http.status, error.code, error.type`. Nilai PII mengikuti §15.6.
 
 ### 16.3 Katalog metrik (pilihan)
 
 | Domain | Metrik |
 |---|---|
-| Pipeline | `msp_stage_duration_seconds{stage}`, `msp_stage_records_total{stage,outcome}`, `msp_stage_failure_ratio{stage}`, `msp_queue_depth{queue}`, `msp_queue_oldest_age_seconds{queue}`, `msp_job_retries_total{queue}`, `msp_dlq_size{queue}` |
+| Pipeline | `msp_stage_duration_seconds{stage}`, `msp_stage_records_total{stage,outcome}`, `msp_stage_failure_ratio{stage}`, `msp_queue_depth{queue}`, `msp_queue_oldest_age_seconds{queue}`, `msp_job_retries_total{queue}`, `msp_dlq_size{queue}` (dihitung dari tabel `river_job`: state `available`, `running`, `retryable`, `discarded`) |
 | Data health (per snapshot, ditulis ke `ops.metric_snapshot`) | total company/establishment, verified contact rate, stale rate, duplicate candidate rate, merge review backlog/umur, evidence coverage, % kategori "Lainnya", % establishment ber-area |
 | Intelligence | Distribusi skor/band per `model_version`, distribusi coverage, % UNSCORED, opportunity acceptance per tipe, durasi job skor (p95), grounding pass rate |
 | Produk | Latensi search/profil p95/p99, time-to-first-result, actioned prospects/minggu (dari `activity`) |
@@ -1928,7 +1970,7 @@ Memenuhi NFR-SCAL-01 (5 juta establishment, ±84 ribu kelurahan/desa, 200 worksp
 
 | Host | CPU | RAM | Disk | Catatan |
 |---|---|---|---|---|
-| `app-01` (kelak `app-02` identik) | 32 core (64 thread) | 128 GB | 2 × 1,92 TB NVMe RAID1 | Pipeline 16 proses saat run; Redis `maxmemory` 16 GB |
+| `app-01` (kelak `app-02` identik) | 32 core (64 thread) | 64 GB | 2 × 1,92 TB NVMe RAID1 | Worker pipeline memakai semua core saat run. Proses Go hemat memori (±1–4 GB per pool). Redis `maxmemory` 8 GB |
 | `db-01` | 32 core | 256 GB ECC | 4 × 1,92 TB NVMe RAID10 (±3,8 TB) | `shared_buffers` 64 GB, `effective_cache_size` 192 GB |
 | `db-02` | Sama dengan db-01 | 256 GB | Sama | Target failover + read search |
 | `stor-01` | 16 core | 64 GB | 4 × 8 TB SSD/HDD enterprise, erasure coding (EC:2) → ±16 TB usable + 1 NVMe OS | Bucket backup memakai object lock |
@@ -1939,39 +1981,41 @@ Jaringan: VLAN privat 10 GbE antar server, uplink publik hanya ke app-01 (dan op
 
 ### 17.3 Tata letak proses (app-01)
 
-| Layanan | Replika × proses/thread | Catatan |
-|---|---|---|
-| traefik | 1 | — |
-| web (Next.js) | 2 | — |
-| api (uvicorn) | 2 × 4 worker | Pool DB 10/proses via PgBouncer |
-| worker-pipeline | 1 × 16 proses (hanya saat run) | Antrean `pipeline` |
-| worker-scoring | 2 × 4 | `scoring.interactive` diprioritaskan (proses khusus) di atas `scoring.bulk` |
-| worker-export | 2 × 2 | Streaming ke MinIO multipart |
-| worker-webhook | 2 × 8 thread | Network terisolasi (§12.5) |
-| worker-ai | 1 × 8 thread | I/O bound |
-| worker-default | 2 × 4 | Upload, email, refund, purge |
-| dispatcher, scheduler, reconciler | 1 masing-masing | Leader lock (advisory lock) |
+Semua container `msp` memakai image yang sama dengan subcommand berbeda.
+
+| Container | Perintah | Konkurensi | Catatan |
+|---|---|---|---|
+| traefik | — | 1 | TLS, routing `/api` → api |
+| web (Next.js) | — | 2 replika | UI saja |
+| api | `msp api` | 2 replika (`GOMAXPROCS` 4) | Pool pgx 20/replika via PgBouncer. Blue/green via Traefik |
+| worker-pipeline | `msp worker --queues=pipeline` | `MaxWorkers` 32 | Aktif penuh saat pipeline run |
+| worker-scoring | `msp worker --queues=scoring` | `MaxWorkers` 8 | Prioritas 1 (ICP interaktif) selalu didahulukan atas prioritas 4 (fan-out) |
+| worker-export | `msp worker --queues=export` | `MaxWorkers` 4 | Streaming ke MinIO multipart |
+| worker-webhook | `msp worker --queues=webhook` | `MaxWorkers` 32 | Network terisolasi (§12.5) |
+| worker-ai | `msp worker --queues=ai` | `MaxWorkers` 16 | I/O bound |
+| worker-maintenance | `msp worker --queues=maintenance` | `MaxWorkers` 8 | Upload, email, refund, purge, periodic job (River leader election menggantikan scheduler) |
+| kratos, redis (opsional), unbound, smokescreen, otel-collector | — | 1 | — |
 
 ### 17.4 Baseline PostgreSQL
 
-`max_connections` 300 (PgBouncer `default_pool_size` 40), `work_mem` 32–64 MB, `maintenance_work_mem` 4 GB, `max_parallel_workers_per_gather` 4, `max_parallel_maintenance_workers` 8, `random_page_cost` 1.1 (NVMe), `wal_compression` on, `archive_mode` on (pgBackRest async archive-push), autovacuum agresif untuk `score`, `outbox_event`, `webhook_delivery`, `stage_run`. Data bulk (score, projection) memakai `COPY`.
+`max_connections` 300 (PgBouncer `default_pool_size` 40), `work_mem` 32–64 MB, `maintenance_work_mem` 4 GB, `max_parallel_workers_per_gather` 4, `max_parallel_maintenance_workers` 8, `random_page_cost` 1.1 (NVMe), `wal_compression` on, `archive_mode` on (pgBackRest async archive-push), autovacuum agresif untuk `score`, `river_job`, `event`, `webhook_delivery`, `stage_run`. River memakai **koneksi langsung** ke db-01 (bukan lewat PgBouncer transaction mode) untuk `LISTEN/NOTIFY` dan leader election, sedangkan query aplikasi lewat PgBouncer. Data bulk (score, projection) memakai `COPY`.
 
 ### 17.5 Bottleneck & mitigasi
 
 | Bottleneck | Mitigasi |
 |---|---|
-| ER pasangan kandidat | Blocking ketat, vektorisasi (rapidfuzz/numpy), batch per sel geohash, skip record tak berubah (`record_hash`) |
+| ER pasangan kandidat | Blocking ketat, perbandingan paralel (goroutine pool), batch per sel geohash, skip record tak berubah (`record_hash`) |
 | PIP 5 juta titik × 84 ribu polygon | `ST_Subdivide` + GiST; penetapan per kab/kota paralel |
 | Rebuild projection | Shadow table + index paralel + swap. Upsert inkremental untuk perubahan kecil |
 | Penulisan skor | `COPY` ke epoch baru, tanpa UPDATE; hapus epoch lama secara async |
 | Join search | Kandidat ICP dibatasi, index `score_rank` parsial, replica db-02, `CREATE STATISTICS` |
 | DNS lookup | Resolver Unbound lokal, cache, konkurensi terkendali |
 | SPOF app-01 | MVP: restore via Ansible + image registry (RTO ≤ 4 jam). V1: app-02 aktif-aktif |
-| Fan-out re-skor saat publish | Antrean `scoring.bulk` di-stagger (maksimal 4 job paralel), tidak mengganggu `scoring.interactive` |
+| Fan-out re-skor saat publish | Job `scoring` prioritas 4 di-stagger (maksimal 4 berjalan bersamaan); prioritas 1 (ICP interaktif) selalu didahulukan |
 
 ### 17.6 Backup & DR (NFR-AVAIL-02: RPO ≤ 15 menit, RTO ≤ 4 jam)
 
-pgBackRest: full mingguan, diff harian, archive WAL kontinu (`archive_timeout = 60s`) → RPO ≤ 1–2 menit (repo1 MinIO, repo2 off-site). Restore ±200 GB pada NVMe ±15–30 menit + replay WAL. Skenario utama adalah failover ke db-02 (promote) dengan RTO < 30 menit. MinIO: versioning + object lock untuk bucket snapshot/backup/audit, plus replikasi ke off-site. Uji restore bulanan otomatis ke host staging (bukti NFR-AVAIL-02). Redis tidak di-backup sebagai sumber kebenaran (state job ada di Postgres). AOF dipakai untuk memulihkan antrean dengan cepat.
+pgBackRest: full mingguan, diff harian, archive WAL kontinu (`archive_timeout = 60s`) → RPO ≤ 1–2 menit (repo1 MinIO, repo2 off-site). Restore ±200 GB pada NVMe ±15–30 menit + replay WAL. Skenario utama adalah failover ke db-02 (promote) dengan RTO < 30 menit. MinIO: versioning + object lock untuk bucket snapshot/backup/audit, plus replikasi ke off-site. Uji restore bulanan otomatis ke host staging (bukti NFR-AVAIL-02). Redis hanya cache/rate limit dan tidak di-backup. Antrean River ikut backup/PITR Postgres.
 
 ---
 
@@ -1981,13 +2025,14 @@ Memenuhi FR-OPS-007, NFR-SEC-04, dan D-19.
 
 ### 18.1 Konfigurasi (12-factor)
 
-Semua konfigurasi berasal dari environment variable (pydantic-settings, divalidasi saat start; nilai wajib yang hilang → gagal start). Konfigurasi domain berversi (model skor, katalog, taksonomi, daftar referensi) adalah file di repo, bukan env. Variabel utama:
+Semua konfigurasi berasal dari environment variable (di-parse ke struct config Go dan divalidasi saat start; nilai wajib yang hilang → gagal start). Konfigurasi domain berversi (model skor, katalog, taksonomi, daftar referensi) adalah file di repo, bukan env. Variabel utama:
 
 | Kelompok | Variabel |
 |---|---|
 | Inti | `MSP_ENV` (local, ci, staging, production), `MSP_VERSION`, `MSP_BASE_URL`, `MSP_LOG_LEVEL` |
-| Database | `DATABASE_URL_APP`, `DATABASE_URL_PIPELINE`, `DATABASE_URL_OPS`, `DATABASE_URL_REPLICA` |
-| Redis | `REDIS_URL` (broker), `REDIS_CACHE_URL` |
+| Database | `DATABASE_URL_APP`, `DATABASE_URL_PIPELINE`, `DATABASE_URL_OPS`, `DATABASE_URL_REPLICA`, `DATABASE_URL_DIRECT` (River listener, migrate) |
+| Worker | `MSP_WORKER_QUEUES` (mis. `pipeline,scoring`), `MSP_WORKER_MAX_<QUEUE>` |
+| Redis (opsional) | `REDIS_URL` (cache, rate limit, counter fair-use). Kosong → cache in-process (dev) |
 | Object storage | `S3_ENDPOINT_URL`, `S3_PUBLIC_ENDPOINT` (`files.<domain>`), `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_BUCKET_{SNAPSHOTS,UPLOADS,EXPORTS,TILES}` |
 | Auth (D-20) | `IDP_KIND` (kratos, oidc), `KRATOS_PUBLIC_URL`, `KRATOS_ADMIN_URL`, `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `SESSION_PEPPER` |
 | Kriptografi | `CURSOR_HMAC_KEY`, `VALUE_HASH_PEPPER`, `WEBHOOK_SECRET_MASTER_KEYS` (berversi) |
@@ -2019,7 +2064,7 @@ Data produksi yang mengandung P1 tidak pernah disalin ke local/ci/staging.
 | `pipeline.publish` | on | Snapshot tidak dapat di-publish |
 | `dns.lookup` | on | Verifikasi email → UNKNOWN (bukan INVALID) |
 | `search.include_private` | on | Toggle private prospect disembunyikan |
-| `scoring.bulk` | on | Fan-out re-skor ditunda (interaktif tetap jalan) |
+| `scoring.bulk_rescore` | on | Fan-out re-skor ditunda (interaktif tetap jalan) |
 
 ---
 
@@ -2029,14 +2074,15 @@ Memenuhi D-01, PRD §6 (V2), dan analisis §2.1/§6.
 
 ### 19.1 Port `SourceAdapter`
 
-```python
-class SourceAdapter(Protocol):
-    source_code: str
-    contract_version: str                      # "observation-record/1.0.0"
-    def describe(self) -> SourceDescriptor     # tipe, field yang dihasilkan, tag lisensi default
-    def produce(self, run: AdapterRun) -> Iterator[ObservationRecord]
-    # Ditulis sebagai part JSONL/Parquet + manifest ke msp-snapshots/{source}/{version}/,
-    # lalu masuk lifecycle snapshot yang sama (§4.2)
+```go
+type SourceAdapter interface {
+    SourceCode() string
+    ContractVersion() string                              // "observation-record/1.0.0"
+    Describe() SourceDescriptor                           // tipe, field yang dihasilkan, tag lisensi default
+    Produce(ctx context.Context, run AdapterRun) iter.Seq2[ObservationRecord, error]
+}
+// Hasil ditulis sebagai part JSONL/Parquet + manifest ke msp-snapshots/{source}/{version}/,
+// lalu masuk lifecycle snapshot yang sama (§4.2)
 ```
 
 Crawler kelak memproduksi **snapshot bergulir** (mis. per batch mingguan `ds-2027.03.2`) atau snapshot per job untuk crawl on-demand. Engine hilir (§6) tidak berubah.
@@ -2049,12 +2095,12 @@ Crawler kelak memproduksi **snapshot bergulir** (mis. per batch mingguan `ds-202
 | §11 Evidence & provenance | `EvidencePointer` `CRAWL_PAGE` + `identity.evidence` (`snippet_hash`, `extractor_version`, `pointer.source_url/final_url/selector_hint`) | **Sudah di skema** |
 | §16 RawPage (immutable, content_hash) | Bucket `msp-raw-pages` (object lock) + `record_hash` | Bucket direncanakan |
 | §16 PageObservation (field, value, selector_hint, confidence) | `Observation` (`field`, `raw_value`, `extraction_confidence`, `evidence`) | **Sudah di kontrak** |
-| §12 SSRF | `platform.net.safe_http` + Smokescreen + nftables (§12.5), dengan role ACL `crawler` terpisah | **Dibangun di MVP** (untuk webhook) |
-| §8.3/§13 Retry, backoff, DLQ | Middleware Dramatiq + `job_dlq` + redrive | **Dibangun di MVP** |
+| §12 SSRF | `internal/platform/netguard` + Smokescreen + nftables (§12.5), dengan role ACL `crawler` terpisah | **Dibangun di MVP** (untuk webhook) |
+| §8.3/§13 Retry, backoff, DLQ | Retry River (`NextRetry`), job `discarded` + retry dari ops console | **Dibangun di MVP** |
 | §14.2 Change detection | `record_hash` + diff snapshot (FR-DATA-013) | V1 |
 | §15 Kontrol multi-tenant (kuota) | `usage` entitlement (`crawl_pages_month`) | Desain siap |
 | §19 Observability | Standar log/metrik §16 | **Dibangun di MVP** |
-| §6 Policy, §7 frontier, §8 fetch, robots | Modul baru `msp.acquisition` (schema `crawl`), di bawah `ingest` | V2 |
+| §6 Policy, §7 frontier, §8 fetch, robots | Modul baru `internal/acquisition` (schema `crawl`), di bawah `ingest` | V2 |
 | §17 API `/v1/crawl/*` | `/v1/ops/crawl/*` (internal dahulu) | V2 |
 
 Opportunity yang otomatis aktif bila crawler mengisi fieldnya: OPP-BOOKING-NONE (`has_online_booking`), perluasan OPP-EMAIL-* (email dari halaman), dan person/decision-maker (R-01).
