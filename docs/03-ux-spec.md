@@ -5,7 +5,7 @@
 | Versi | 0.2 (lean). Menggantikan v0.1 (25 layar + V1) |
 | Tanggal | 2026-10-10 |
 | Basis | `01-prd.md` v0.2 (**sumber kebenaran**; bila bertentangan, PRD yang berlaku) · `02-design-system/` tokens `0.2.0` |
-| Cakupan | Hanya **F1**. F2/F3 cukup di §10 |
+| Cakupan | Hanya **F1**. F2/F3: PRD §6 (§9) |
 
 > Konvensi: `SCR-nn` layar, `FLOW-nn` alur. Aturan bisnis **tidak disalin**, cukup dirujuk ke ID PRD (DRY). Nama token persis seperti di `02`. Dataset **tidak punya email maupun data orang** (PRD §7.1). Kontak = telepon, website, akun sosial (`sameAs`), dan tautan Google Maps.
 
@@ -16,7 +16,7 @@
 1. **Satu layar, satu pertanyaan.** Setiap SCR menuliskan pertanyaan yang dijawabnya. Informasi di luar itu dipindah ke drawer atau tab.
 2. **Alasan sebelum angka.** Skor selalu ditulis "untuk ICP X", dan "Kenapa prospek ini?" bisa dibuka dengan satu klik dari skor mana pun (FR-INTL-04).
 3. **Trust terlihat, Unknown itu sah.** Setiap nilai membawa claim type dan evidence. Field kosong tampil "Tidak diketahui" (BR-TRUST-01, BR-TRUST-03).
-4. **Biaya selalu eksplisit.** Tombol berbayar menyebut biayanya. Tidak ada debit tanpa dialog konfirmasi (BR-CRED-01).
+4. **Biaya selalu eksplisit.** Hanya unlock yang memakai credit; export dan kirim ke webhook gratis (BR-CRED-01). Tombol berbayar menyebut biayanya. Tidak ada debit tanpa dialog konfirmasi.
 5. **Gagal terlihat dan bisa diulang.** Error ditampilkan per bagian, lengkap dengan "Coba lagi". Aksi yang gagal tidak ditagih.
 
 ---
@@ -44,12 +44,12 @@
 | SCR-04 | Profil prospek | `/prospects/[id]` | Admin, Member | FR-PROF-01, FR-INTL-01..05, FR-DATA-02, FR-ACT-01, -02, -04, -05, FR-PRIV-02 |
 | SCR-05 | Wilayah (peringkat + peta + drilldown) | `/areas` | Admin, Member | FR-GEO-01, FR-INTL-03, FR-DATA-04 |
 | SCR-06 | List & pencarian tersimpan | `/lists`, `/lists/[id]` | Admin, Member | FR-ACT-01, FR-SRCH-02 |
-| SCR-07 | Export (dialog biaya + riwayat) | `/exports` | Admin, Member | FR-ACT-03, FR-BILL-01 |
+| SCR-07 | Export (dialog unlock & export + riwayat) | `/exports` | Admin, Member | FR-ACT-03, FR-BILL-01 |
 | SCR-08 | Pengaturan › ICP & anggota | `/settings/icp`, `/settings/members` | Admin (Member: lihat ICP) | FR-ICP-02, FR-AUTH-02 |
 | SCR-09 | Pengaturan › Webhook | `/settings/webhooks` | Admin | FR-ACT-04 |
 | SCR-10 | Pengaturan › Credit & pemakaian | `/settings/usage` | Admin | FR-BILL-01 |
 | SCR-11 | Ops › Workspace, credit & audit | `/ops/workspaces`, `/ops/audit` | Ops | FR-OPS-01, FR-OPS-02, FR-BILL-01 |
-| SCR-12 | Ops › Data & kontrol (import, kesehatan data, flag, suppression) | `/ops/imports`, `/ops/health`, `/ops/flags`, `/ops/suppression` | Ops | FR-OPS-01, FR-DATA-01, -03, -04, FR-PRIV-02 |
+| SCR-12 | Ops › Data & kontrol (import, kesehatan data, flag, suppression) | `/ops/imports`, `/ops/health`, `/ops/flags`, `/ops/suppression` | Ops | FR-OPS-01, FR-DATA-01, -04, FR-PRIV-02 |
 
 ### 2.3 Role (FR-AUTH-02; server tetap menegakkan, akses lewat URL di luar role → DITOLAK)
 
@@ -72,7 +72,7 @@
 | 2 | SCR-02 | Workspace dibuat otomatis → pilih **Offering** (chip tag) | Preset kriteria ICP diisi dari tag. Anggota undangan melewati langkah 2–4 dan langsung ke SCR-03 |
 | 3 | SCR-02 | Isi **ICP**: kategori, wilayah, kondisi digital, minimum rating/ulasan. Tiap kriteria *wajib* atau *preferensi* | Jumlah prospek cocok diperbarui saat kriteria berubah |
 | 4 | SCR-02 | Simpan → progres "Menghitung skor…" | State MENGHITUNG |
-| 5 | SCR-03 | Hasil pertama + coach mark: (1) skor & band, (2) "Kenapa prospek ini?", (3) kontak ter-mask & biaya unlock | Event `first_result_viewed` |
+| 5 | SCR-03 | Hasil pertama + coach mark: (1) skor & band, (2) "Kenapa prospek ini?", (3) kontak ter-mask & biaya unlock | Waktu ≤ 5 menit diukur manual (gerbang di `05` §7) |
 
 ### FLOW-02 — Prospecting harian
 
@@ -83,7 +83,7 @@
 | 3 | SCR-04 | Buka evidence nilai yang diragukan | Drawer §5 |
 | 4 | SCR-04 | **Unlock · 1 credit** → dialog → nomor terbuka → Salin / Telepon / WhatsApp | Unlock ulang tidak ditagih (FR-ACT-02) |
 | 5 | SCR-04/03 | Simpan ke list, tag, catatan, tugaskan ke anggota | FR-ACT-01 |
-| 6 | SCR-03/06 | Pilih banyak → **Export** (SCR-07) atau **Kirim ke webhook** | Dialog biaya menampilkan jumlah yang perlu di-unlock |
+| 6 | SCR-03/06 | Pilih banyak → **Export** (SCR-07) atau **Kirim ke webhook** | Export/kirim gratis; dialog menampilkan prospek yang perlu di-unlock dulu (BR-CRED-01). Batas per aksi: SCR-03 |
 
 ### FLOW-03 — Wilayah → drilldown (PER-03)
 
@@ -107,8 +107,8 @@
 
 | # | Layar / alat | Langkah | Catatan |
 |---|---|---|---|
-| 1 | CLI | Ops menjalankan `msp tool import <file.jsonl.gz>` (bila area belum ada: `msp tool geo-sync`) | Import ulang file yang sama tidak membuat duplikat |
-| 2 | SCR-12 Import | Job `import` tampil di riwayat: status, progres, lalu laporan baru / berubah / tidak berubah / ditolak (per alasan) | Laporan bisa diunduh sebagai CSV |
+| 1 | CLI | Ops menjalankan `msp tool import --observed-at <YYYY-MM-DD> <file.jsonl.gz>` (bila area belum ada: `msp tool geo-sync`, laporannya di output CLI) | `--observed-at` = tanggal pengambilan dataset, **wajib** (dasar freshness, BR-TRUST-02). Import ulang file yang sama tidak membuat duplikat |
+| 2 | SCR-12 Import | Job `import` tampil di riwayat: tanggal pengambilan, status, progres, lalu laporan baru / berubah / tidak berubah / ditolak (per alasan) | Laporan tampil di layar saja (tanpa unduhan) |
 | 3 | SCR-12 Import | Penetapan wilayah + job `score` berjalan → status "Skor diperbarui" | Customer melihat banner MENGHITUNG bila skor ICP-nya berubah |
 | 4 | SCR-12 Kesehatan | Cek jumlah prospek, % terisi per field, % terpetakan wilayah | Target ≥ 98% terpetakan (FR-DATA-04). Di bawah target → indikator peringatan |
 
@@ -157,7 +157,7 @@
 |---|---|
 | Pertanyaan | "Prospek mana yang paling layak saya hubungi sekarang?" |
 | Isi | Search kata kunci (nama, kategori, alamat). Panel filter: kategori, wilayah, band, tipe opportunity, ada telepon / website / sosial, rating (FR-SRCH-01). Header hasil: jumlah tepat + "untuk ICP X" + urutan. Baris: `ScoreBadge` · nama, kategori, kelurahan, freshness · opportunity teratas (1 baris alasan) · indikator kontak & digital (teks, bukan ikon saja) · rating. "Muat 50 lagi" |
-| Aksi | Buka profil · Simpan pencarian · Pilih banyak → bar aksi: Simpan ke list, Tag, Tugaskan, Unlock (n credit), Export, Kirim ke webhook. "Pilih semua hasil" maks. 10.000 |
+| Aksi | Buka profil · Simpan pencarian · Pilih banyak → bar aksi: Simpan ke list, Tag, Tugaskan, Unlock (n credit), Export, Kirim ke webhook. "Pilih semua hasil" maks. 10.000. **Batas per aksi:** Unlock dan Kirim ke webhook maks. 100 prospek; Export maks. 10.000 baris per job. Di atas batas → tombol nonaktif + tooltip batasnya |
 | State khusus | NOL HASIL · MENGHITUNG (urutan bisa berubah → "Muat ulang dari atas") · DATA TERBATAS pada baris · FITUR DIMATIKAN (Export/Webhook di bar aksi) |
 
 ### SCR-04 — Profil prospek
@@ -166,14 +166,14 @@
 |---|---|
 | Pertanyaan | "Kenapa prospek ini, dan bagaimana saya mendekatinya?" |
 | Header | Nama · kategori (Turunan) · alamat · kelurahan › kecamatan · freshness · "Lihat di Google Maps" · `ScoreBadge` besar "untuk ICP X" · "Data terbatas" bila berlaku |
-| Kenapa prospek ini? | `FactorBar` 6 faktor Lampiran A: nilai, bobot, kontribusi, claim type. Faktor tidak diketahui: "Tidak dihitung" (BR-SCORE-01). Footer: coverage, `priority-X.Y.Z`. Expand ICP Fit → kriteria Cocok / Sebagian / Tidak / Tidak diketahui + Wajib/Preferensi |
+| Kenapa prospek ini? | `FactorBar` 6 faktor Lampiran A: nilai, bobot, kontribusi, claim type. Faktor tidak diketahui: "Tidak dihitung" (BR-SCORE-01). Footer: coverage, `priority-X.Y.Z`. Expand ICP Fit → kriteria Cocok / Sebagian / Tidak / Tidak diketahui + Wajib/Preferensi (aturan Sebagian: Lampiran A) |
 | Opportunity | Kartu per opportunity relevan (Lampiran B): judul, alasan + pembanding, badge Perkiraan, relevansi primer/sekunder, "Lihat evidence", **Relevan / Tidak relevan** (FR-INTL-05). Gap yang tidak relevan dengan Offering hanya tampil di Kehadiran digital |
 | Kontak | Telepon ter-mask + "Kemungkinan WhatsApp" bila seluler (BR-NORM-01). **Unlock · 1 credit** → nilai penuh + Salin / Telepon / WhatsApp (`wa.me`) + "Di-unlock oleh Rina · 10 Okt". Nilai yang di-suppress: "Kontak tidak tersedia", tombol Unlock tidak muncul (FR-PRIV-02) |
 | Kehadiran digital | Website + klasifikasi BR-NORM-02 (domain sendiri / sosial / link aggregator / `wa.me` / subdomain gratis / kosong) · akun sosial dari `sameAs` · jam buka · rating & jumlah ulasan. Website, sosial, dan Maps **tidak** ter-mask |
 | Konteks wilayah | Kelurahan: populasi (perkiraan model Kontur 2023), jumlah & densitas kategori per 1.000, kompetisi Rendah/Sedang/Tinggi, `market_score` → "Lihat wilayah" (SCR-05) |
 | AI brief | FLOW-04. Teks `text.body-lg`, rujukan `[n]` |
 | Aksi & kerja tim | Unlock · Simpan ke list · Tugaskan · Kirim ke webhook · ‹ › prospek berikutnya. Panel list, tag, catatan, pemilik (FR-ACT-01) |
-| State khusus | Setiap nilai punya claim type + evidence (§5). AI dimatikan → FITUR DIMATIKAN. Di 360 px: satu kolom akordeon + bar bawah sticky [Unlock · 1 credit] [Aksi lain] |
+| State khusus | Setiap nilai punya claim type + evidence (§5). Tanpa koordinat / di luar semua poligon → wilayah dan Konteks wilayah "Tidak diketahui" (tanpa tebakan desa terdekat), faktor Wilayah "Tidak dihitung". AI dimatikan → FITUR DIMATIKAN. Di 360 px: satu kolom akordeon + bar bawah sticky [Unlock · 1 credit] [Aksi lain] |
 
 ### SCR-05 — Wilayah
 
@@ -198,10 +198,10 @@
 
 | | |
 |---|---|
-| Pertanyaan | "Berapa biayanya, dan di mana file saya?" |
-| Dialog biaya | Jumlah prospek · sudah di-unlock (gratis) · akan di-unlock (n credit) · saldo sebelum → sesudah · format CSV/XLSX · "Unlock dijalankan sekarang; export yang gagal bisa diulang gratis" (FR-ACT-03, BR-CRED-01). Prospek yang di-suppress dikecualikan dan disebutkan jumlahnya |
-| Riwayat | Tabel job: dibuat, oleh, jumlah baris, credit, status (Antre / Diproses / Selesai / Gagal), Unduh / Coba lagi. Status job diperbarui otomatis |
-| State khusus | CREDIT KURANG · FITUR DIMATIKAN · Gagal → "Tidak ada credit yang ditagih" · lebih dari 10.000 baris → minta persempit filter |
+| Pertanyaan | "Berapa prospek yang perlu di-unlock dulu, dan di mana file saya?" |
+| Dialog | Export gratis. Biaya = preview unlock yang sama dengan bulk Unlock: jumlah prospek · sudah di-unlock (gratis) · akan di-unlock (n credit) · saldo sebelum → sesudah · format CSV/XLSX · "Unlock dijalankan sekarang; export yang gagal bisa diulang gratis" (FR-ACT-03, BR-CRED-01). Prospek yang kontaknya di-suppress tidak di-unlock/ditagih dan disebutkan jumlahnya |
+| Riwayat | Tabel job: dibuat, oleh, jumlah baris, status (Antre / Diproses / Selesai / Gagal), Unduh / Coba lagi. Status job diperbarui otomatis |
+| State khusus | CREDIT KURANG · FITUR DIMATIKAN · Gagal → ulangi gratis, unlock yang sudah jalan tetap berlaku · lebih dari 10.000 baris → minta persempit filter |
 
 ### SCR-08 — Pengaturan › ICP & anggota
 
@@ -219,7 +219,7 @@
 | Pertanyaan | "Apakah prospek terkirim ke sistem saya?" |
 | Isi | Daftar endpoint (nama, URL, status aktif). Tambah: URL HTTPS → validasi. Secret HMAC tampil sekali saat dibuat + "Salin". Log pengiriman: waktu, jumlah prospek, kode respons, percobaan, retry berikutnya (FR-ACT-04) |
 | Aksi | Tambah · Kirim uji · nonaktifkan · hapus · rotasi secret · kirim ulang dari log |
-| Kirim prospek | Dari SCR-03/04/06: pilih endpoint → dialog. Prospek yang belum di-unlock ikut di-unlock (n credit) sebelum dikirim |
+| Kirim prospek | Dari SCR-03/04/06 (maks. 100 prospek): pilih endpoint → dialog seperti SCR-07. Kirim gratis; prospek yang belum di-unlock di-unlock dulu (n credit) |
 | State khusus | URL ke IP privat/internal ditolak (copy §7). Uji gagal → kode respons + saran. FITUR DIMATIKAN |
 
 ### SCR-10 — Pengaturan › Credit & pemakaian
@@ -227,7 +227,7 @@
 | | |
 |---|---|
 | Pertanyaan | "Credit kami terpakai untuk apa?" |
-| Isi | Saldo credit & AI credit (= jumlah ledger, FR-BILL-01) · plan & kuota (Lampiran D, info saja) · tabel ledger: tanggal, jenis (Grant / Debit / Refund), jumlah, oleh, objek (prospek / export / brief), filter per bulan |
+| Isi | Saldo credit & AI credit (= jumlah ledger, FR-BILL-01) · plan & kuota (info saja, acuan `10-bisnis.md` §3) · tabel ledger: tanggal, jenis (Grant / Debit / Refund), jumlah, oleh, objek (prospek / brief), filter per bulan |
 | State khusus | KOSONG: "Belum ada pemakaian." Info: "Penambahan credit dilakukan oleh tim MesinProspek" + kontak |
 
 ### SCR-11 — Ops › Workspace, credit & audit
@@ -244,7 +244,7 @@
 | | |
 |---|---|
 | Pertanyaan | "Apakah data sehat dan sistem terkendali?" |
-| Import | Riwayat job `import`: file, waktu, status, baru/berubah/tidak berubah/ditolak per alasan, unduh laporan (FR-DATA-01). Riwayat `geo-sync` (FR-DATA-03) |
+| Import | Riwayat job `import`: file, tanggal pengambilan (`--observed-at`), waktu, status, baru/berubah/tidak berubah/ditolak per alasan. Laporan tampil di layar (FR-DATA-01) |
 | Kesehatan data | Jumlah prospek · % terisi per field (telepon, `url`, `sameAs`, jam buka, rating, `geo`) · % terpetakan kelurahan (target ≥ 98%) · distribusi band · versi model aktif |
 | Flag | Toggle AI / export / webhook + alasan wajib → banner FITUR DIMATIKAN di app customer |
 | Suppression | Cari / tambah / hapus nilai (telepon, URL) + alasan (FR-PRIV-02). Efek: hilang dari tampilan, export, dan webhook |
@@ -254,7 +254,7 @@
 
 ## 5. Pola UI trust
 
-Aturan umum: **status tidak pernah ditampilkan hanya dengan warna.** Selalu pakai ikon (Lucide) + label teks; claim type juga dibedakan dengan gaya border (NFR-06). Komponen di `packages/ui`, hanya memakai token semantik `02`.
+Aturan umum: **status tidak pernah ditampilkan hanya dengan warna.** Selalu pakai ikon (Lucide) + label teks; claim type juga dibedakan dengan gaya border (NFR-06). Trust di F1 = claim type + freshness; **tanpa tampilan confidence** (mis. `ConfidenceMeter`). Komponen di `packages/ui`, hanya memakai token semantik `02`.
 
 | Pola | Tampilan (ikon · label) | Token / komponen | Aturan |
 |---|---|---|---|
@@ -399,12 +399,12 @@ Nada: lugas, sopan, tanpa menyalahkan user. Istilah produk mengikuti PRD: *credi
 | Situasi | Copy |
 |---|---|
 | Dialog unlock | "Unlock kontak Rumah Makan Sari Rasa? Biaya 1 credit · saldo 184 → 183. Kontak terbuka permanen untuk workspace ini." |
-| Dialog export | "Export 120 prospek (CSV). 85 sudah di-unlock (gratis), 35 akan di-unlock · 35 credit. Saldo 184 → 149. Unlock dijalankan sekarang; bila export gagal, ulangi tanpa biaya." |
+| Dialog Unlock & export | "Export 120 prospek (CSV). 85 sudah di-unlock (gratis), 35 akan di-unlock · 35 credit. Saldo 184 → 149. Unlock dijalankan sekarang; bila export gagal, ulangi tanpa biaya." |
 | Credit kurang | "Credit tidak cukup. Aksi ini butuh 35 credit, saldo Anda 20. Minta Admin workspace menambah credit." |
 | Tidak diketahui | "Tidak diketahui — data sumber tidak memuat jam buka." |
 | Data terbatas | "Data terbatas: sebagian faktor skor tidak diketahui (coverage 52%), jadi band maksimal WARM." |
 | WhatsApp | "Kemungkinan WhatsApp karena nomor seluler. Belum dikonfirmasi." |
-| Export gagal | "Export gagal diproses. Layanan penyimpanan tidak merespons. Tidak ada credit yang ditagih. [Coba lagi] · Kode 7F3A21C0" |
+| Export gagal | "Export gagal diproses. Layanan penyimpanan tidak merespons. Kontak yang sudah di-unlock tetap terbuka; coba lagi tanpa biaya. [Coba lagi] · Kode 7F3A21C0" |
 | URL webhook ditolak | "URL tidak dapat dipakai. Alamat ini mengarah ke jaringan privat atau internal. Gunakan URL HTTPS publik." |
 
 ---
@@ -422,26 +422,7 @@ Nada: lugas, sopan, tanpa menyalahkan user. Istilah produk mengikuti PRD: *credi
 
 ---
 
-## 9. Event analytics minimal
+## 9. Di luar F1
 
-Aturan: nama `<objek>_<kata kerja lampau>`; properti umum `workspace_id`, `user_id`, `role`, `icp_id`, `occurred_at`. Event berbayar dicatat **server-side** (sumber yang sama dengan ledger). Jangan pernah mengirim nomor telepon, teks query mentah, atau nama bisnis; pakai ID.
-
-| Event | Sumber | Properti kunci | Tujuan PRD §4 |
-|---|---|---|---|
-| `signup_completed` | server | `method` (password/google) | Hasil pertama ≤ 5 menit (t0) |
-| `icp_saved` | server | `offering_tags[]`, `criteria_count`, `required_count`, `is_first` | Hasil pertama ≤ 5 menit (funnel) |
-| `first_result_viewed` | klien | `seconds_since_signup` | **Hasil pertama ≤ 5 menit** |
-| `score_explanation_viewed` | klien | `band`, `coverage` | Paham alasan urutan |
-| `evidence_opened` | klien | `field`, `claim_type` | Setiap nilai menunjukkan sumber |
-| `opportunity_feedback_given` | server | `opp_code`, `relevant` | Paham alasan; kalibrasi (PRD §13) |
-| `prospect_unlocked` | server | `source` (profile/bulk/export/webhook), `credits` | Unlock · credit tercatat benar |
-| `export_completed` | server | `rows`, `credits_charged`, `status` | Export · credit tercatat benar |
-| `webhook_sent` | server | `prospects`, `status`, `attempts` | Kirim ke webhook |
-| `ai_brief_generated` | server | `cached`, `provider` (claude/fallback), `status` | Tindak lanjut (AI brief) |
-
----
-
-## 10. F2/F3 (ringkas; detail di PRD §6)
-
-- **F2:** upload daftar customer + pencocokan · signal perubahan setelah re-import + watch/alert · laporkan data salah · role Viewer/Manager · compare prospek & wilayah · natural-language search · satu integrasi CRM · billing self-serve (top-up di SCR-10) · batas plan lengkap · pengelompokan multi-cabang di profil · band revenue · bahasa Inggris.
-- **F3:** tidak ada layar baru. Hanya penyesuaian performa (mis. hitungan hasil perkiraan "±" untuk dataset > 5 juta) dan status sistem saat deploy tanpa downtime.
+- Analytics produk: F2 (lihat PRD §6).
+- F2/F3: lihat [PRD §6](01-prd.md).
