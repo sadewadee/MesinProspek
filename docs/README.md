@@ -29,6 +29,7 @@ Kondisi saat ini:
 | 07 | [Delivery plan](07-delivery-plan.md) | Paket kerja untuk agent AI dan gerbang fase |
 | 08 | [Engineering standards](08-engineering-standards.md) | Aturan coding Go & Next.js yang esensial |
 | 09 | [Runbook](09-runbook-operasional.md) | Prosedur operasi & alert |
+| 10 | [Ringkasan bisnis](10-bisnis.md) | Lean canvas, positioning, hipotesis harga, unit economics, rencana beta |
 
 ## Stack F1
 

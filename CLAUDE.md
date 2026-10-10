@@ -21,6 +21,7 @@ Satu sumber kebenaran per hal. Rujuk, jangan salin:
 | Hal | Sumber kebenaran |
 |---|---|
 | Requirement, aturan bisnis, rumus skor/opportunity/wilayah, credit | `docs/01-prd.md` |
+| Harga & kuota plan, unit economics | `docs/10-bisnis.md` |
 | Arsitektur, data model, nama modul/tabel | `docs/04-technical-design.md` |
 | Kontrak API | `contracts/openapi.yaml` (kode server & client TS di-generate) |
 | Skema database | migrasi goose di `apps/api/db/migrations` |

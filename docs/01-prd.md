@@ -240,16 +240,12 @@ Dihitung per kelurahan dan kecamatan. Satuan densitas **per 1.000 penduduk**.
 | `market_score` | 0,40·pct(populasi) + 0,35·pct(densitas prospek cocok ICP) + 0,25·(100 − kompetisi) |
 | Peringkat wilayah | Urut `market_score`, lalu jumlah prospek HOT + WARM |
 
-## Lampiran D — Credit & plan (angka awal, divalidasi pricing)
+## Lampiran D — Operasi yang memakai credit
 
 | Operasi | Biaya |
 |---|---|
-| Search, profil, peta | Gratis |
-| Unlock kontak / export prospek yang belum di-unlock | 1 credit per prospek |
-| AI brief | 1 AI credit (gratis bila diambil dari cache) |
+| Search, profil, peta, export & kirim webhook untuk prospek yang sudah di-unlock | Gratis |
+| Unlock kontak (termasuk "Unlock & export/kirim") | 1 credit per prospek |
+| AI brief | 1 AI credit (gratis bila diambil dari cache, tidak ditagih bila gagal) |
 
-| Plan | Seat | Credit/bulan | AI credit/bulan |
-|---|---|---|---|
-| Starter | 2 | 200 | 50 |
-| Growth | 5 | 1.000 | 300 |
-| Agency | 15 | 3.000 | 1.000 |
+Harga dan kuota per plan ada di [`10-bisnis.md`](10-bisnis.md) §3 (DRY).
