@@ -4,7 +4,7 @@ Panduan wajib untuk setiap sesi Claude dan setiap agent yang bekerja di repo ini
 
 ## Goal produk (jangan melenceng)
 
-MesinProspek membantu penjual B2B menemukan **bisnis lokal Indonesia** yang paling layak dihubungi, lalu menjelaskan **kenapa** (opportunity + evidence) dan memungkinkan **tindak lanjut** (unlock kontak, export, webhook, AI brief).
+MesinProspek adalah **market intelligence untuk bisnis lokal Indonesia** (D-30). Dari data Google Maps yang diambil berulang dan data wilayah, produk memperkirakan **kunjungan, omzet, dan okupasi** usaha, menunjukkan **pola keramaian**, dan membantu memilih **lokasi, jam buka, dan harga** cabang baru. Setiap angka disertai bukti, asumsi, rentang, dan tanggal data. Pengguna utama: pemilik usaha dan investor. Fitur prospek (unlock kontak, export, webhook) tetap ada untuk penjual B2B.
 
 Alur inti: **temukan → pahami → prioritaskan → tindak lanjuti**. Pekerjaan yang tidak memperkuat alur ini **tidak dikerjakan** tanpa persetujuan founder.
 
@@ -20,7 +20,7 @@ Satu sumber kebenaran per hal. Rujuk, jangan salin:
 
 | Hal | Sumber kebenaran |
 |---|---|
-| Requirement, aturan bisnis, rumus skor/opportunity/wilayah, credit | `docs/01-prd.md` |
+| Requirement, aturan bisnis, rumus estimasi/analisis lokasi/skor/opportunity/wilayah, credit | `docs/01-prd.md` |
 | Harga & kuota plan, unit economics | `docs/10-bisnis.md` |
 | Arsitektur, data model, nama modul/tabel | `docs/04-technical-design.md` |
 | Kontrak API | `contracts/openapi.yaml` (kode server & client TS di-generate) |
@@ -29,7 +29,7 @@ Satu sumber kebenaran per hal. Rujuk, jangan salin:
 | Nama perintah, service, env var, antrean | `docs/README.md` § Kosakata teknis bersama |
 | Keputusan | `docs/00-analisis-dokumen-awal.md` §7 (register D-xx) |
 
-Logika yang sama (mis. klasifikasi URL, normalisasi telepon, perhitungan skor) ditulis **sekali** dan dipakai ulang.
+Logika yang sama (mis. klasifikasi URL, normalisasi telepon/harga, laju ulasan, jam inti, perhitungan skor) ditulis **sekali** dan dipakai ulang.
 
 ### 3. Make it work → make it right → make it fast
 - **F1 — make it work:** alur end-to-end berjalan dan benar untuk kasus utama. Scope = `docs/01-prd.md` §9, tidak lebih.
@@ -39,11 +39,12 @@ Logika yang sama (mis. klasifikasi URL, normalisasi telepon, perhitungan skor) d
 
 ## Batasan tetap
 
-- Crawler **PAUSED**. Input = dataset JSON-LD global (kunci `google_place_id`, diperbarui berkala) + data wilayah GeoAPI. **F1 melayani Indonesia saja**; negara disimpan per record agar negara lain bisa diaktifkan kelak tanpa ubah desain.
+- Kita **tidak scraping**; crawler website **PAUSED**. Input = **DB gmaps dibaca langsung, read-only** (global, snapshot berulang per tempat, D-31) + data wilayah GeoAPI. **F1 melayani Indonesia saja**; negara disimpan per record agar negara lain bisa diaktifkan kelak tanpa ubah desain.
 - **Unknown lebih baik daripada mengarang.** Field yang tidak ada tampil "Tidak diketahui". Jangan mengisi nilai tebakan tanpa label "Perkiraan".
+- **Ukur, jangan tebak.** Estimasi mengikuti PRD Lampiran E/F: yang bisa diukur dari snapshot diukur; asumsi hanya untuk yang tidak terukur, diatur dari dashboard ops, dan selalu ditampilkan sebagai rentang + asumsi + tanggal data.
 - Isu hukum (PDP, lisensi data, retensi) ditangani **tim legal**. Jangan membuat keputusan atau dokumen hukum.
 - CI/CD memakai **GitLab CE self-hosted**, tanpa GitHub Actions. Hosting di **satu dedicated server** di Indonesia (production, staging, GitLab, CI, monitoring).
-- Nilai yang sering berubah (model AI, plan, harga, kuota) **dikonfigurasi dari dashboard ops**, tidak di-hardcode.
+- Nilai yang sering berubah (model AI, plan, harga, kuota, parameter estimasi) **dikonfigurasi dari dashboard ops**, tidak di-hardcode.
 - Stack: Go (backend, satu binary `msp`) + Next.js (frontend) + PostgreSQL/PostGIS + Ory Kratos + River. AI: Claude, fallback ke OpenAI-compatible. Detail di `docs/README.md`.
 - Jangan pernah commit secret. Jangan kirim nomor telepon ke LLM.
 

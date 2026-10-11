@@ -1,6 +1,6 @@
 # Dokumentasi MesinProspek (MSP)
 
-Dokumentasi produk & engineering untuk **MesinProspek — Sales Intelligence Engine**. Versi **0.2 (lean)**.
+Dokumentasi produk & engineering untuk **MesinProspek — Market Intelligence untuk Bisnis Lokal Indonesia**. Versi **0.3 (lean)**.
 
 ## Prinsip
 
@@ -11,10 +11,10 @@ Dokumentasi produk & engineering untuk **MesinProspek — Sales Intelligence Eng
 Prinsip ini juga tertulis sebagai aturan wajib untuk setiap sesi Claude dan agent di [`CLAUDE.md`](../CLAUDE.md).
 
 Kondisi saat ini:
-- **Crawler PAUSED.** Input = dataset JSON-LD yang sudah ada + data wilayah GeoAPI.
+- **Tanpa scraping; crawler website PAUSED.** Input = DB gmaps dibaca langsung (read-only, snapshot berulang) + data wilayah GeoAPI (D-31).
 - **Pembangun** = agent AI (maks. 8 paralel) diorkestrasi Claude. Founder menyetujui gerbang fase.
 - **Cakupan F1** = Indonesia. Dataset global disimpan per negara dan diperbarui berkala.
-- **Konfigurasi yang sering berubah** (model AI, plan & harga) diatur dari dashboard ops, bukan di kode. Secret tetap di `.env`.
+- **Konfigurasi yang sering berubah** (model AI, plan & harga, parameter estimasi) diatur dari dashboard ops, bukan di kode. Secret tetap di `.env`.
 - **Isu hukum** ditangani tim legal, di luar dokumen ini.
 
 ## Peta dokumen
@@ -22,7 +22,7 @@ Kondisi saat ini:
 | No | Dokumen | Isi |
 |---|---|---|
 | 00 | [Analisis dokumen awal](00-analisis-dokumen-awal.md) | Temuan atas dokumen awal + register keputusan |
-| 01 | [PRD](01-prd.md) | **Sumber kebenaran requirement**: scope F1, aturan skor/opportunity/wilayah, credit |
+| 01 | [PRD](01-prd.md) | **Sumber kebenaran requirement**: scope F1, rumus estimasi & analisis lokasi, skor/opportunity/wilayah, credit |
 | 02 | [Design system & tokens](02-design-system/README.md) | Brand Forest & Mint, tokens (DTCG + CSS), komponen |
 | 03 | [UX spec](03-ux-spec.md) | Layar F1, alur, state, copy |
 | 04 | [Technical design](04-technical-design.md) | Arsitektur, data model, pipeline, API |
@@ -58,10 +58,10 @@ Semua dokumen memakai nama-nama ini persis.
 
 | Hal | Nama |
 |---|---|
-| Binary & subcommand | `msp api`, `msp worker`, `msp migrate`, `msp tool import --country ID --observed-at <YYYY-MM-DD> <file.jsonl[.gz]>` (negara aktif & tanggal pengambilan wajib), `msp tool geo-sync --country ID`, `msp tool rescore` |
-| Hitung ulang | Rantai tunggal: metrik wilayah → opportunity → skor. Otomatis setelah import, setelah geo-sync, dan saat ICP disimpan (ICP itu saja). `msp tool rescore` manual hanya setelah versi model/bobot berubah |
+| Binary & subcommand | `msp api`, `msp worker`, `msp migrate`, `msp tool import --country ID` (baca inkremental dari DB gmaps; juga job harian), `msp tool geo-sync --country ID`, `msp tool rescore` |
+| Hitung ulang | Rantai tunggal: estimasi → metrik wilayah → opportunity → skor. Otomatis setelah import, setelah geo-sync, saat parameter estimasi diubah, dan saat ICP disimpan (ICP itu saja). `msp tool rescore` manual hanya setelah versi model/bobot berubah |
 | Target Makefile (lokal = CI) | `make generate` (oapi-codegen, client TS, sqlc, design tokens), `make lint`, `make test` |
-| Format dataset | JSON Lines: satu objek JSON-LD schema.org per baris |
+| Sumber data | DB gmaps (Postgres milik founder), dibaca read-only. Satu baris = satu snapshot satu tempat. Pemetaan kolom di 04 |
 | Antrean River | `import`, `score`, `export`, `webhook`, `ai`, `billing` (grant bulanan) |
 | Service Compose (production & staging) | `web`, `api`, `worker`, `kratos`, `postgres` (`local` ditambah `caddy`) |
 | Service Compose (ops, di server yang sama) | `caddy` (satu untuk semua domain), `gitlab`, `gitlab-runner`, `prometheus`, `alertmanager`, `grafana`, `node-exporter`. Uptime dipantau layanan eksternal |
@@ -71,9 +71,9 @@ Semua dokumen memakai nama-nama ini persis.
 | Menjalankan tool di server | `docker compose run --rm worker msp <subcommand>` |
 | Backup | pgBackRest stanza `msp` |
 | Rute HTTP | API `/api/v1` · Kratos `/.ory/*` · health `/healthz` (proses hidup) dan `/readyz` (DB siap) · metrik `/metrics` di listener internal `:9090`, hanya lewat network Docker (tidak di-route Caddy) |
-| Env var | Prefix `MSP_`, mis. `MSP_DATABASE_URL`, `MSP_ANTHROPIC_API_KEY`, `MSP_LLM_FALLBACK_API_KEY`, `MSP_GEOAPI_BASE_URL`, `MSP_STORAGE_DIR`, `MSP_ENCRYPTION_KEY`. Env hanya untuk secret & pengaturan proses; model AI dan plan ada di DB (setting ops) |
+| Env var | Prefix `MSP_`, mis. `MSP_DATABASE_URL`, `MSP_SOURCE_DATABASE_URL` (DB gmaps, akun read-only), `MSP_ANTHROPIC_API_KEY`, `MSP_LLM_FALLBACK_API_KEY`, `MSP_GEOAPI_BASE_URL`, `MSP_STORAGE_DIR`, `MSP_ENCRYPTION_KEY`. Env hanya untuk secret & pengaturan proses; model AI dan plan ada di DB (setting ops) |
 | Image | `<registry>/msp/api:<git-sha>`, `<registry>/msp/web:<git-sha>`. Rilis = tag Git `vX.Y.Z` |
-| Versi model | Skor `priority-X.Y.Z`, wilayah `geo-X.Y.Z`, prompt AI `brief-X.Y.Z` |
+| Versi model | Estimasi `est-X.Y.Z`, analisis lokasi `loc-X.Y.Z`, skor `priority-X.Y.Z`, wilayah `geo-X.Y.Z`, prompt AI `brief-X.Y.Z` |
 
 ## Struktur monorepo
 

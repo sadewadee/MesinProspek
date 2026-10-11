@@ -133,10 +133,10 @@ Revisi 0.2 menerapkan arahan founder: **KISS, DRY, make it work → right → fa
 | ID | Keputusan | Status |
 |---|---|---|
 | D-01 | Crawler di-PAUSE. Engine source-agnostic | Accepted |
-| D-02 | Input F1 = dataset JSON-LD (D-24) + data wilayah GeoAPI (D-25). Upload daftar customer di F2 | Accepted |
+| D-02 | Input F1 = DB gmaps read-only (D-31) + data wilayah GeoAPI (D-25). Upload daftar customer di F2 | Accepted (diperbarui D-31) |
 | D-03 | Dua lapis data: data bisnis global (milik MSP, dibaca semua workspace) + data workspace privat (ICP, skor, list, unlock, ledger) | Accepted |
 | D-04 | Offering menentukan relevansi opportunity | Accepted |
-| D-05 | Prospek = satu tempat usaha (`google_place_id`). Pengelompokan multi-cabang di F2 | Accepted (disederhanakan) |
+| D-05 | Bisnis (prospek) = satu tempat usaha, kunci `cid` Google (`google_place_id` disimpan bila ada, Q-13). Pengelompokan multi-cabang di F2 | Accepted (diperbarui D-31) |
 | D-06 | Priority score disederhanakan ke 6 faktor yang datanya ada (PRD Lampiran A) | Accepted |
 | D-07 | Band HOT ≥ 80 / WARM 60–79 / COLD < 60 | Accepted |
 | D-08 | Credit: **unlock satu-satunya operasi berbayar** untuk kontak (1 credit, permanen). Export & kirim webhook gratis ("Unlock & export/kirim" menjalankan unlock dulu). Refund manual oleh ops | Accepted (disederhanakan) |
@@ -147,7 +147,7 @@ Revisi 0.2 menerapkan arahan founder: **KISS, DRY, make it work → right → fa
 | D-13 | Kunci wilayah = ID & kode area GeoAPI. Tanpa crosswalk Kemendagri/BPS di F1 | Accepted (menggantikan usulan lama) |
 | D-14 | Data utama dan backup disimpan di Indonesia | Accepted |
 | D-15 | AI: Claude, fallback ke API OpenAI-compatible | Accepted |
-| D-16 | Beachhead: penjual B2B (agency digital, vendor SaaS UMKM) ke bisnis lokal | Accepted |
+| D-16 | Beachhead: penjual B2B (agency digital, vendor SaaS UMKM) ke bisnis lokal | Diganti D-30 |
 | D-17 | Brand Forest & Mint; heading Plus Jakarta Sans, body Inter | Accepted |
 | D-18 | GitLab CE self-hosted, tanpa GitHub | Accepted |
 | D-19 | Hosting: **satu dedicated server** untuk semuanya (production, staging, GitLab CE, CI runner, monitoring) — pilihan founder | Accepted |
@@ -155,27 +155,33 @@ Revisi 0.2 menerapkan arahan founder: **KISS, DRY, make it work → right → fa
 | D-21 | Go (backend) + Next.js (frontend) | Accepted |
 | D-22 | Dibangun agent AI (maks. 8 paralel) yang diorkestrasi Claude. Founder menyetujui gerbang fase dan deploy produksi | Accepted |
 | D-23 | Prinsip KISS, DRY, make it work → right → fast | Accepted |
-| D-24 | Dataset = JSON-LD schema.org per tempat usaha, kunci `google_place_id` | Accepted |
+| D-24 | Dataset = JSON-LD schema.org per tempat usaha, kunci `google_place_id` | Diganti D-31 |
 | D-25 | Wilayah & populasi dari GeoAPI (Kontur 2023, perkiraan model), di-sync ke PostGIS | Accepted |
 | D-26 | Infra F1 minimal: 1 server, tanpa Redis, PgBouncer, object storage internal, maupun HA. Mitigasi: batas resource per container, runner 1 job, uptime monitor eksternal, backup off-site | Accepted |
 | D-27 | Isu hukum (PDP, lisensi data, retensi) ditangani tim legal | Accepted |
 | D-28 | Dataset global & diperbarui berkala; **F1 melayani Indonesia** (filter negara saat import). Negara lain diaktifkan kelak per negara | Accepted |
 | D-29 | Model AI (provider, model, fallback) dan plan (harga tampilan, seat, kuota) **diatur dari dashboard ops**, tidak mengikat | Accepted |
+| D-30 | Posisi: **market intelligence untuk bisnis lokal Indonesia**. Pengguna utama F1: pemilik usaha F&B/multi-outlet dan investor/analis. Fitur prospek (unlock, export, webhook) tetap ada untuk penjual B2B | Accepted |
+| D-31 | Input = **DB gmaps dibaca langsung** (read-only, inkremental per waktu scrape). Export JSON-LD tidak dipakai karena membuang `popular_times`, harga, distribusi bintang, dan riwayat snapshot | Accepted |
+| D-32 | Estimasi di F1 (PRD Lampiran E): laju ulasan dari snapshot → kunjungan → omzet untuk F&B, plus okupasi & omzet kamar hotel. Selalu rentang + asumsi + tanggal. Parameter yang tidak terukur diatur dari dashboard ops | Accepted |
+| D-33 | Analisis lokasi di F1 (PRD Lampiran F): pola keramaian tetangga, jam inti, posisi harga, keyakinan. Divalidasi dengan dua sample case founder (Warung Kita, Signa Cafe) sebagai golden test | Accepted |
 
 ## 8. Pertanyaan terbuka
 
 | ID | Pertanyaan | Status |
 |---|---|---|
-| Q-01 | Skema dataset | **Terjawab:** JSON-LD schema.org (lihat PRD §7.1) |
+| Q-01 | Skema dataset | **Terjawab:** DB gmaps (PRD §7.1, D-31) |
 | Q-02 | Jumlah record & cakupan wilayah dataset | **Terjawab:** full, seluruh dunia (F1: Indonesia, D-28) |
-| Q-03 | Kadens pembaruan dataset | **Terjawab:** berkala (import ulang) |
+| Q-03 | Kadens pembaruan dataset | **Terjawab:** scrape berulang; import inkremental harian (D-31) |
 | Q-04 / Q-10 | Populasi & batas wilayah | **Terjawab:** GeoAPI |
 | Q-05 | Aturan pakai/tampil/export data | Tim legal |
-| Q-06 | Data acuan revenue | Ditunda: band revenue di F2 |
+| Q-06 | Data acuan revenue | **Terjawab:** benchmark awal di dashboard ops (D-32); kalibrasi dengan omzet nyata peserta beta di F2 |
 | Q-07 | Calon customer beta & Offering mereka | **Terjawab:** peserta sudah ada |
 | Q-08 | GitHub tetap jadi mirror atau ditinggalkan? | **Terjawab:** GitLab repo utama; mirror GitHub opsional, tanpa CI |
 | Q-09 | Spesifikasi satu server & lokasi backup off-site | Terbuka |
 | Q-11 | Validasi hukum PDP | Tim legal |
+| Q-12 | Akses jaringan dari server MesinProspek ke DB gmaps (lokasi DB, cara koneksi, akun read-only) | Terbuka |
+| Q-13 | Skema lengkap tabel sumber di DB gmaps (nama kolom ID tempat, telepon, website, sosial, koordinat) | Terbuka |
 
 ## 9. Peta dokumen lanjutan
 
