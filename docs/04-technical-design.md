@@ -409,7 +409,7 @@ Golden test PRD §12 memanggil fungsi ini langsung. Signa Cafe diuji lewat `Esti
 
 | Kunci | Bentuk nilai |
 |---|---|
-| `est.review_rate` | Per kelompok (`makan`, `kafe`, `hotel`): `{"low","mid","high"}` berupa pecahan. Hotel di-seed sama ketiganya (10%) |
+| `est.review_rate` | Per kelompok (`makan`, `kafe`, `hotel`): `{"low","mid","high"}` berupa pecahan. Seed sesuai PRD Lampiran E §E.5 (hotel 0,067 / 0,10 / 0,133) |
 | `est.spend_factor` | Angka |
 | `est.price_benchmark` | Per kelompok: `{"min","max"}` Rupiah atau `null` |
 | `est.hotel` | Per kelas akomodasi (`hotel_1`…`hotel_5`, `hotel`, `resort`, `villa`, `penginapan`): `{"stay_nights","rooms","adr"}`; `null` = belum diisi |
@@ -546,7 +546,7 @@ ORDER BY distance_m;
 2. Bila `Idempotency-Key` sudah ada di workspace, analisis yang tersimpan dikembalikan (200) tanpa hitung ulang dan tanpa tagihan.
 3. Cek saldo cepat (`credit` < 1 → 402) supaya tidak menghitung sia-sia.
 4. `LocationNeighbours` + data pembanding → `estimate.AnalyzeLocation` (parameter `est.*` saat ini) → `result`. Isinya: tetangga sejenis dan F&B lain beserta tanggal data masing-masing, pola, jam inti, saran jam buka, pembanding, posisi harga, sumber pengunjung siang (non-F&B hanya jumlah per `visitor_source` + 3 nama terdekat), keyakinan + saran cek lapangan, dan parameter yang dipakai.
-5. Dalam satu transaksi `InWorkspace`: `billing.Debit` (1 `credit`, `ref = location_analysis`, §12) + `INSERT location_analyses` (`data_as_of` = snapshot terbaru di antara data yang dipakai) → `201` + `Location`.
+5. Dalam satu transaksi `InWorkspace`: `billing.Debit` (1 `credit`, `ref = location_analysis`, §12; **dilewati** bila keyakinan = "Tidak dapat dianalisis", PRD Lampiran D) + `INSERT location_analyses` (`data_as_of` = snapshot terbaru di antara data yang dipakai) → `201` + `Location`.
 
 - **Buka ulang** (`GET /location-analyses/{id}`) gratis dan membaca `result` apa adanya, lengkap dengan versi dan `data_as_of`. Analisis baru di titik yang sama = POST baru (berbayar) dengan data terbaru.
 - **Feedback** atas kesimpulan → `PUT /location-analyses/{id}/feedback` → `relevant` (FR-INTL-05). **Narasi AI** → `POST /location-analyses/{id}/brief` (§11), dengan fakta dari `result`.

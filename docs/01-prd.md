@@ -193,7 +193,7 @@ Nilai yang tidak bisa diukur dari data diatur ops dari dashboard (D-29, D-32): r
 | BR-TRUST-03 | "Tidak diketahui" tidak pernah ditampilkan sebagai kosong, "0", atau "—" |
 | BR-NORM-01 | Telepon → E.164 sesuai negara tempat, nilai mentah tetap disimpan. Nomor seluler Indonesia (+628…) → "Kemungkinan WhatsApp" (Perkiraan) |
 | BR-NORM-02 | URL website diklasifikasi: domain sendiri · profil sosial (instagram.com, facebook.com, tiktok.com) · link aggregator (linktr.ee, dll.) · link pesan (wa.me) · subdomain gratis (wixsite, blogspot, dll.) · kosong. Daftar pola disimpan sekali sebagai data (DRY) |
-| BR-NORM-03 | Kategori sumber (Inggris atau Indonesia) dipetakan lewat **satu tabel mapping** ke taksonomi MSP dua level dan ke kelompok estimasi (`makan`, `kafe`, `hotel`, `lainnya`) |
+| BR-NORM-03 | Kategori sumber (Inggris atau Indonesia) dipetakan lewat **satu tabel mapping** ke taksonomi MSP dua level dan ke kelompok estimasi (`makan`, `kafe`, `hotel`, `lainnya`). Kategori utama yang menentukan; daftar kategori hanya dipakai bila kategori utama tidak dikenal (mis. "Restoran" yang juga "Kafe" tetap `makan`) |
 | BR-NORM-04 | Harga per orang → rentang Rupiah `min`–`max`. Contoh: "Rp 25–50K" → 25.000–50.000, "Rp 100–225 rb" → 100.000–225.000, "Rp 1–25.000" → 1–25.000. Rentang terbuka "Rp 250,000+" → min 250.000 tanpa max. Simbol "$"/"$$" atau format tak dikenal → "Tidak diketahui" |
 | BR-NORM-05 | Penggabungan snapshot: nilai terkini tiap field = nilai **tidak kosong terbaru** di antara snapshot, dengan tanggal snapshot-nya sendiri. Riwayat disimpan satu baris per tempat per hari (snapshot terakhir hari itu) untuk jumlah ulasan, rating, distribusi bintang, dan harga |
 | BR-NORM-06 | Jam buka dan `popular_times` memakai **zona waktu lokal tempat** (kolom zona waktu sumber) dan ditampilkan dengan labelnya (WIB/WITA/WIT). Jam buka → jadwal per hari (Senin–Minggu). `popular_times` → matriks 7 × 24 nilai 0–100; hari dengan semua nilai 0 dianggap tutup. Data di luar 0–100 → ditolak per field |
@@ -204,7 +204,7 @@ Nilai yang tidak bisa diukur dari data diatur ops dari dashboard (D-29, D-32): r
 | BR-SCORE-02 | Band: **HOT** ≥ 80, **WARM** 60–79, **COLD** < 60. Bila coverage < 0,6 atau kriteria ICP *wajib* tidak diketahui → maksimal WARM, dengan label "Data terbatas" |
 | BR-SCORE-03 | Persentil memakai `percent_rank()` Postgres dalam kelompok pembanding (kategori × kab/kota) |
 | BR-OPP-01 | Klaim "tidak ada X" hanya dibuat bila field X terisi ≥ 50% di kategori × kab/kota yang sama (minimal 20 bisnis). Bila tidak, opportunity tersebut tidak dibuat |
-| BR-CRED-01 | Operasi berbayar ada di Lampiran D. Unlock kontak: 1 credit/bisnis, permanen. Export dan kirim ke webhook gratis; untuk bisnis yang belum di-unlock, unlock dijalankan dulu (dengan preview biaya), lalu export/kirim berjalan, dan bila gagal cukup diulang tanpa biaya. Narasi AI yang gagal tidak ditagih. Semua debit memakai idempotency key. Refund dilakukan manual oleh ops |
+| BR-CRED-01 | Operasi berbayar ada di Lampiran D. Unlock kontak: 1 credit/bisnis, permanen. Export dan kirim ke webhook gratis; untuk bisnis yang belum di-unlock, unlock dijalankan dulu (dengan preview biaya), lalu export/kirim berjalan, dan bila gagal cukup diulang tanpa biaya. Narasi AI yang gagal dan analisis lokasi yang hasilnya "Tidak dapat dianalisis" tidak ditagih. Semua debit memakai idempotency key. Refund dilakukan manual oleh ops |
 | BR-AI-01 | Ke LLM hanya dikirim fakta level bisnis dan hasil hitungan. Nomor telepon tidak dikirim |
 
 ## 11. Non-functional requirements
@@ -295,14 +295,14 @@ Dihitung per kelurahan dan kecamatan, per kelompok estimasi. Satuan densitas **p
 | `market_score` | 0,40·pct(kunjungan rata-rata per bisnis sekelompok) + 0,35·pct(populasi) + 0,25·(100 − kompetisi). Faktor yang tidak diketahui dikeluarkan dan bobotnya dibagi ulang (pola BR-SCORE-01) |
 | Peringkat wilayah | Urut `market_score`. Bila ada ICP aktif, juga ditampilkan jumlah prospek HOT + WARM |
 
-Kunjungan rata-rata per bisnis yang tinggi dengan kompetisi rendah berarti permintaan sudah terbukti tetapi belum jenuh.
+Kunjungan rata-rata per bisnis yang tinggi dengan kompetisi rendah berarti permintaan sudah terbukti tetapi belum jenuh. Untuk bisnis kelompok `lainnya` (mis. prospek PER-03), metrik wilayahnya dihitung dari semua bisnis di area.
 
 ## Lampiran D — Operasi yang memakai credit
 
 | Operasi | Biaya |
 |---|---|
 | Search, profil (termasuk estimasi dan pola keramaian), peta, peringkat wilayah, membuka ulang analisis yang sudah disimpan, export & kirim webhook untuk bisnis yang sudah di-unlock | Gratis |
-| Menjalankan analisis lokasi baru | 1 credit |
+| Menjalankan analisis lokasi baru | 1 credit. **Tidak ditagih** bila hasilnya "Tidak dapat dianalisis" |
 | Unlock kontak (termasuk "Unlock & export/kirim") | 1 credit per bisnis |
 | Narasi AI | 1 AI credit (gratis bila diambil dari cache, tidak ditagih bila gagal) |
 
@@ -357,7 +357,7 @@ Lama menginap, jumlah kamar, dan ADR diambil dari benchmark ops per **kelas akom
 | Parameter | Default awal |
 |---|---|
 | Review rate `makan`, `kafe` (bawah / tengah / atas) | 1% / 1,5% / 2% |
-| Review rate `hotel` | 10% |
+| Review rate `hotel` (bawah / tengah / atas) | 6,7% / 10% / 13,3% (tengah ± ⅓, sebaran relatif sama dengan F&B) |
 | Faktor belanja | 0,8 |
 | Benchmark harga per orang per kelompok | Kosong (diisi ops) |
 | Hotel: lama menginap, jumlah kamar, ADR per kelas akomodasi | Kosong (diisi ops) |

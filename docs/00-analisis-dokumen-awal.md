@@ -180,7 +180,7 @@ Revisi 0.2 menerapkan arahan founder: **KISS, DRY, make it work → right → fa
 | Q-08 | GitHub tetap jadi mirror atau ditinggalkan? | **Terjawab:** GitLab repo utama; mirror GitHub opsional, tanpa CI |
 | Q-09 | Spesifikasi satu server & lokasi backup off-site | Terbuka |
 | Q-11 | Validasi hukum PDP | Tim legal |
-| Q-12 | Akses jaringan dari server MesinProspek ke DB gmaps (lokasi DB, cara koneksi, akun read-only) | Terbuka |
+| Q-12 | Akses jaringan dari server MesinProspek ke DB gmaps (lokasi DB, cara koneksi, akun read-only), plus index (`created_at`, `id`) di tabel sumber untuk import inkremental | Terbuka |
 | Q-14 | Cakupan data Indonesia per kota & kelompok: % tempat dengan riwayat ≥ 30 hari, dengan `popular_times`, dengan harga | Terbuka (query disiapkan untuk founder) |
 | Q-13 | Skema lengkap tabel sumber di DB gmaps (nama kolom ID tempat, telepon, website, sosial, koordinat) | **Terjawab:** sampel record lengkap dari founder (PRD §7.1, pemetaan kolom di 04) |
 

@@ -22,7 +22,7 @@ Monitoring ini ada di server yang sama, jadi server yang mati hanya bisa terdete
 ### 1.2 Dependensi eksternal
 | Dependensi | Dipakai untuk | Bila gangguan |
 |---|---|---|
-| **DB gmaps** (Postgres **milik founder**, di luar server ini; founder juga menjalankan scraper-nya) | Sumber data: job `import` harian dan `msp tool import --country ID` (RB-03), lewat koneksi keluar ber-TLS dengan akun read-only `MSP_SOURCE_DATABASE_URL`. Sisi gmaps mungkin meng-allowlist IP server (06 §2, Q-12) | Import gagal (AL-10) atau data berhenti bertambah (AL-11). App tetap jalan dengan data terakhir dan tanggalnya. Kabari founder |
+| **DB gmaps** (Postgres **milik founder**, di luar server ini; founder juga menjalankan scraper-nya) | Sumber data: job `import.run` harian dan `msp tool import --country ID` (RB-03), lewat koneksi keluar ber-TLS dengan akun read-only `MSP_SOURCE_DATABASE_URL`. Sisi gmaps mungkin meng-allowlist IP server (06 §2, Q-12) | Import gagal (AL-10) atau data berhenti bertambah (AL-11). App tetap jalan dengan data terakhir dan tanggalnya. Kabari founder |
 | GeoAPI (`geoapi.mcpke.dev`) | `msp tool geo-sync --country ID`, vector tiles peta | Peta tanpa batas wilayah; tabel peringkat tetap jalan. Tunda geo-sync |
 | Claude (Anthropic API) | Narasi AI (provider dan model diatur di Pengaturan AI, RB-14) | Pindah ke fallback bila fallback aktif (AL-08) |
 | API OpenAI-compatible (fallback) | Narasi AI bila provider utama gagal | Keduanya gagal → kill switch AI (RB-07) |
@@ -92,7 +92,7 @@ WHERE state = 'discarded' AND finalized_at > now() - interval '24 hours' GROUP B
 **Verifikasi:** `docker compose ps --format '{{.Service}} {{.Image}}'` menunjukkan sha tag lama (`git rev-list -n1 <tag-lama>`); `/readyz` OK; 5xx dan p95 kembali normal.
 
 ### RB-03 — Import dari DB gmaps
-**Kapan:** otomatis tiap hari lewat job `import` di production dan staging (masing-masing ke DB-nya sendiri; selesai sebelum jam kerja, NFR-02). Manual untuk import pertama (instalasi baru, setelah RB-04), setelah AL-10 atau AL-11 beres, setelah perbaikan pemetaan kolom, atau bila founder minta data terbaru segera.
+**Kapan:** otomatis tiap hari pukul 03.00 WIB lewat job `import.run` (antrean `import`) di production dan staging (masing-masing ke DB-nya sendiri; selesai sebelum jam kerja, NFR-02). Manual untuk import pertama (instalasi baru, setelah RB-04), setelah AL-10 atau AL-11 beres, setelah perbaikan pemetaan kolom, atau bila founder minta data terbaru segera.
 
 Import membaca snapshot di DB gmaps secara inkremental berdasarkan waktu scrape, hanya untuk negara aktif (`--country ID`; negara lain dilewati dan dihitung), lalu upsert per ID tempat. Membaca ulang rentang yang sama tidak membuat duplikat (FR-DATA-01). Tidak ada file dataset, dan MesinProspek tidak melakukan scraping. Detail di 04.
 
