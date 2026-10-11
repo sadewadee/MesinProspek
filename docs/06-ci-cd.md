@@ -2,8 +2,8 @@
 
 | Field | Value |
 |---|---|
-| Versi | 0.2 (lean). Menggantikan v0.1 · 2026-10-10 |
-| Basis | [README](README.md) (stack F1, kosakata), [PRD](01-prd.md) NFR-03/04/05/09 + §12 + §13, D-18, D-19, D-22, D-26, D-29 ([00 §7](00-analisis-dokumen-awal.md)). Terkait: [04](04-technical-design.md) §2.1 (kapasitas), [05](05-test-strategy.md) (isi test), [08](08-engineering-standards.md) (`make`, migrasi), [09](09-runbook-operasional.md) (operasi) |
+| Versi | 0.3 (lean) · 2026-10-11. Sumber data = DB gmaps read-only (D-31) |
+| Basis | [README](README.md) (stack F1, kosakata), [PRD](01-prd.md) NFR-03/04/05/09 + §12 + §13, D-18, D-19, D-22, D-26, D-29, D-31 ([00 §7](00-analisis-dokumen-awal.md)). Terkait: [04](04-technical-design.md) §2.1 (kapasitas), [05](05-test-strategy.md) (isi test), [08](08-engineering-standards.md) (`make`, migrasi), [09](09-runbook-operasional.md) (operasi) |
 
 > KISS: satu server, GitLab CE + dua runner (CI dan deploy) + Docker Compose + skrip shell. Contoh YAML dan skrip bersifat ilustratif. Semua image dan tool di-pin ke versi eksak; angka versi di contoh hanya contoh.
 
@@ -22,11 +22,12 @@ Satu dedicated server di Indonesia untuk semuanya (D-19, D-26). Direktori Compos
 
 | Environment | Tempat | Deploy | Data |
 |---|---|---|---|
-| `local` | laptop | `docker compose` (Postgres + PostGIS, Kratos, Mailpit) | Fixture sintetis (05) |
-| `staging` | server, `/opt/msp-staging` | Otomatis tiap merge ke `main`, dan pada tag sebelum production | Dataset bisnis nyata + GeoAPI, akun test. Tanpa data customer |
+| `local` | laptop | `docker compose` (Postgres + PostGIS, Kratos, Mailpit) | Fixture sintetis (05), termasuk DB sumber fixture sebagai database kedua di Postgres yang sama |
+| `staging` | server, `/opt/msp-staging` | Otomatis tiap merge ke `main`, dan pada tag sebelum production | Data bisnis nyata dari DB gmaps (read-only) + GeoAPI, akun test. Tanpa data customer |
 | `production` | server, `/opt/msp` | Manual, tag `vX.Y.Z`, founder | Data nyata |
 
 - **`/opt/ops`** (file dari `deploy/ops/`): `caddy`, `gitlab` (+ container registry; git hanya lewat HTTPS), `gitlab-runner` (runner `ci`), `prometheus`, `alertmanager`, `grafana` (login admin bawaan lewat HTTPS, tanpa OAuth), `node-exporter`. Stack ini di-update manual lewat SSH, karena pipeline tidak me-restart GitLab yang sedang menjalankannya. Caddy sengaja ada di sini, bukan di project aplikasi, agar GitLab tetap bisa diakses sebelum production ter-deploy (bootstrap, RB-11). Uptime dipantau oleh layanan eksternal (09 AL-01).
+- **DB gmaps (D-31).** Postgres milik founder, di luar server ini; scraper dan DB-nya dijalankan founder terpisah, MesinProspek tidak melakukan scraping. `worker` (job `import`) dan `msp tool import` di staging dan production membuka koneksi **keluar** ke DB itu dengan TLS dan akun **read-only** (`MSP_SOURCE_DATABASE_URL`, §7). Staging dan production boleh membaca DB sumber yang sama karena keduanya hanya membaca. Sisi gmaps mungkin perlu meng-allowlist IP publik server ini. Cara koneksinya masih terbuka (Q-12); tidak ada komponen tambahan di sisi kita.
 - **Edge.** Hanya `caddy` yang mempublikasikan port (80/443), dan semua domain lewat Caddy ini (§5). Docker melewati aturan `ufw` untuk port yang dipublish, jadi service lain tidak memakai `ports:`.
 - **Network.** Stack `/opt/ops` membuat network Docker `edge-production` dan `edge-staging`. `web`, `api`, dan `kratos` tiap environment bergabung ke `edge-${MSP_ENV}`, sehingga `caddy` dan `prometheus` menjangkaunya lewat nama container (`msp-api-1:9090`, `msp-staging-api-1:9090`). Network dipisah per environment karena kedua project memakai nama service yang sama. `postgres` dan `worker` hanya ada di network project masing-masing.
 - **Runner `ci`**: container `gitlab-runner` di `/opt/ops`, Docker executor, tag `ci`, `concurrent = 1`, dan `privileged = true` (volume `/certs/client`, `/cache`) agar job build dan E2E bisa memakai `docker:dind`. Batas job diatur lewat `cpus`/`memory` dan `service_cpus`/`service_memory` di `config.toml`. Privileged setara root di server, termasuk production. Risiko ini diterima di F1 karena runner hanya menjalankan MR tim, dan GitLab di server yang sama memang sudah memegang secret production. Pemisahan ada di §11.
@@ -62,7 +63,7 @@ Di `/opt/ops`: `caddy` 0,25 · 0,25 GB, `gitlab` 4 · 8 GB, job CI 1 · 2 GB + s
 
 | Stage | Kapan | Isi |
 |---|---|---|
-| `check` | MR, `main` | `make generate` + `git diff --exit-code`, `make lint`, `make test` (08 §0), `govulncheck`, cek MR. Job `e2e`: stack Compose + Playwright Chromium (05) |
+| `check` | MR, `main` | `make generate` + `git diff --exit-code`, `make lint`, `make test` (08 §0), `govulncheck`, cek MR. Job `e2e`: stack Compose + Playwright Chromium (05). Test import membaca DB sumber fixture (05): database kedua di service `postgres` yang sama, tanpa service tambahan |
 | `build` | `main` | Image `api` & `web` → registry GitLab dengan tag SHA (cache inline dari image `:main`). Laporan `trivy image` HIGH/CRITICAL (tidak memblokir) |
 | `deploy-staging` | `main` otomatis; tag `v*` | Runner `deploy`: `deploy/deploy.sh` di `/opt/msp-staging`. Lalu `smoke-staging` (runner `ci`): J-2 dengan akun test yang sudah terverifikasi (`main`), atau J-2..J-6 di semua browser dengan akun yang sama (tag). J-1 hanya di job `e2e` (Mailpit) |
 | `deploy-production` | tag `vX.Y.Z`, manual, Maintainer | Runner `deploy`: `deploy/deploy.sh` di `/opt/msp`. Smoke manual per 09 RB-01 |
@@ -93,6 +94,8 @@ check:
   variables:
     POSTGRES_PASSWORD: test
     MSP_DATABASE_URL: "postgres://postgres:test@postgres:5432/postgres?sslmode=disable"
+    # DB sumber fixture (05): database kedua di service yang sama, dibuat & di-seed oleh setup test
+    MSP_SOURCE_DATABASE_URL: "postgres://postgres:test@postgres:5432/gmaps_fixture?sslmode=disable"
     GOMODCACHE: $CI_PROJECT_DIR/.cache/go-mod
     GOCACHE: $CI_PROJECT_DIR/.cache/go-build
   cache: { key: { files: [apps/api/go.sum, pnpm-lock.yaml] }, paths: [.cache/, .pnpm-store/] }
@@ -109,7 +112,7 @@ e2e:
   extends: .mr-main
   image: docker:28
   services: ["docker:28-dind"]
-  # e2e.yml: env test, network `edge` tidak external, cache_from image :main, service `playwright`
+  # e2e.yml: env test (termasuk DB sumber fixture di `postgres`), network `edge` tidak external, cache_from image :main, service `playwright`
   script: [docker compose -f deploy/docker-compose.prod.yml -f deploy/docker-compose.e2e.yml up --build --exit-code-from playwright]
 build:
   extends: .main
@@ -249,8 +252,9 @@ Migrasi memakai goose di `apps/api/db/migrations`, di-embed di binary, dan dijal
 ## 7. Secret & konfigurasi
 
 - `deploy/.env.example` adalah satu-satunya daftar key (DRY), berisi nilai dummy dan komentar: `MSP_*`, secret Kratos, `POSTGRES_PASSWORD`, `PGBACKREST_*`. Isinya hanya secret dan pengaturan proses (04 §14).
-- **Pengaturan produk tidak ada di `.env`.** Provider, model, dan base URL AI (termasuk fallback) serta plan diubah dari halaman ops, tercatat di audit, dan berlaku tanpa deploy (D-29, 04 §11–12). Dari AI, yang ada di `.env` hanya API key-nya: `MSP_ANTHROPIC_API_KEY` dan `MSP_LLM_FALLBACK_API_KEY`.
+- **Pengaturan produk tidak ada di `.env`.** Provider, model, dan base URL AI (termasuk fallback), plan, serta parameter estimasi diubah dari halaman ops, tercatat di audit, dan berlaku tanpa deploy (D-29, D-32, 04). Dari AI, yang ada di `.env` hanya API key-nya: `MSP_ANTHROPIC_API_KEY` dan `MSP_LLM_FALLBACK_API_KEY`.
 - **Variabel CI GitLab**, di-scope per environment (`staging` / `production`): setiap key di atas, **Protected** + **Masked** untuk secret. Juga `DEPLOY_DIR` dan deploy token registry.
+- **`MSP_SOURCE_DATABASE_URL`** (DB gmaps, D-31) adalah secret seperti key lain: variabel CI Protected + Masked di scope `staging` dan `production`, lalu ditulis ke `.env` masing-masing. Nilainya boleh sama di kedua environment (akun read-only yang sama). Akunnya dibuat dan dicabut founder di sisi gmaps; rotasi di 09 RB-12.
 - Deploy menulis `.env` ke `$DEPLOY_DIR` dengan izin 600 (§4). Validasi nilai cukup di satu tempat, yaitu saat aplikasi start (08 STD-GO-05). Nilai yang salah membuat `msp migrate` gagal sebelum ada container yang diganti. **Rotasi**: ubah variabel, lalu jalankan ulang job deploy untuk tag yang sedang berlaku (09 RB-12).
 - `/opt/ops/.env` (domain, IP admin, password admin Grafana, SMTP/Telegram Alertmanager) diisi manual saat bootstrap.
 - Salinan berikut disimpan di password manager founder: secret production, `/opt/ops/.env`, `PGBACKREST_REPO1_CIPHER_PASS`, serta `gitlab-secrets.json` + `gitlab.rb` (keduanya tidak ikut backup GitLab). Tanpa salinan ini, backup tidak bisa dipakai bila server hilang.
@@ -261,7 +265,7 @@ Migrasi memakai goose di `apps/api/db/migrations`, di-embed di binary, dan dijal
 - **WAL kontinu.** Diaktifkan sekali di production: `ALTER SYSTEM SET archive_mode = on`, `archive_command = 'pgbackrest --stanza=msp archive-push %p'`, `archive_timeout = '5min'`, lalu restart dan `pgbackrest stanza-create`. Data paling banyak hilang ≈ 5 menit → **RPO ≤ 15 menit** (NFR-04). Karena pengaturan ini tersimpan di data dir, staging tidak mengarsip, dan restore uji dengan `--archive-mode=off` (09 RB-10) tidak menulis ke repo production.
 - **GitLab off-site.** Tanpa backup ini, satu-satunya salinan repo, variabel CI, dan registry ada di server ini. `gitlab-backup create CRON=1` di-upload ke object storage yang sama (bucket terpisah) lewat `backup_upload_connection`. Salinan lokal hanya disimpan sebentar (`backup_keep_time`), dan retensi off-site diatur dengan aturan lifecycle bucket.
 - **Jadwal.** Pipeline schedule harian 01:00 WIB menjalankan job `backup` → `deploy/backup.sh` di runner `deploy`: di `/opt/msp` `pgbackrest backup` (`--type=full` hari Minggu, `diff` hari lain) → `check` → `info`, lalu di `/opt/ops` `gitlab-backup create`. Job gagal bila salah satu langkah gagal atau backup pgBackRest terakhir > 26 jam, dan GitLab mengirim email ke founder. WAL tetap terarsip walau GitLab mati.
-- **Uji restore** sekali sebelum rilis F1 (PRD §12.4), lalu tiap bulan. Restore dilakukan ke **project sementara di server yang sama** (`/opt/msp-restore`, 09 RB-10), dengan volume sendiri, hanya `postgres`, dan tidak menyentuh data staging. Durasi (RTO ≤ 8 jam) dan titik pulih dicatat. Setelah selesai, jalankan `docker compose down -v` dan hapus direktorinya. DB staging tidak di-backup karena isinya bisa di-import ulang.
+- **Uji restore** sekali sebelum rilis F1 (PRD §12.4), lalu tiap bulan. Restore dilakukan ke **project sementara di server yang sama** (`/opt/msp-restore`, 09 RB-10), dengan volume sendiri, hanya `postgres`, dan tidak menyentuh data staging. Durasi (RTO ≤ 8 jam) dan titik pulih dicatat. Setelah selesai, jalankan `docker compose down -v` dan hapus direktorinya. DB staging tidak di-backup karena isinya bisa di-import ulang dari DB gmaps (09 RB-03). DB gmaps sendiri tidak di-backup MesinProspek; itu tanggung jawab founder sebagai pemiliknya.
 
 ## 9. Bootstrap server
 
@@ -270,16 +274,16 @@ Migrasi memakai goose di `apps/api/db/migrations`, di-embed di binary, dan dijal
 - **SSH** kunci saja (`PasswordAuthentication no`, `PermitRootLogin no`). **Firewall `ufw`**: tolak semua koneksi masuk kecuali 80/443, dan 22 dari allowlist IP admin.
 - **Update**: `unattended-upgrades` untuk security update; reboot manual di jam sepi (09 §6). **Docker**: Engine + plugin compose dari repo apt resmi; rotasi log `json-file` (`max-size: 50m`, `max-file: 3`).
 - **Ops**: pasang paket `gitlab-runner` (runner `deploy`, user `deploy`), salin `deploy/ops/` ke `/opt/ops`, lalu `docker compose up -d`. Bootstrap berhenti dengan pesan bila `/opt/ops/.env` belum ada; isi file itu dari password manager.
-- **Manual sekali**: daftarkan runner `ci` dan `deploy` (§2), buat pipeline schedule `backup`, dan daftarkan `https://app.<domain>/readyz` dan `https://gitlab.<domain>` di uptime monitor eksternal (09 AL-01).
+- **Manual sekali**: daftarkan runner `ci` dan `deploy` (§2), buat pipeline schedule `backup`, daftarkan `https://app.<domain>/readyz` dan `https://gitlab.<domain>` di uptime monitor eksternal (09 AL-01), dan minta founder membuka akses DB gmaps untuk IP server ini bila sisi gmaps memakai allowlist (§2, Q-12).
 
-**Bangun ulang server** (RTO ≤ 8 jam, NFR-04; langkah di 09 RB-11): server baru → bootstrap → DNS ke IP baru (Caddy butuh DNS untuk TLS; runner dan registry diakses lewat domain) → `gitlab-backup restore` + daftarkan ulang runner → restore pgBackRest ke `/opt/msp` → Retry `deploy-production` tag yang berlaku → pipeline `main` untuk staging.
+**Bangun ulang server** (RTO ≤ 8 jam, NFR-04; langkah di 09 RB-11): server baru → bootstrap → DNS ke IP baru (Caddy butuh DNS untuk TLS; runner dan registry diakses lewat domain) → IP baru di-allowlist di DB gmaps bila perlu → `gitlab-backup restore` + daftarkan ulang runner → restore pgBackRest ke `/opt/msp` → Retry `deploy-production` tag yang berlaku → pipeline `main` untuk staging.
 
 ## 10. Rilis & versi
 
 - **SemVer** lewat tag `vX.Y.Z` di commit `main` yang hijau. Sebelum gerbang F1 (PRD §12) lulus: `v0.y.z`; rilis F1 = `v1.0.0`. `feat` → minor, `fix` → patch, `!` → major.
 - **Changelog**: `scripts/changelog.sh <tag-sebelumnya>` mengelompokkan judul commit squash (`feat`, `fix`, lainnya). Orchestrator menyiapkan teksnya; founder membuat tag lewat **Code → Tags → New tag** dan menempelkannya sebagai *Release notes* (menjadi GitLab Release).
 - Sebelum tag, founder mengecek: pipeline `main` hijau, laporan `trivy` tanpa CRITICAL yang punya fix, catatan migrasi di MR, dan untuk rilis F1 juga item 05 §7.
-- **Hotfix** lewat jalur yang sama (MR → `main` → tag patch); F1 tidak memakai release branch. Versi model (`priority-X.Y.Z`, `geo-X.Y.Z`, `brief-X.Y.Z`) ada di kode dan ikut rilis aplikasi. Aktivasinya lewat `msp tool rescore` (09 RB-05).
+- **Hotfix** lewat jalur yang sama (MR → `main` → tag patch); F1 tidak memakai release branch. Versi model (daftar di README) ada di kode dan ikut rilis aplikasi. Hasil tersimpan dengan versi baru dihitung lewat `msp tool rescore` (09 RB-05). Parameter estimasi bukan versi model: diubah dari halaman ops tanpa rilis (09 RB-14).
 
 ## 11. Upgrade F2/F3 (hanya bila dibutuhkan)
 
