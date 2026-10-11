@@ -165,7 +165,9 @@ Revisi 0.2 menerapkan arahan founder: **KISS, DRY, make it work → right → fa
 | D-31 | Input = **DB gmaps dibaca langsung** (read-only, inkremental per waktu scrape). Export JSON-LD tidak dipakai karena membuang `popular_times`, harga, distribusi bintang, dan riwayat snapshot | Accepted |
 | D-32 | Estimasi di F1 (PRD Lampiran E): laju ulasan dari snapshot → kunjungan → omzet untuk F&B, plus okupasi & omzet kamar hotel. Selalu rentang + asumsi + tanggal. Parameter yang tidak terukur diatur dari dashboard ops | Accepted |
 | D-33 | Analisis lokasi di F1 (PRD Lampiran F): pola keramaian tetangga, jam inti, posisi harga, keyakinan. Divalidasi dengan dua sample case founder (Warung Kita, Signa Cafe) sebagai golden test | Accepted |
-| D-34 | **F1 diluncurkan di Bali.** Estimasi dan metrik kawasan hanya di "wilayah siap" yang ditandai ops (awalnya semua kab/kota Bali), karena riwayat snapshot di luar Bali ±0% (Q-14). Scraper founder mengambil semua bisnis di area yang di-scrape; metrik kawasan dilabeli "bisnis yang terdaftar di Google Maps". Okupasi hotel tetap diestimasi (rentang, berlabel Perkiraan) | Accepted |
+| D-34 | **F1 aktif di seluruh Indonesia** (founder: seluruh Indonesia sudah ter-scrape, lengkap per area). Tidak ada gerbang wilayah; estimasi muncul per tempat begitu riwayatnya ≥ 30 hari (BR-EST-01), yang saat Q-14 diukur baru terpenuhi di Bali. Metrik kawasan dilabeli "bisnis yang terdaftar di Google Maps". Okupasi hotel diestimasi (rentang, berlabel Perkiraan) | Accepted |
+| D-35 | Akses DB gmaps **lewat import dump**: founder menyerahkan dump DB gmaps secara berkala, ops me-restore ke server kita, MesinProspek membacanya read-only. Tanpa koneksi jaringan ke server founder (menjawab Q-12) | Accepted |
+| D-36 | Workspace baru mendapat grant awal satu kali **1.000 credit** (AI credit 0), diatur dari dashboard ops | Accepted |
 
 ## 8. Pertanyaan terbuka
 
@@ -181,8 +183,9 @@ Revisi 0.2 menerapkan arahan founder: **KISS, DRY, make it work → right → fa
 | Q-08 | GitHub tetap jadi mirror atau ditinggalkan? | **Terjawab:** GitLab repo utama; mirror GitHub opsional, tanpa CI |
 | Q-09 | Spesifikasi satu server & lokasi backup off-site | Terbuka |
 | Q-11 | Validasi hukum PDP | Tim legal |
-| Q-12 | Akses jaringan dari server MesinProspek ke DB gmaps (lokasi DB, cara koneksi, akun read-only), plus index (`created_at`, `id`) di tabel sumber untuk import inkremental | Terbuka |
-| Q-14 | Cakupan data Indonesia per kota & kelompok: % tempat dengan riwayat ≥ 30 hari, dengan `popular_times`, dengan harga | **Terjawab:** Bali cukup, kota lain riwayat ±0% (PRD §7.1, D-34) |
+| Q-12 | Akses jaringan dari server MesinProspek ke DB gmaps (lokasi DB, cara koneksi, akun read-only), plus index (`created_at`, `id`) di tabel sumber untuk import inkremental | **Terjawab:** lewat import dump (D-35); index dibuat ops setelah restore |
+| Q-14 | Cakupan data Indonesia per kota & kelompok: % tempat dengan riwayat ≥ 30 hari, dengan `popular_times`, dengan harga | **Terjawab** (diukur ulang sebelum beta): riwayat cukup di Bali, kota lain ±0% saat diukur (PRD §7.1) |
+| Q-15 | Denpasar dan Gianyar tidak muncul di 30 kota F&B teratas (nama kota dwibahasa atau data memang sedikit?) | Ditunda: founder mengaudit ulang |
 | Q-13 | Skema lengkap tabel sumber di DB gmaps (nama kolom ID tempat, telepon, website, sosial, koordinat) | **Terjawab:** sampel record lengkap dari founder (PRD §7.1, pemetaan kolom di 04) |
 
 ## 9. Peta dokumen lanjutan

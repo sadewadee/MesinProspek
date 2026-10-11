@@ -162,7 +162,7 @@ CREATE TABLE estimates (                 -- satu baris per tempat kelompok makan
   room_nights_low int, room_nights_mid int, room_nights_high int,  -- hotel (E.3)
   occupancy_low numeric(5,4), occupancy_mid numeric(5,4), occupancy_high numeric(5,4),  -- hotel, Perkiraan (E.3)
   flags  text[] NOT NULL DEFAULT '{}',   -- five_star_heavy, velocity_changed, price_unknown, hotel_params_missing, occupancy_inconsistent
-  reason text,                           -- bila tidak ada estimasi: region_not_ready (BR-EST-04), history_lt_30d, review_count_unknown, group_lainnya (BR-EST-01)
+  reason text,                           -- bila tidak ada estimasi: history_lt_30d, review_count_unknown, group_lainnya (BR-EST-01)
   computed_at timestamptz NOT NULL
 );
 ```
@@ -416,7 +416,6 @@ Golden test PRD §12 memanggil fungsi ini langsung. Signa Cafe diuji lewat `Esti
 | `est.hotel` | Per kelas akomodasi (`hotel_1`…`hotel_5`, `hotel`, `resort`, `villa`, `penginapan`): `{"stay_nights","rooms","adr"}`; `null` = belum diisi |
 | `est.flags` | `{"five_star_share","velocity_change"}` (FR-EST-05) |
 | `est.pattern` | `{"core_hour_ratio","flat_ratio"}`: ambang jam inti dan pola datar (E.4) |
-| `est.ready_regions` | Daftar kode kab/kota wilayah siap (BR-EST-04). Seed: semua kab/kota Bali. `est.compute` dan metrik kawasan hanya memproses tempat/area di daftar ini; tempat lain mendapat `reason = region_not_ready` |
 
 `PUT /ops/settings/{key}` memvalidasi nilai lewat `estimate.Params.Validate()` (pecahan 0–1, `low ≤ mid ≤ high`, Rupiah bilangan bulat ≥ 0, `min ≤ max`), mencatat audit, lalu meng-enqueue `est.compute` di transaksi yang sama (FR-EST-06).
 
@@ -708,7 +707,8 @@ Refund dilakukan manual oleh ops (`kind='refund'`, tercatat di audit).
 
 **Plan (FR-BILL-01, D-29).** Plan ada di tabel `plans` (§4.2) dan dikelola ops lewat `/ops/plans`. Ops memasang plan ke workspace lewat `PATCH /ops/workspaces/{id}` setelah pembayaran manual (F1) atau kesepakatan beta. Harga hanya untuk tampilan; tidak ada penagihan otomatis. Setiap perubahan plan dicatat di audit.
 
-- **Grant bulanan:** periodic job River `billing.monthly_grant` (queue `billing`, tiap jam, `RunOnStart`). Untuk setiap workspace dengan plan (`ops_workspaces()`), job memanggil **fungsi grant yang sama** dengan grant manual ops (ledger + audit, aktor = sistem) untuk tiap meter yang kuotanya > 0, dengan `idem_key = grant:<workspace_id>:<YYYY-MM>:<meter>` (bulan kalender Asia/Jakarta; meter ikut di key karena `idem_key` unik per workspace). Job idempoten: jalan ulang, restart, atau retry tidak pernah memberi grant ganda. Workspace yang baru mendapat plan menerima grant bulan berjalan paling lambat satu jam kemudian. Ganti plan di tengah bulan tidak memberi grant kedua; selisihnya diberikan ops lewat grant manual bila perlu.
+- **Grant bulanan:** periodic job River `billing.monthly_grant` (queue `billing`, tiap jam, `RunOnStart`). Untuk setiap workspace dengan plan (`ops_workspaces()`), job memanggil **fungsi grant yang sama** dengan grant manual ops (ledger + audit, aktor = sistem) untuk tiap meter yang kuotanya > 0, dengan `idem_key = grant:<workspace_id>:<YYYY-MM>:<meter>` (bulan kalender Asia/Jakarta; meter ikut di key karena `idem_key` unik per workspace). Job idempoten: jalan ulang, restart, atau retry tidak pernah memberi grant ganda. Workspace yang baru mendapat plan menerima grant bulan berjalan paling lambat satu jam kemudian.
+- **Grant awal (D-36):** saat workspace dibuat, di transaksi yang sama, fungsi grant yang sama dipanggil untuk tiap meter di setting `billing.signup_grant` (`{"credit":1000,"ai_credit":0}`, seed migrasi, diubah dari `/ops/settings`) dengan `idem_key = grant:<workspace_id>:signup:<meter>`. Nilai 0 → tidak ada entri. Ganti plan di tengah bulan tidak memberi grant kedua; selisihnya diberikan ops lewat grant manual bila perlu.
 - **Seat:** `POST /members` (undang) mengunci baris workspace (`FOR UPDATE`, pola yang sama dengan debit), lalu menghitung anggota `active` + `invited`. Jumlahnya ≥ `plans.seats` → `403 SEAT_LIMIT`. Workspace tanpa plan hanya punya 1 seat (pembuatnya). Plan diturunkan → anggota yang ada tetap, undangan baru ditolak.
 
 ## 13. Storage

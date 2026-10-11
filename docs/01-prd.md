@@ -7,7 +7,7 @@
 | Versi | 0.3 (lean). Posisi berubah dari sales intelligence menjadi market intelligence (D-30) |
 | Tanggal | 2026-10-11 |
 | Prinsip | **KISS**, **DRY**, **Make it work → make it right → make it fast** (D-23) |
-| Input | **DB gmaps** (dibaca read-only, berisi snapshot berulang per tempat, D-31) + data wilayah GeoAPI (D-25). **F1 melayani Indonesia** (D-28) dan **diluncurkan di Bali** (D-34). MesinProspek tidak melakukan scraping; crawler website **PAUSED** (D-01) |
+| Input | **DB gmaps**: dump dari founder di-restore ke server kita lalu dibaca read-only, berisi snapshot berulang per tempat (D-31, D-35) + data wilayah GeoAPI (D-25). **F1 melayani seluruh Indonesia** (D-28, D-34). MesinProspek tidak melakukan scraping; crawler website **PAUSED** (D-01) |
 | Pembangun | Agent AI (maks. 8 paralel) diorkestrasi Claude. Founder menyetujui tiap gerbang fase (D-22) |
 
 > Konvensi: `FR-<AREA>-nn`, `BR-<AREA>-nn`, `NFR-nn`. **F1** = make it work (rilis jual pertama), **F2** = make it right, **F3** = make it fast. Hanya F1 yang dirinci. Fitur masuk F1 hanya jika dibutuhkan alur inti: **temukan → pahami → prioritaskan → tindak lanjuti**.
@@ -46,7 +46,7 @@ PER-01 dan PER-02 adalah pengguna utama F1 (D-30). PER-03 tetap dilayani lewat f
 
 ## 4. Tujuan & non-tujuan
 
-**Tujuan F1** (diluncurkan di Bali, D-34):
+**Tujuan F1:**
 - User melihat perkiraan kunjungan dan omzet sebuah usaha (okupasi untuk hotel) beserta rentang, asumsi, dan tanggal datanya.
 - User melihat pola keramaian per jam dan per hari.
 - User bisa menganalisis satu lokasi dan mendapat jam inti, saran jam buka, posisi harga, dan tingkat keyakinan. Analisis kedua sample case founder (Warung Kita, Signa Cafe) dapat direproduksi (§12).
@@ -78,7 +78,7 @@ PER-01 dan PER-02 adalah pengguna utama F1 (D-30). PER-03 tetap dilayani lewat f
 
 ### 7.1 DB gmaps (D-31)
 
-DB gmaps adalah sumber dataset kita. Export JSON-LD-nya (D-24) membuang `popular_times`, harga, distribusi bintang, dan riwayat snapshot, padahal semuanya dibutuhkan estimasi. Karena itu MesinProspek membaca DB gmaps langsung lewat koneksi **read-only**, secara inkremental berdasarkan waktu scrape. **Satu baris = satu snapshot satu tempat.** Satu tempat bisa punya ratusan snapshot (Signa Cafe: 171 snapshot, Februari–September 2026). Snapshot inilah yang membuat laju ulasan bisa diukur, bukan ditebak.
+DB gmaps adalah sumber dataset kita. Export JSON-LD-nya (D-24) membuang `popular_times`, harga, distribusi bintang, dan riwayat snapshot, padahal semuanya dibutuhkan estimasi. Karena itu MesinProspek membaca isi DB gmaps itu sendiri: founder menyerahkan **dump** DB gmaps secara berkala, dump di-restore ke server kita, lalu MesinProspek membacanya lewat akun **read-only**, secara inkremental berdasarkan waktu scrape (D-35). **Satu baris = satu snapshot satu tempat.** Satu tempat bisa punya ratusan snapshot (Signa Cafe: 171 snapshot, Februari–September 2026). Snapshot inilah yang membuat laju ulasan bisa diukur, bukan ditebak.
 
 | Data | Dipakai untuk | Catatan dari data nyata (sampel Signa Cafe) |
 |---|---|---|
@@ -103,7 +103,7 @@ Nama kolom persis dan cara membacanya ditulis sekali di 04 (DRY). Snapshot yang 
 
 Data mencakup **seluruh dunia**. F1 hanya memproses **Indonesia** (D-28); tempat negara lain dilewati dan dihitung di laporan.
 
-**Cakupan terukur (Q-14, F&B).** Riwayat ≥ 30 hari ada di 44–52% tempat di Badung, Tabanan, dan Karangasem, tetapi hanya 0–0,3% di kota lain. Pola jam 42–51% di Bali dan 20–39% di kota lain; harga 40–53% di Bali dan 5–29% di kota lain. Karena itu F1 diluncurkan di Bali (D-34). Menurut founder, scraper mengambil semua bisnis di area yang di-scrape, jadi metrik kawasan mencerminkan bisnis yang terdaftar di Google Maps di area itu.
+**Cakupan terukur (Q-14, F&B).** Riwayat ≥ 30 hari ada di 44–52% tempat di Badung, Tabanan, dan Karangasem, tetapi hanya 0–0,3% di kota lain. Pola jam 42–51% di Bali dan 20–39% di kota lain; harga 40–53% di Bali dan 5–29% di kota lain. Menurut founder, seluruh Indonesia sudah ter-scrape dan scraper mengambil semua bisnis di area yang di-scrape, jadi metrik kawasan mencerminkan bisnis yang terdaftar di Google Maps. Estimasi muncul per tempat begitu riwayatnya ≥ 30 hari (BR-EST-01); saat diukur, itu baru terpenuhi di Bali. Ukur ulang Q-14 sebelum beta untuk melihat kota mana yang riwayatnya sudah cukup.
 
 ### 7.2 Data wilayah (GeoAPI, D-25)
 
@@ -176,9 +176,9 @@ Nilai yang tidak bisa diukur dari data diatur ops dari dashboard (D-29, D-32): r
 | FR-ACT-04 | Webhook: daftar URL HTTPS (ditolak bila mengarah ke IP privat/internal), payload ber-tanda tangan HMAC, retry otomatis, log pengiriman, kirim bisnis terpilih | Uji SSRF lulus |
 | FR-ACT-05 | **Narasi AI** untuk profil bisnis dan untuk analisis lokasi, dengan struktur: masalah, data, cara membaca, kesimpulan, batasan. **Claude**, fallback ke API **OpenAI-compatible** (D-15). Provider, model utama, dan model fallback **diatur dari halaman ops** (API key tetap secret di server, D-29). Hanya dari fakta yang sudah dihitung; setiap kalimat merujuk fakta. Cache 7 hari. Ada kill switch | Narasi tanpa rujukan fakta ditolak lalu dibuat ulang sekali |
 | **BILL** | | |
-| FR-BILL-01 | Satu ledger dengan dua meter: `credit` dan `ai_credit` (grant, debit, refund), idempotent. **Plan** (nama, harga tampilan, seat, credit & AI credit bulanan) dikelola dari halaman ops (D-29); credit bulanan diberikan otomatis tiap awal siklus sesuai plan workspace; ops juga bisa memberi credit manual. Pembayaran tetap manual di F1. Saldo terlihat di workspace | Saldo = jumlah ledger per meter |
+| FR-BILL-01 | Satu ledger dengan dua meter: `credit` dan `ai_credit` (grant, debit, refund), idempotent. **Plan** (nama, harga tampilan, seat, credit & AI credit bulanan) dikelola dari halaman ops (D-29); credit bulanan diberikan otomatis tiap awal siklus sesuai plan workspace; ops juga bisa memberi credit manual. Workspace baru mendapat **grant awal satu kali** (default 1.000 credit dan 0 AI credit, diatur dari halaman ops, D-36), supaya analisis lokasi bisa langsung dicoba. Pembayaran tetap manual di F1. Saldo terlihat di workspace | Saldo = jumlah ledger per meter |
 | **OPS** | | |
-| FR-OPS-01 | Halaman ops: daftar workspace + grant credit, pengaturan plan, AI, **parameter estimasi**, dan **wilayah siap** (BR-EST-04); status import dari DB gmaps (snapshot terakhir, jeda, laporan); kesehatan data (jumlah bisnis, % terisi per field termasuk harga dan `popular_times`, % bisnis dengan ≥ 2 snapshot ≥ 30 hari, % terpetakan wilayah); feature flag (AI, export, webhook); suppression list | Hanya akun ops |
+| FR-OPS-01 | Halaman ops: daftar workspace + grant credit, pengaturan plan, AI, **parameter estimasi**, dan **grant awal workspace baru**; status import dari DB gmaps (snapshot terakhir, jeda, laporan); kesehatan data (jumlah bisnis, % terisi per field termasuk harga dan `popular_times`, % bisnis dengan ≥ 2 snapshot ≥ 30 hari, % terpetakan wilayah); feature flag (AI, export, webhook); suppression list | Hanya akun ops |
 | FR-OPS-02 | Audit log append-only untuk login, undang anggota, unlock, export, webhook, grant credit, plan, pengaturan AI, parameter estimasi, flag, suppression | Tidak ada update/delete |
 | **PRIV** | | |
 | FR-PRIV-01 | Isolasi data per workspace di database (row-level security), termasuk analisis lokasi yang disimpan | Test lintas workspace lulus |
@@ -202,7 +202,6 @@ Nilai yang tidak bisa diukur dari data diatur ops dari dashboard (D-29, D-32): r
 | BR-EST-01 | Estimasi hanya dihitung bila data minimumnya ada (Lampiran E). Bila tidak, tampil "Belum dapat diperkirakan" beserta alasannya (mis. "riwayat ulasan < 30 hari", "harga tidak diketahui"). Tidak ada fallback ke tebakan umur usaha |
 | BR-EST-02 | Kunjungan dan omzet selalu ditampilkan sebagai rentang rendah–tengah–tinggi, dibulatkan (kunjungan ke ratusan, omzet ke Rp0,1 miliar bila ≥ Rp1 miliar, selain itu ke Rp10 juta) |
 | BR-EST-03 | `popular_times` antar tempat hanya dibandingkan **bentuknya** (pola dan proporsi), bukan angka mentahnya |
-| BR-EST-04 | **Wilayah siap** (D-34): ops menandai kab/kota yang datanya cukup (awalnya semua kab/kota di Bali). Estimasi (Lampiran E) dan metrik kawasan (Lampiran C) hanya dihitung di wilayah siap. Di luar wilayah siap, search, profil, pola keramaian, dan analisis lokasi tetap tersedia; estimasi tampil "Belum tersedia di wilayah ini" |
 | BR-SCORE-01 | Rumus di Lampiran A. Faktor yang nilainya tidak diketahui dikeluarkan dan bobotnya dibagi ulang. `coverage` = bobot faktor yang diketahui / total bobot |
 | BR-SCORE-02 | Band: **HOT** ≥ 80, **WARM** 60–79, **COLD** < 60. Bila coverage < 0,6 atau kriteria ICP *wajib* tidak diketahui → maksimal WARM, dengan label "Data terbatas" |
 | BR-SCORE-03 | Persentil memakai `percent_rank()` Postgres dalam kelompok pembanding (kategori × kab/kota) |
@@ -241,7 +240,7 @@ Nilai yang tidak bisa diukur dari data diatur ops dari dashboard (D-29, D-32): r
 |---|---|
 | Review rate tidak bisa diukur dari data dan sangat menentukan omzet (1% vs 2% = 2×) | Selalu rentang + tabel sensitivitas + parameter yang dipakai, tidak pernah disebut omzet pasti. Parameter memakai benchmark dan diatur dari dashboard. MesinProspek tidak punya data omzet nyata usaha dan tidak menjanjikannya |
 | `popular_times` hanya ada di ±13% tempat dan harga di ±0,8% | Pola dan omzet tampil "Belum dapat diperkirakan" bila data kurang; harga memakai median wilayah atau benchmark berlabel (Lampiran E) |
-| **Cakupan riwayat hanya cukup di Bali** (Q-14: 44–52% vs 0–0,3% di kota lain) | Peluncuran F1 di Bali (D-34, BR-EST-04). Scraper menjadwalkan scrape ulang kota target berikutnya sekarang; kota baru ditandai siap oleh ops setelah riwayatnya ≥ 30 hari. Fitur tidak diubah untuk menutupi data yang kurang |
+| **Riwayat snapshot belum merata** (Q-14: ≥ 30 hari di 44–52% tempat di Bali, 0–0,3% di kota lain saat diukur) | Estimasi tampil per tempat hanya bila riwayatnya cukup (BR-EST-01); di tempat lain tampil "Belum cukup riwayat". Founder menyerahkan dump terbaru secara berkala sehingga riwayat bertambah. Ukur ulang Q-14 sebelum beta dan rekrut peserta beta di kota yang riwayatnya sudah cukup. Fitur tidak diubah untuk menutupi data yang kurang |
 | Skema DB gmaps berubah dan merusak import | Pemetaan kolom ditulis di satu tempat (04); import memeriksa kolom saat mulai dan gagal dengan alert yang jelas |
 | Data basi (contoh: catatan lama tentang Pulau Kawe ternyata keliru) | Estimasi selalu dihitung dari snapshot terbaru dan menampilkan tanggal data; dihitung ulang setelah setiap import |
 | Populasi adalah perkiraan model, bukan sensus | Label jelas di UI dan laporan |
@@ -284,7 +283,7 @@ Contoh alasan: *"Website mengarah ke linktr.ee, bukan domain sendiri. 61% restor
 
 ## Lampiran C — Metrik wilayah `geo-3.0.0`
 
-Dihitung per kelurahan dan kecamatan, per kelompok estimasi, hanya di wilayah siap (BR-EST-04). Satuan densitas **per 1.000 penduduk**. Jumlah bisnis selalu dilabeli "bisnis yang terdaftar di Google Maps".
+Dihitung per kelurahan dan kecamatan, per kelompok estimasi. Satuan densitas **per 1.000 penduduk**. Jumlah bisnis selalu dilabeli "bisnis yang terdaftar di Google Maps".
 
 | Metrik | Rumus |
 |---|---|
@@ -307,6 +306,7 @@ Kunjungan rata-rata per bisnis yang tinggi dengan kompetisi rendah berarti permi
 | Search, profil (termasuk estimasi dan pola keramaian), peta, peringkat wilayah, membuka ulang analisis yang sudah disimpan, export & kirim webhook untuk bisnis yang sudah di-unlock | Gratis |
 | Menjalankan analisis lokasi baru | 1 credit. **Tidak ditagih** bila hasilnya "Tidak dapat dianalisis" |
 | Unlock kontak (termasuk "Unlock & export/kirim") | 1 credit per bisnis |
+| Grant awal workspace baru | +1.000 credit satu kali (default, diatur ops; D-36) |
 | Narasi AI | 1 AI credit (gratis bila diambil dari cache, tidak ditagih bila gagal) |
 
 Nilai plan (harga, seat, kuota) diatur di halaman ops (FR-BILL-01). Hipotesis awal ada di [`10-bisnis.md`](10-bisnis.md) §3.
@@ -369,7 +369,6 @@ Lama menginap, jumlah kamar, dan ADR diambil dari benchmark ops per **kelas akom
 | Penanda laju berubah | Selisih > 30% |
 | Ambang jam inti | 60% dari puncak |
 | Ambang pola datar | 80% jam buka |
-| Wilayah siap (BR-EST-04) | Semua kab/kota di Bali |
 
 **Semua default di atas adalah asumsi awal, bukan angka bersumber.** Review rate dan faktor belanja diambil dari sample case founder; riset publik tidak menemukan angka review rate yang bisa dikutip. Ambang jam inti, pola datar, dan penanda bintang 5 dipilih agar cocok dengan dua sample case, sehingga berisiko terlalu pas dengan dua contoh itu. Ambang ditinjau ulang setelah distribusinya diukur di data nyata (Q-14), sebelum rilis F1. UI menyebut parameter ini "asumsi", bukan "benchmark".
 
