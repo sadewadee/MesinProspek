@@ -11,7 +11,7 @@ Dokumentasi produk & engineering untuk **MesinProspek — Market Intelligence un
 Prinsip ini juga tertulis sebagai aturan wajib untuk setiap sesi Claude dan agent di [`CLAUDE.md`](../CLAUDE.md).
 
 Kondisi saat ini:
-- **Tanpa scraping; crawler website PAUSED.** Input = DB gmaps: dump dari founder di-restore ke `gmaps-db` di server kita, lalu dibaca read-only (snapshot berulang, D-31, D-35) + data wilayah GeoAPI.
+- **Tanpa scraping; crawler website PAUSED.** Input = DB gmaps: kiriman mingguan ramping dari founder, dimuat ke `gmaps-db` di server kita, lalu dibaca read-only (snapshot berulang, D-31, D-35, D-37) + data wilayah GeoAPI.
 - **Pembangun** = agent AI (maks. 8 paralel) diorkestrasi Claude. Founder menyetujui gerbang fase.
 - **Cakupan F1** = Indonesia. Dataset global disimpan per negara dan diperbarui berkala.
 - **Konfigurasi yang sering berubah** (model AI, plan & harga, parameter estimasi) diatur dari dashboard ops, bukan di kode. Secret tetap di `.env`.
@@ -61,17 +61,17 @@ Semua dokumen memakai nama-nama ini persis.
 | Binary & subcommand | `msp api`, `msp worker`, `msp migrate`, `msp tool import --country ID` (baca inkremental dari DB gmaps; juga job harian), `msp tool geo-sync --country ID`, `msp tool rescore` |
 | Hitung ulang | Rantai tunggal: estimasi → metrik wilayah → opportunity → skor. Otomatis setelah import, setelah geo-sync, saat parameter estimasi diubah, dan saat ICP disimpan (ICP itu saja). `msp tool rescore` manual hanya setelah versi model/bobot berubah |
 | Target Makefile (lokal = CI) | `make generate` (oapi-codegen, client TS, sqlc, design tokens), `make lint`, `make test` |
-| Sumber data | Dump DB gmaps milik founder (tabel `business_listings`), di-restore ke service `gmaps-db` dan dibaca read-only (D-35). Satu baris = satu snapshot satu tempat. Pemetaan kolom di 04 |
+| Sumber data | Kiriman mingguan ramping dari founder (tabel `business_listings` DB gmaps: hanya Indonesia, kolom yang dipakai, baris baru), dimuat ke `gmaps-db` dan dibaca read-only (D-35, D-37). Satu baris = satu snapshot satu tempat; riwayat disimpan di DB MSP. Pemetaan kolom di 04 |
 | Antrean River | `import`, `score`, `export`, `webhook`, `ai`, `billing` (grant bulanan) |
 | Service Compose (production & staging) | `web`, `api`, `worker`, `kratos`, `postgres` (`local` ditambah `caddy`) |
-| Service Compose (ops, di server yang sama) | `caddy` (satu untuk semua domain), `gitlab`, `gitlab-runner`, `prometheus`, `alertmanager`, `grafana`, `node-exporter`, `gmaps-db` (salinan lokal DB gmaps, dibaca read-only oleh `worker` staging dan production). Uptime dipantau layanan eksternal |
+| Service Compose (ops, di server yang sama) | `caddy` (satu untuk semua domain), `gitlab`, `gitlab-runner`, `prometheus`, `alertmanager`, `grafana`, `node-exporter`, `gmaps-db` (kiriman mingguan DB gmaps terbaru, dibaca read-only oleh `worker` staging dan production). Uptime dipantau layanan eksternal |
 | Environment | `local` (laptop, Docker Compose), `staging` dan `production` (keduanya di satu server, project Compose terpisah) |
 | Domain | `app.<domain>` (production), `staging.<domain>`, `gitlab.<domain>`, `registry.<domain>` (container registry GitLab), `grafana.<domain>` |
 | Direktori Compose di server | `/opt/msp` (production), `/opt/msp-staging` (staging), `/opt/ops` (GitLab, runner, monitoring) |
 | Menjalankan tool di server | `docker compose run --rm worker msp <subcommand>` |
 | Backup | pgBackRest stanza `msp` |
 | Rute HTTP | API `/api/v1` · Kratos `/.ory/*` · health `/healthz` (proses hidup) dan `/readyz` (DB siap) · metrik `/metrics` di listener internal `:9090`, hanya lewat network Docker (tidak di-route Caddy) |
-| Env var | Prefix `MSP_`, mis. `MSP_DATABASE_URL`, `MSP_SOURCE_DATABASE_URL` (salinan lokal DB gmaps di `gmaps-db`, role read-only `msp_source_ro`), `MSP_ANTHROPIC_API_KEY`, `MSP_LLM_FALLBACK_API_KEY`, `MSP_GEOAPI_BASE_URL`, `MSP_STORAGE_DIR`, `MSP_ENCRYPTION_KEY`. Env hanya untuk secret & pengaturan proses; model AI dan plan ada di DB (setting ops) |
+| Env var | Prefix `MSP_`, mis. `MSP_DATABASE_URL`, `MSP_SOURCE_DATABASE_URL` (kiriman mingguan ramping dari founder, dimuat ke `gmaps-db`; role read-only `msp_source_ro`), `MSP_ANTHROPIC_API_KEY`, `MSP_LLM_FALLBACK_API_KEY`, `MSP_GEOAPI_BASE_URL`, `MSP_STORAGE_DIR`, `MSP_ENCRYPTION_KEY`. Env hanya untuk secret & pengaturan proses; model AI dan plan ada di DB (setting ops) |
 | Image | `<registry>/msp/api:<git-sha>`, `<registry>/msp/web:<git-sha>`. Rilis = tag Git `vX.Y.Z` |
 | Versi model | Estimasi `est-X.Y.Z`, analisis lokasi `loc-X.Y.Z`, skor `priority-X.Y.Z`, wilayah `geo-X.Y.Z`, prompt AI `brief-X.Y.Z` |
 

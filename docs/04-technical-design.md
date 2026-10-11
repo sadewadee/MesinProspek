@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Versi | 0.3 (lean). Sumber data = DB gmaps (D-31) lewat salinan lokal dari dump (D-35), estimasi (D-32), analisis lokasi (D-33) |
+| Versi | 0.3 (lean). Sumber data = DB gmaps (D-31) lewat kiriman mingguan ramping founder di `gmaps-db` (D-35, D-37), estimasi (D-32), analisis lokasi (D-33) |
 | Tanggal | 2026-10-11 |
 | Sumber kebenaran | Requirement: [PRD](01-prd.md) v0.3 · Keputusan: [00 §7](00-analisis-dokumen-awal.md#7-register-keputusan-status-v02) · Nama teknis: [README](README.md#kosakata-teknis-bersama) |
 | Cakupan | **F1 dirinci.** F2/F3 hanya daftar evolusi (§16) |
@@ -31,7 +31,7 @@
 | ADR-10 | File export di disk lokal lewat interface `storage`; unduh lewat URL bertanda tangan berumur pendek | D-26 |
 | ADR-11 | Satu server untuk production, staging, dan ops; isolasi lewat project Compose terpisah + batas CPU/RAM per container | D-19, D-26 |
 | ADR-12 | Konfigurasi runtime milik ops (setting AI, parameter estimasi `est.*`, plan) di tabel `settings` dan `plans`, dibaca dengan cache singkat; env hanya untuk secret dan pengaturan proses | D-29 |
-| ADR-13 | Sumber data = **DB gmaps dibaca langsung**, read-only, inkremental per keyset (`created_at`, `id`) dengan cursor di `imports`. Yang dibaca adalah salinan lokal `gmaps-db`, hasil restore dump dari founder (tanpa koneksi ke server founder). Nama kolom sumber hanya ada di satu file `source.sql`. Snapshot digabung per field + riwayat harian | D-31, D-35, BR-NORM-05 |
+| ADR-13 | Sumber data = **DB gmaps dibaca langsung**, read-only, inkremental per keyset (`created_at`, `id`) dengan cursor di `imports`. Yang dibaca adalah `gmaps-db`, berisi kiriman mingguan ramping terbaru dari founder (tanpa koneksi ke server founder); riwayat disimpan di DB MSP. Nama kolom sumber (export founder, tabel `gmaps-db`, query import) hanya ada di satu file `source.sql`. Snapshot digabung per field + riwayat harian | D-31, D-35, D-37, BR-NORM-05 |
 | ADR-14 | Rumus estimasi dan analisis lokasi = fungsi Go murni berversi (`est-`, `loc-`) di satu paket `estimate`. Parameter dari `settings`, disimpan per hasil. Analisis lokasi dihitung sinkron di api lalu disimpan per workspace | D-32, D-33, FR-EST-06, FR-LOC-01 |
 
 ## 2. Arsitektur F1
@@ -57,7 +57,7 @@
 │                                                                                     │
 │ /opt/ops  gitlab · gitlab-runner (concurrent = 1) · prometheus · alertmanager ·     │
 │           grafana · node-exporter      prometheus ── api:9090 (network Docker)      │
-│           gmaps-db  salinan lokal DB gmaps dari dump founder (D-35), tanpa port     │
+│           gmaps-db  kiriman mingguan DB gmaps terbaru (D-37), tanpa port            │
 │             ◄── worker production & staging: read-only, network gmaps (§5.1)        │
 │                                                                                     │
 │ Setiap container punya batas CPU/RAM (§2.1)                                         │
@@ -65,7 +65,7 @@
        │ pgBackRest (WAL kontinu) · backup GitLab · gmaps-db tidak di-backup (06 §8)
        ▼
  S3-compatible off-site (Indonesia)
-Masuk:     dump DB gmaps dari founder (berkas, disalin ops) → restore ke gmaps-db (09 RB-15)
+Masuk:     kiriman mingguan DB gmaps dari founder (.csv.gz, disalin ke server) → dimuat ke gmaps-db (09 RB-15)
 Eksternal: worker → GeoAPI (geo-sync) · worker → LLM sesuai setting AI (§11)
            worker → URL webhook customer (§10) · kratos → Google OIDC, SMTP · api → SMTP (undangan)
 ```
@@ -76,29 +76,40 @@ Eksternal: worker → GeoAPI (geo-sync) · worker → LLM sesuai setting AI (§1
 | `worker` | `msp worker` | Semua queue River. Concurrency: `import` 1, `score` 2, `export` 2, `webhook` 10, `ai` 4, `billing` 1 |
 | migrasi | `msp migrate` | goose + migrasi River, dijalankan pipeline deploy sebelum `api`/`worker` diganti (06) |
 | tool | `msp tool import\|geo-sync\|rescore` | `docker compose run --rm worker msp tool …` di `/opt/msp` (production) |
-| `gmaps-db` | Postgres, service Compose di `/opt/ops` | Salinan lokal DB gmaps (tabel `business_listings`) hasil restore dump founder (D-35, 09 RB-15). Bukan proses `msp`; dibaca `worker` dan `msp tool import` lewat network `gmaps` |
+| `gmaps-db` | Postgres, service Compose di `/opt/ops` | Tabel `business_listings` berisi kiriman mingguan terbaru dari founder (D-37, 09 RB-15); riwayat ada di DB MSP. Bukan proses `msp`; dibaca `worker` dan `msp tool import` lewat network `gmaps` |
 
 Satu `caddy` memegang port 80/443 dan me-route semua domain (README). Production dan staging adalah project Compose terpisah dengan network default, database, volume, dan `.env` sendiri, jadi staging tidak bisa menjangkau database production. Satu-satunya yang dipakai bersama adalah **`gmaps-db`**: `worker` kedua environment bergabung ke network `gmaps` dan membacanya read-only (§5.1, §15). Tidak ada koneksi jaringan ke server founder. Detail Compose, Caddyfile, dan bootstrap ada di 06.
 
-### 2.1 Kapasitas server (perkiraan)
+### 2.1 Kapasitas server
 
-Saran awal untuk **dataset Indonesia saja**: **16 vCPU, 64 GB RAM, 2× NVMe ±2 TB (RAID1)**. Angka ini perkiraan dan diverifikasi setelah dump pertama dan import pertama (Q-09). RAID1 melindungi dari disk rusak, bukan pengganti backup off-site.
+Server sudah ada (founder, Q-09): **56 core, 128 GB RAM, disk 1 TB**. Dataset F1 = Indonesia saja. Pembagian di bawah adalah titik awal dan disesuaikan dengan data Grafana.
 
 | Kelompok container | Batas CPU | Batas RAM | Catatan |
 |---|---|---|---|
-| Production `postgres` | 4 | 16 GB | Sisa RAM host dipakai page cache Postgres |
-| Production `api`, `worker`, `web`, `kratos` + `caddy` bersama | 3 | 6 GB | `worker` mendapat porsi terbesar (import, estimasi, skor) |
-| Staging (semua service) | 2 | 6 GB | Data nyata untuk gerbang rilis (PRD §12) |
+| Production `postgres` | 12 | 32 GB | Sisa RAM host dipakai page cache Postgres |
+| Production `api`, `worker`, `web`, `kratos` + `caddy` bersama | 8 | 12 GB | `worker` mendapat porsi terbesar (import, estimasi, skor) |
+| Staging (semua service) | 4 | 12 GB | Data nyata untuk gerbang rilis (PRD §12) |
 | `gitlab` (+ registry) | 4 | 8 GB | Ukuran GitLab CE untuk tim kecil |
-| `gitlab-runner` + job CI | 2 | 4 GB | `concurrent = 1` di `config.toml`: satu job sekaligus |
+| `gitlab-runner` + job CI | 4 | 8 GB | `concurrent = 1` di `config.toml`: satu job sekaligus |
 | Monitoring (`prometheus`, `alertmanager`, `grafana`, `node-exporter`) | 1 | 2 GB | — |
-| `gmaps-db` (salinan lokal DB gmaps) | 1 | 2 GB | Hanya sibuk saat restore dump dan import (jam sepi) |
-| **Total batas** | 17 | 44 GB | ±20 GB sisa untuk OS dan page cache. Total CPU sedikit di atas 16 karena `gmaps-db` jarang sibuk bersamaan dengan yang lain |
+| `gmaps-db` (kiriman DB gmaps terbaru) | 2 | 4 GB | Hanya sibuk saat kiriman dimuat dan saat import (jam sepi) |
+| **Total batas** | 35 | 78 GB | ±21 core dan ±50 GB sisa untuk OS, page cache, dan pertumbuhan |
 
 - **Batas per container wajib** di setiap file Compose (`deploy.resources.limits.cpus` / `.memory`, pembagian per service di 06), sehingga build CI atau import besar tidak membuat production kehabisan CPU/RAM.
-- **Disk (perkiraan):** DB production dan DB staging masing-masing puluhan sampai ratusan GB: `places` (+ baris sumber terbaru sebagai evidence), `place_snapshots` (satu baris per tempat per hari, terus bertambah), `estimates`, index, polygon desa, dan skor. Ukuran riwayat bergantung jumlah snapshot di DB gmaps dan diukur setelah import pertama. GitLab + registry ±200 GB dengan cleanup policy. Sisanya untuk WAL lokal dan pertumbuhan.
-- **Disk `gmaps-db`:** bergantung ukuran dump founder, yang **belum diketahui** (Q-09). Saat restore dibutuhkan ruang untuk dua salinan sekaligus (`gmaps` lama + `gmaps_new`) ditambah file dump terbaru yang disimpan di server (09 RB-15). Ukur setelah dump pertama, lalu perbarui spesifikasi server.
 - **Bila contention terukur** (p95 naik saat pipeline CI atau import berjalan), GitLab/CI dipindah ke server lain (§16, PRD §13).
+
+**Disk 1 TB.** Salinan penuh DB gmaps tidak muat bersama isi lain (D-37), jadi founder mengirim kiriman mingguan ramping dan riwayat disimpan di DB MSP (§5.1). Pembagian perkiraan:
+
+| Isi | Perkiraan | Catatan |
+|---|---|---|
+| OS, image Docker, log | ±50 GB | Dibersihkan lewat 09 RB-13 |
+| GitLab + registry | ±100 GB | Cleanup policy registry; backup lokal hanya disimpan sebentar (06 §8) |
+| DB production + WAL lokal | Diukur | `places` (+ baris sumber terbaru sebagai evidence), `place_snapshots` (satu baris per tempat per hari, terus bertambah), `estimates`, index, polygon desa, skor. Diukur setelah import pertama di staging, sebelum import pertama production (09 RB-03) |
+| DB staging | ≈ DB production | — |
+| `gmaps-db` + satu file kiriman | ±2 × S saat kiriman pertama | S = ukuran kiriman riwayat penuh, diukur founder sebelum kiriman pertama (09 RB-15). Kiriman mingguan jauh lebih kecil; `TRUNCATE` saat memuat kiriman berikutnya dan penghapusan file lama mengembalikan ruangnya |
+| Ruang bebas | ≥ 30% | 09 RB-13 menargetkan disk < 70%; AL-07 berbunyi di 80% |
+
+Kiriman pertama dikirim bila 2 × S ≤ ±300 GB, sehingga ±250 GB tersisa untuk DB production dan staging di bawah batas 70%. Lebih besar → keputusan founder (mis. tambah disk) sebelum kiriman dikirim.
 
 ## 3. Modul Go
 
@@ -135,7 +146,7 @@ CREATE TABLE places (                    -- satu baris per tempat: nilai terkini
   category_id text NOT NULL REFERENCES categories, est_group text NOT NULL, accom_class text,  -- BR-NORM-03, E.3
   phone_raw text, phone_e164 text, phone_kind text,      -- 'mobile' | 'fixed'
   url_raw text, url_kind text,  -- own_domain|social|aggregator|messaging|free_subdomain; NULL = kosong
-  social_links jsonb, menu_url text, address_text text, maps_url text,  -- social_links: {"instagram": "https://…"}
+  social_links jsonb, menu_url text, address_text text,  -- social_links: {"instagram": "https://…"}; tautan Maps dari cid
   geom geometry(Point, 4326), opening_hours jsonb,       -- jadwal Senin–Minggu, waktu lokal (BR-NORM-06)
   price_raw text, price_min bigint, price_max bigint, price_mid bigint,  -- BR-NORM-04; max NULL = rentang terbuka
   popular_times smallint[] CHECK (cardinality(popular_times) = 168),     -- 7×24, indeks = hari×24 + jam (Senin = 0)
@@ -297,19 +308,41 @@ Setiap tahap adalah job River yang meng-enqueue tahap berikutnya di transaksi ya
 
 ### 5.1 Import dari DB gmaps
 
-Satu baris sumber = satu snapshot satu tempat (PRD §7.1). **Semua nama tabel dan kolom DB gmaps hanya ada di satu file: `apps/api/internal/ingest/gmaps/source.sql`** (di-embed, PRD §13). Query ini memberi alias tetap yang dibaca Go ke struct `SourceRow` (`pgx.RowToStructByName`). Bila skema scraper berubah, cukup file ini yang diubah (09 RB-03).
+Satu baris sumber = satu snapshot satu tempat (PRD §7.1). **Semua nama tabel dan kolom DB gmaps hanya ada di satu file: `apps/api/internal/ingest/gmaps/source.sql`** (di-embed, PRD §13). File ini berisi tiga pernyataan bernama dengan kolom yang sama: `export` (founder membuat kiriman mingguan dari DB gmaps asli), `create_table` (ops membuat tabel di `gmaps-db`, sekali), dan `read_batch` (query import, satu-satunya yang dijalankan `msp`). `read_batch` memberi alias tetap yang dibaca Go ke struct `SourceRow` (`pgx.RowToStructByName`). Bila skema scraper berubah, cukup file ini yang diubah (09 RB-03).
 
 ```sql
--- apps/api/internal/ingest/gmaps/source.sql — SATU-SATUNYA tempat nama kolom DB gmaps.
--- Alias = field SourceRow. Kolom yang tidak dipilih tidak pernah di-import (mis. user_reviews,
--- owner, status, images, description).
+-- apps/api/internal/ingest/gmaps/source.sql — SATU-SATUNYA tempat nama tabel & kolom DB gmaps (08 STD-DB-07).
+-- Tiap pernyataan diawali "-- name: <nama>" dan diakhiri baris kosong (diambil dengan sed, 09 RB-15).
+-- Kolom yang tidak dipilih tidak pernah dikirim maupun di-import (mis. user_reviews, images, thumbnail, link,
+-- description, status). export dan create_table: kolom & urutan sama, diperiksa COPY … HEADER MATCH saat dimuat.
+
+-- name: export  (founder, mingguan, di DB gmaps asli; psql -v since=<batas>, 09 RB-15)
+COPY (SELECT id, cid, place_id, title, category, categories, address, address_country,
+             latitude, longitude, timezone, phone, website, social_links, menu,
+             review_count, review_rating, reviews_per_rating, price_range,
+             open_hours, popular_times, about, owner, created_at
+      FROM business_listings
+      WHERE address_country = 'ID'              -- F1: Indonesia saja (D-28)
+        AND created_at >= :'since')             -- -infinity = riwayat penuh; lainnya = batas dari ops
+TO STDOUT WITH (FORMAT csv, HEADER);
+
+-- name: create_table  (ops, sekali per volume gmaps-data; tipe kolom = DDL tabel founder, Q-13)
+CREATE TABLE business_listings (
+  id bigint, cid text, place_id text, title text, category text, categories text[],
+  address text, address_country text, latitude double precision, longitude double precision,
+  timezone text, phone text, website text, social_links jsonb, menu jsonb,
+  review_count int, review_rating numeric, reviews_per_rating jsonb, price_range text,
+  open_hours jsonb, popular_times jsonb, about jsonb, owner jsonb, created_at timestamptz);
+CREATE INDEX ON business_listings (created_at, id);   -- keyset read_batch; tetap ada setelah TRUNCATE
+
+-- name: read_batch  (import; alias = field SourceRow)
 SELECT id, cid, place_id AS google_place_id, title AS name,
        category, categories, address, address_country AS country,
        latitude AS lat, longitude AS lng, timezone,
-       phone, website, social_links, menu->>'link' AS menu_url, link AS maps_url,
+       phone, website, social_links, menu->>'link' AS menu_url,
        review_count, review_rating AS rating, reviews_per_rating AS stars, price_range AS price,
        open_hours, popular_times, about,
-       coalesce(jsonb_typeof(owner) = 'object', false) AS is_claimed,
+       coalesce(jsonb_typeof(owner) = 'object', false) AS is_claimed,   -- isi owner tidak di-import
        created_at AS observed_at
 FROM business_listings
 WHERE (created_at, id) > ($1, $2)       -- keyset: cursor run ini (lihat langkah 2)
@@ -317,15 +350,17 @@ ORDER BY created_at, id
 LIMIT $3;                               -- 5.000
 ```
 
-- **Koneksi:** `MSP_SOURCE_DATABASE_URL` menunjuk database `gmaps` di service `gmaps-db` (`gmaps-db:5432/gmaps`, network Docker `gmaps`, §2) dengan role **`msp_source_ro`** yang hanya punya `SELECT` pada `business_listings` (NFR-05). Pool maks. 2 koneksi, sesi `default_transaction_read_only=on` dan `statement_timeout`. Isi `gmaps-db` adalah dump DB gmaps dari founder yang di-restore ops (D-35, 09 RB-15); `id` dan `created_at` ikut terbawa, jadi cursor tetap berlaku setelah restore berikutnya. Keyset butuh index `(created_at, id)` di `business_listings`, dibuat ops setiap restore. Di test/CI, URL ini menunjuk database `gmaps_fixture` di service `postgres` yang sama, berisi tabel `business_listings` tiruan (06).
+- **Kiriman (D-37).** Founder menjalankan `export` tiap minggu dengan batas `since` = `max(created_at)` kiriman sebelumnya − 1 hari (dicetak saat kiriman dimuat, 09 RB-15). Kiriman pertama memakai `-infinity`, yaitu seluruh riwayat Indonesia. Hasilnya CSV ber-header yang di-gzip (`gmaps-ID-<YYYYMMDD>.csv.gz`). `COPY` CSV membawa `jsonb`, `text[]`, teks multibaris, serta beda NULL dan string kosong dengan utuh, tanpa bergantung pada versi Postgres founder. Ops memuatnya ke `gmaps-db` dengan `TRUNCATE` + `COPY … (FORMAT csv, HEADER MATCH)` dalam **satu transaksi**. Query import melihat kiriman lama atau kiriman baru secara utuh, tidak pernah kosong atau setengah: query yang datang selama pemuatan menunggu commit. Pemuatan yang gagal tidak mengubah apa pun, dan `HEADER MATCH` menolak file yang kolomnya berbeda dari `create_table`. Tipe kolom `create_table` disalin dari DDL tabel founder (Q-13); tipe di contoh di atas ilustratif.
+- **`gmaps-db` hanya ruang singgah.** Isinya kiriman terbaru saja; riwayat snapshot tinggal di DB MSP (`places` + `place_snapshots`, di-backup pgBackRest). Akibatnya: (1) kiriman baru dimuat setelah import staging dan production selesai membaca kiriman sekarang, karena baris yang belum terbaca dan lebih tua dari batas kiriman baru akan hilang dari riwayat kita (09 RB-15); (2) membaca ulang seluruh riwayat (`--reset`, DB staging kosong, atau DB MSP hilang melebihi backup) butuh **kiriman riwayat penuh** (`since` = `-infinity`); (3) baris dengan `address_country` kosong tidak ikut kiriman, sehingga aturan bbox di langkah 4 di F1 hanya berlaku di fixture. Bila jumlah baris itu ternyata berarti, filter `export` diperluas (keputusan founder).
+- **Koneksi:** `MSP_SOURCE_DATABASE_URL` menunjuk database `gmaps` di service `gmaps-db` (`gmaps-db:5432/gmaps`, network Docker `gmaps`, §2) dengan role **`msp_source_ro`** yang hanya punya `SELECT` pada `business_listings` (NFR-05). Pool maks. 2 koneksi, sesi `default_transaction_read_only=on` dan `statement_timeout`. Di test/CI, URL ini menunjuk database `gmaps_fixture` di service `postgres` yang sama, berisi tabel `business_listings` tiruan dengan skema lengkap founder (05 §6, 06).
 - **Satu import per environment.** Sebelum mulai, import mengambil `pg_try_advisory_lock` dengan kunci tetap `import` dan memegangnya di satu koneksi khusus sampai selesai, termasuk selama import pertama yang panjang. Production dan staging punya DB sendiri, jadi kuncinya per environment. Bila kunci sedang dipegang: `msp tool import` keluar dengan pesan "import sedang berjalan", dan job harian dilewati. Import yang sedang berjalan sudah membaca sampai batas atasnya, dan sisanya terbaca di run berikutnya.
 
 **Langkah:**
 
-1. **Cek kolom (fail fast).** Query sumber dijalankan sekali dengan `LIMIT 0`. Kolom yang hilang menghasilkan error Postgres, dan alias yang tidak cocok dengan `SourceRow` gagal saat scan. Keduanya diteruskan sebagai `source schema mismatch: <detail>; perbaiki apps/api/internal/ingest/gmaps/source.sql`. Import berstatus `failed` tanpa menulis apa pun (alert di 09).
-2. **Batch keyset.** Cursor awal = cursor `imports` terakhir negara itu **dikurangi 24 jam** (belum ada = seluruh riwayat). Jendela tumpang-tindih ini menangkap baris yang transaksinya masih terbuka di sisi scraper saat founder membuat dump: baris itu baru muncul di dump berikutnya dengan `created_at` sedikit di bawah cursor. Baris yang terbaca dua kali aman karena merge idempoten (lihat "Semantik baca ulang"); laporan hanya menghitung snapshot yang benar-benar baru. Salinan `gmaps-db` statis di antara restore, jadi tidak perlu batas atas waktu. Per batch: baca, lalu langkah 3–7 dalam **satu transaksi MSP** yang juga memajukan `imports.cursor_*`. Bila proses mati, run berikutnya melanjutkan dari batch terakhir yang di-commit, sehingga import pertama bisa dilanjutkan. Import selesai saat batch kosong.
+1. **Cek kolom (fail fast).** `read_batch` dijalankan sekali dengan `LIMIT 0`. Kolom yang hilang menghasilkan error Postgres, dan alias yang tidak cocok dengan `SourceRow` gagal saat scan. Keduanya diteruskan sebagai `source schema mismatch: <detail>; perbaiki apps/api/internal/ingest/gmaps/source.sql`. Import berstatus `failed` tanpa menulis apa pun (alert di 09).
+2. **Batch keyset.** Cursor awal = cursor `imports` terakhir negara itu **dikurangi 24 jam** (belum ada = seluruh isi `gmaps-db`). Jendela tumpang-tindih ini menangkap baris yang transaksinya masih terbuka di sisi scraper saat founder membuat kiriman. Baris itu baru muncul di kiriman berikutnya dengan `created_at` sedikit di bawah cursor, dan ikut terkirim karena `export` juga mundur 1 hari. Baris yang terbaca dua kali aman karena merge idempoten (lihat "Semantik baca ulang"); laporan hanya menghitung snapshot yang benar-benar baru. Isi `gmaps-db` statis di antara dua pemuatan, jadi tidak perlu batas atas waktu. Per batch: baca, lalu langkah 3–7 dalam **satu transaksi MSP** yang juga memajukan `imports.cursor_*`. Bila proses mati, run berikutnya melanjutkan dari batch terakhir yang di-commit, sehingga import pertama bisa dilanjutkan. Import selesai saat batch kosong.
 3. **Validasi.** Baris ditolak bila `missing_cid` atau `missing_name` (tempat baru tanpa nama). Peringatan per field (field diabaikan, baris tetap dipakai): `unmapped_category`, `invalid_geo`, `invalid_phone`, `invalid_rating`, `invalid_stars`, `invalid_popular_times` (nilai di luar 0–100, BR-NORM-06), `unparsed_price`.
-4. **Filter negara (D-28).** `--country` harus ada di `data/countries.yaml` (kode ISO 3166-1, bbox, `active`). Negara baris = `country` (kode ISO dari sumber); bila kosong, koordinat di dalam bbox negara. Baris lain **dilewati** (bukan ditolak) dan dihitung `skipped_country`.
+4. **Filter negara (D-28).** `--country` harus ada di `data/countries.yaml` (kode ISO 3166-1, bbox, `active`). Negara baris = `country` (kode ISO dari sumber); bila kosong, koordinat di dalam bbox negara. Baris lain **dilewati** (bukan ditolak) dan dihitung `skipped_country`. Kiriman F1 hanya berisi baris `ID` (filter di `export`), jadi `skipped_country` normalnya 0.
 5. **Normalisasi** (fungsi murni, unit test per aturan, FR-DATA-02):
 
 | Alias sumber | Aturan | Hasil |
@@ -338,7 +373,7 @@ LIMIT $3;                               -- 5.000
 | `popular_times` | Kunci hari Inggris → `smallint[168]` (Senin = 0, jam lokal 0–23); hari yang tidak ada = 0 (tutup); `null`/`{}` → NULL | `popular_times` |
 | `rating`, `review_count`, `stars` | Rating 0–5, ulasan ≥ 0, rating tanpa ulasan → NULL; `stars` kunci "1"–"5" → `int[5]` | `rating`, `review_count`, `stars` |
 | `lat`, `lng`, `timezone` | Koordinat valid dan di dalam bbox negara; zona IANA valid | `geom`, `timezone` |
-| `about`, `is_claimed`, `menu_url`, `maps_url`, `google_place_id` | Disimpan apa adanya. Di F1 hanya ditampilkan di profil (`about`, `is_claimed` juga sebagai fakta Narasi AI) | kolom sama |
+| `about`, `is_claimed`, `menu_url`, `google_place_id` | Disimpan apa adanya. Di F1 hanya ditampilkan di profil (`about`, `is_claimed` juga sebagai fakta Narasi AI). Tautan Google Maps tidak dibaca dari sumber, tetapi dibentuk dari `cid` di `intel.ProspectView` (`https://maps.google.com/?cid=<cid>`) | kolom sama |
 | `observed_at` (`created_at`) | Waktu snapshot | `field_observed`, `place_snapshots.day` (tanggal lokal) |
 
 6. **Gabung snapshot (BR-NORM-05).** `ingest.Merge(cur, snap) (next, changed)` adalah fungsi murni. Baris diproses urut `created_at`. Untuk tiap field, nilai tidak kosong dari snapshot dengan waktu ≥ `field_observed[field]` menggantikan nilai sekarang. Pembanding ≥ membuat baca ulang idempoten. `is_claimed` mengikuti snapshot terbaru. `observed_at` = snapshot terbaru, `first_observed_at` = tertua, `raw` = `SourceRow` terbaru. Bila koordinat berubah, `desa_id`…`prov_id` dikosongkan supaya dihitung ulang oleh `geo.assign`.
@@ -347,7 +382,7 @@ LIMIT $3;                               -- 5.000
 
 **Jadwal.** Periodic job River `import.run` (queue `import`) berjalan **tiap hari 03.00 WIB** untuk setiap negara `active`. Jadwal ini sengaja tidak bertabrakan dengan backup 01.00 WIB (06), dan rantai hitung ulang selesai sebelum jam kerja (NFR-02). `msp tool import --country ID` menjalankan fungsi yang sama secara sinkron. Bila `MSP_SOURCE_DATABASE_URL` kosong (mis. `local` tanpa akses), job tidak didaftarkan dan CLI gagal dengan pesan jelas.
 
-**Semantik baca ulang.** Membaca ulang rentang yang sama tidak membuat duplikat: `cid` unik, `place_snapshots` ber-PK (`place_id`, `day`), dan merge idempoten. Bila normalizer atau `data/categories.yaml` berubah (`norm_version` naik), jalankan `msp tool import --country ID --reset`. Perintah ini membaca ulang seluruh riwayat lewat jalur yang sama dengan import pertama, lalu import harian berlanjut dari cursor. Tempat yang tidak muncul lagi **tidak dihapus** di F1 (deteksi usaha tutup ada di F2). Mengaktifkan negara lain kelak = `geo-sync` + `import` negara itu, tanpa perubahan skema.
+**Semantik baca ulang.** Membaca ulang rentang yang sama tidak membuat duplikat: `cid` unik, `place_snapshots` ber-PK (`place_id`, `day`), dan merge idempoten. Bila normalizer atau `data/categories.yaml` berubah (`norm_version` naik), minta kiriman riwayat penuh (09 RB-15), lalu jalankan `msp tool import --country ID --reset`. Perintah ini membaca ulang seluruh isi `gmaps-db` lewat jalur yang sama dengan import pertama, lalu import harian berlanjut dari cursor. Tempat yang tidak muncul lagi **tidak dihapus** di F1 (deteksi usaha tutup ada di F2). Mengaktifkan negara lain kelak = filter negara di `export` + `geo-sync` + `import` negara itu, tanpa perubahan skema.
 
 ### 5.2 `msp tool geo-sync`
 
@@ -731,7 +766,7 @@ Refund dilakukan manual oleh ops (`kind='refund'`, tercatat di audit).
 | `MSP_PUBLIC_URL` | `https://app.<domain>` (cek `Origin`, tautan email) |
 | `MSP_HTTP_ADDR`, `MSP_METRICS_ADDR` | `:8080`, `:9090` |
 | `MSP_DATABASE_URL`, `MSP_MIGRATE_DATABASE_URL` | Role `msp_app` (api, worker, tool); role `msp_owner` (hanya `msp migrate`) |
-| `MSP_SOURCE_DATABASE_URL` | Salinan lokal DB gmaps: `postgres://msp_source_ro:<password>@gmaps-db:5432/gmaps` (role read-only, §5.1). Kosong → job `import.run` tidak didaftarkan dan `msp tool import` gagal dengan pesan jelas. CI: database `gmaps_fixture` |
+| `MSP_SOURCE_DATABASE_URL` | Kiriman mingguan ramping dari founder, dimuat ke `gmaps-db`: `postgres://msp_source_ro:<password>@gmaps-db:5432/gmaps` (role read-only, §5.1). Kosong → job `import.run` tidak didaftarkan dan `msp tool import` gagal dengan pesan jelas. CI: database `gmaps_fixture` |
 | `MSP_KRATOS_PUBLIC_URL`, `MSP_GEOAPI_BASE_URL` | `http://kratos:4433`; `https://geoapi.mcpke.dev/api` |
 | `MSP_ANTHROPIC_API_KEY`, `MSP_LLM_FALLBACK_API_KEY` | API key Claude dan OpenAI-compatible. Provider, model, dan base URL ada di setting ops (§11) |
 | `MSP_STORAGE_DIR` | `/var/lib/msp/storage` |
@@ -756,18 +791,18 @@ Refund dilakukan manual oleh ops (`kind='refund'`, tercatat di audit).
 | `msp_llm_requests_total{provider,model,result}`, `msp_llm_duration_seconds` | NFR-02, frekuensi fallback |
 | `msp_geoapi_requests_total{status}` | Rate limit GeoAPI |
 
-Dua gauge timestamp import dibaca dari tabel `imports` saat scrape (satu query kecil), jadi nilainya tetap benar setelah restart. Selain itu ada metrik runtime Go dan statistik pgxpool. `/healthz` = proses hidup (tanpa dependensi). `/readyz` = DB bisa di-ping dan versi migrasi sesuai (`gmaps-db` tidak ikut dicek, supaya api tetap siap walau sumber mati atau sedang di-restore). `/metrics` hanya di `MSP_METRICS_ADDR` dan tidak di-route Caddy. Prometheus (`/opt/ops`, server yang sama) mengambilnya lewat network Docker internal (detail di 06).
+Dua gauge timestamp import dibaca dari tabel `imports` saat scrape (satu query kecil), jadi nilainya tetap benar setelah restart. Selain itu ada metrik runtime Go dan statistik pgxpool. `/healthz` = proses hidup (tanpa dependensi). `/readyz` = DB bisa di-ping dan versi migrasi sesuai (`gmaps-db` tidak ikut dicek, supaya api tetap siap walau sumber mati atau kiriman sedang dimuat). `/metrics` hanya di `MSP_METRICS_ADDR` dan tidak di-route Caddy. Prometheus (`/opt/ops`, server yang sama) mengambilnya lewat network Docker internal (detail di 06).
 
 **Uptime.** Monitoring berada di server yang sama, jadi ikut mati bila server mati. Karena itu ketersediaan (NFR-03) dicek **layanan uptime monitor eksternal gratis** yang memanggil `https://app.<domain>/readyz` tiap ≤ 5 menit dan mengirim alert ke email/Telegram. Alert dan dashboard lain ada di 06/09.
 
 ## 15. Keamanan F1
 
-1. **Permukaan jaringan:** server hanya membuka 80/443 (satu Caddy untuk semua domain) dan SSH (key-only). Postgres, admin API Kratos, dan metrik `:9090` hanya ada di jaringan Docker (§14). Production dan staging tidak berbagi database maupun secret milik MesinProspek. **Pengecualian:** `worker` keduanya membaca salinan lokal DB gmaps yang sama, `gmaps-db` di `/opt/ops`, dengan kredensial yang sama (role `msp_source_ro`: hanya `SELECT`, plus `default_transaction_read_only`). Network `gmaps` hanya berisi `gmaps-db` dan `worker` kedua environment; `gmaps-db` tidak mempublikasikan port, dan tidak ada koneksi ke server founder (D-35).
+1. **Permukaan jaringan:** server hanya membuka 80/443 (satu Caddy untuk semua domain) dan SSH (key-only). Postgres, admin API Kratos, dan metrik `:9090` hanya ada di jaringan Docker (§14). Production dan staging tidak berbagi database maupun secret milik MesinProspek. **Pengecualian:** `worker` keduanya membaca `gmaps-db` yang sama di `/opt/ops` (kiriman DB gmaps terbaru), dengan kredensial yang sama (role `msp_source_ro`: hanya `SELECT`, plus `default_transaction_read_only`). Network `gmaps` hanya berisi `gmaps-db` dan `worker` kedua environment; `gmaps-db` tidak mempublikasikan port, dan tidak ada koneksi ke server founder (D-35).
 2. **Isolasi workspace:** RLS `FORCE` + role `msp_app` `NOBYPASSRLS` + `InWorkspace` sebagai satu-satunya jalan, termasuk `location_analyses`. Resource milik workspace lain → 404. Test lintas workspace mencakup setiap endpoint (05).
 3. **Identitas:** Kratos, email wajib terverifikasi, ops wajib AAL2 (TOTP). Role diperiksa per request dari `x-msp-role`.
 4. **Secret:** variabel CI terproteksi → `.env` per environment (izin 600), termasuk `MSP_SOURCE_DATABASE_URL`. Tidak ada secret di repo, log, atau tabel `settings`. Secret webhook dienkripsi AES-GCM.
 5. **Outbound:** guard SSRF di dial time untuk webhook, tanpa redirect. Host GeoAPI berasal dari env, host LLM dari setting ops (wajib `https`, hanya akun ops AAL2, diaudit). Semuanya tidak pernah dari input user workspace. Membaca DB gmaps bukan koneksi keluar: `gmaps-db` ada di network internal (§2).
-6. **Data kontak & pribadi:** telepon di-mask sampai di-unlock, dan suppression diterapkan di satu fungsi `intel.ProspectView` (search, profil, evidence, export, webhook). Telepon tidak dikirim ke LLM dan di-redact dari log. Kolom sumber yang memuat data orang (`user_reviews`, isi `owner`) tidak di-import (§5.1). Dump yang di-restore ke `gmaps-db` tetap memuat kolom yang tidak kita pakai (mis. `user_reviews` dengan nama pengulas, `images`). Apakah kolom itu dibuang sebelum dump diserahkan diputuskan founder bersama tim legal; secara teknis import tidak bergantung padanya karena `source.sql` hanya memilih kolom yang dipakai.
+6. **Data kontak & pribadi:** telepon di-mask sampai di-unlock, dan suppression diterapkan di satu fungsi `intel.ProspectView` (search, profil, evidence, export, webhook). Telepon tidak dikirim ke LLM dan di-redact dari log. Kolom sumber yang memuat data orang (`user_reviews`, isi `owner`) tidak di-import (§5.1). Kiriman founder hanya berisi kolom `export` di `source.sql`, jadi `user_reviews`, `images`, dan kolom lain yang tidak dipakai tidak pernah sampai ke server kita (D-37). `owner` ikut terkirim karena `is_claimed` diturunkan darinya; isinya tidak di-import.
 7. **Audit:** `audit_log` append-only (`REVOKE UPDATE, DELETE`) untuk login, undangan, unlock, export, webhook, grant, flag, suppression, plan, setting AI, dan parameter estimasi.
 8. **Dependensi & input:** `govulncheck` + `npm audit` di CI (06). Batas ukuran body/limit/export/radius, validasi OpenAPI di setiap request, dan query hanya lewat sqlc (berparameter) atau `source.sql` (berparameter).
 
@@ -780,11 +815,11 @@ Daftar fitur F2/F3 ada di PRD §6 dan tidak disalin di sini. Tabel ini hanya men
 | F2 | Pembanding BPS (TPK hotel, penjualan F&B per provinsi): tabel referensi per provinsi, ditampilkan di samping estimasi | PRD §6 (F2) |
 | F2 | Estimasi kategori lain (ritel, jasa): kelompok baru di `data/categories.yaml` + fungsi di `estimate` + versi `est-` naik | PRD §6 (F2) |
 | F2 | Signals perubahan (usaha tutup/berubah) dari `place_snapshots` dan `observed_at` | Watch/alert perubahan (PRD §6) |
-| F2 | Remap kategori langsung di DB dari `category_raw`/`categories_raw`, tanpa `--reset` | `--reset` terukur terlalu lama untuk perubahan mapping yang sering |
+| F2 | Remap kategori langsung di DB dari `category_raw`/`categories_raw`, tanpa `--reset` | `--reset` (butuh kiriman riwayat penuh, §5.1) terukur terlalu lama untuk perubahan mapping yang sering |
 | F2 | Geocoding alamat bebas untuk analisis lokasi | User butuh titik yang tidak bisa dipilih dari peta, bisnis, atau wilayah |
 | F2 | Proxy + cache tiles GeoAPI di Caddy | Banyak user di balik satu IP mencapai 120 req/menit |
 | F2 | Error tracking | Volume error mulai sulit dibaca dari log |
-| F3 | Filter negara di query sumber, batch import lebih besar | Import harian tidak selesai sebelum jam kerja (NFR-02) |
+| F3 | Batch import lebih besar | Import harian tidak selesai sebelum jam kerja (NFR-02) |
 | F3 | Rantai hitung ulang incremental (hanya tempat berubah), batch scoring lebih besar | Dataset > 5 juta atau rantai > 1 jam |
 | F3 | Partisi `place_snapshots` | Ukuran tabel atau query riwayat terukur lambat |
 | F3 | Cache (Redis) | p95 search/analisis lokasi melewati NFR-01 setelah tuning query/index |
