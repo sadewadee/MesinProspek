@@ -356,7 +356,7 @@ Lama menginap, jumlah kamar, dan ADR diambil dari benchmark ops per **kelas akom
 
 | Parameter | Default awal |
 |---|---|
-| Review rate `makan`, `kafe` (bawah / tengah / atas) | 1% / 1,5% / 2% (benchmark industri F&B casual) |
+| Review rate `makan`, `kafe` (bawah / tengah / atas) | 1% / 1,5% / 2% |
 | Review rate `hotel` | 10% |
 | Faktor belanja | 0,8 |
 | Benchmark harga per orang per kelompok | Kosong (diisi ops) |
@@ -365,6 +365,8 @@ Lama menginap, jumlah kamar, dan ADR diambil dari benchmark ops per **kelas akom
 | Penanda laju berubah | Selisih > 30% |
 | Ambang jam inti | 60% dari puncak |
 | Ambang pola datar | 80% jam buka |
+
+**Semua default di atas adalah asumsi awal, bukan angka bersumber.** Review rate dan faktor belanja diambil dari sample case founder; riset publik tidak menemukan angka review rate yang bisa dikutip. Ambang jam inti, pola datar, dan penanda bintang 5 dipilih agar cocok dengan dua sample case, sehingga berisiko terlalu pas dengan dua contoh itu. Ambang ditinjau ulang setelah distribusinya diukur di data nyata (Q-14), sebelum rilis F1. UI menyebut parameter ini "asumsi", bukan "benchmark".
 
 Mengubah parameter memicu hitung ulang (FR-EST-06) dan tercatat di audit.
 
