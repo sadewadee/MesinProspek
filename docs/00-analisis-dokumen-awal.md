@@ -181,11 +181,12 @@ Revisi 0.2 menerapkan arahan founder: **KISS, DRY, make it work → right → fa
 | Q-06 | Data acuan revenue | **Terjawab:** benchmark di dashboard ops (D-32). Omzet nyata usaha tidak tersedia dan tidak dijanjikan |
 | Q-07 | Calon customer beta & Offering mereka | **Terjawab:** peserta sudah ada |
 | Q-08 | GitHub tetap jadi mirror atau ditinggalkan? | **Terjawab:** GitLab repo utama; mirror GitHub opsional, tanpa CI |
-| Q-09 | Spesifikasi satu server & lokasi backup off-site | Terbuka |
+| Q-09 | Spesifikasi satu server & lokasi backup off-site (disk juga menampung `gmaps-db` + satu dump; ukurannya bergantung pada ukuran dump) | Terbuka |
 | Q-11 | Validasi hukum PDP | Tim legal |
 | Q-12 | Akses jaringan dari server MesinProspek ke DB gmaps (lokasi DB, cara koneksi, akun read-only), plus index (`created_at`, `id`) di tabel sumber untuk import inkremental | **Terjawab:** lewat import dump (D-35); index dibuat ops setelah restore |
 | Q-14 | Cakupan data Indonesia per kota & kelompok: % tempat dengan riwayat ≥ 30 hari, dengan `popular_times`, dengan harga | **Terjawab** (diukur ulang sebelum beta): riwayat cukup di Bali, kota lain ±0% saat diukur (PRD §7.1) |
 | Q-15 | Denpasar dan Gianyar tidak muncul di 30 kota F&B teratas (nama kota dwibahasa atau data memang sedikit?) | Ditunda: founder mengaudit ulang |
+| Q-16 | Kadens pengiriman dump DB gmaps (menentukan ambang AL-11 dan seberapa segar data) | Terbuka (founder) |
 | Q-13 | Skema lengkap tabel sumber di DB gmaps (nama kolom ID tempat, telepon, website, sosial, koordinat) | **Terjawab:** sampel record lengkap dari founder (PRD §7.1, pemetaan kolom di 04) |
 
 ## 9. Peta dokumen lanjutan

@@ -1,6 +1,6 @@
 # 09 — Runbook Operasional
 
-Prosedur operasi F1 untuk `production` dan `staging`. Keduanya berjalan di **satu server** bersama GitLab dan monitoring (D-19, D-26). Versi 0.3 (lean) · 2026-10-11: data dibaca dari DB gmaps (D-31). Stack dan nama mengikuti [README](README.md). Pipeline, runner, batas resource, bootstrap server, dan konfigurasi backup ada di [06](06-ci-cd.md). Dokumen ini hanya berisi apa yang dikerjakan saat operasi.
+Prosedur operasi F1 untuk `production` dan `staging`. Keduanya berjalan di **satu server** bersama GitLab dan monitoring (D-19, D-26). Versi 0.3 (lean) · 2026-10-11: data dibaca dari DB gmaps (D-31), lewat salinan lokal `gmaps-db` yang di-restore dari dump founder (D-35). Stack dan nama mengikuti [README](README.md). Pipeline, runner, batas resource, bootstrap server, dan konfigurasi backup ada di [06](06-ci-cd.md). Dokumen ini hanya berisi apa yang dikerjakan saat operasi.
 
 **Konvensi.** Placeholder ditulis `<…>`. Waktu dalam WIB. Apa pun yang bisa diubah lewat GitLab atau halaman ops diubah lewat sana, bukan lewat SSH, termasuk pengaturan AI, plan, dan parameter estimasi (D-29, D-32). Perintah di server dijalankan dari direktori Compose (§1.1). `msp` dijalankan di image aplikasi: `docker compose run --rm worker msp <subcommand>`.
 
@@ -12,7 +12,7 @@ Satu dedicated server di Indonesia. Semua domain lewat satu `caddy` di `/opt/ops
 |---|---|---|
 | `/opt/msp` (production) | `web`, `api`, `worker`, `kratos`, `postgres` (+ pgBackRest, stanza `msp`) | `https://app.<domain>` · health `/healthz`, `/readyz` · halaman ops `/ops` |
 | `/opt/msp-staging` (staging) | sama dengan production | `https://staging.<domain>` |
-| `/opt/ops` | `caddy`, `gitlab` (+ container registry), `gitlab-runner` (runner `ci`), `prometheus`, `alertmanager`, `grafana`, `node-exporter` | `https://gitlab.<domain>`, `https://registry.<domain>`, `https://grafana.<domain>` |
+| `/opt/ops` | `caddy`, `gitlab` (+ container registry), `gitlab-runner` (runner `ci`), `prometheus`, `alertmanager`, `grafana`, `node-exporter`, `gmaps-db` (salinan lokal DB gmaps, dibaca staging dan production; dump terbaru di `/opt/ops/gmaps-dump/`) | `https://gitlab.<domain>`, `https://registry.<domain>`, `https://grafana.<domain>`. `gmaps-db` tanpa URL dan tanpa port |
 | host (systemd) | `gitlab-runner` (runner `deploy`, shell, user `deploy`) | — |
 
 Direktori dibuat oleh `deploy/bootstrap.sh` (06 §9). Prometheus mengambil `/metrics` production dan staging lewat network Docker (06 §2), serta metrik host dari `node-exporter` (disk, CPU, RAM). Alertmanager mengirim alert ke email dan Telegram `<grup-ops>`.
@@ -22,7 +22,7 @@ Monitoring ini ada di server yang sama, jadi server yang mati hanya bisa terdete
 ### 1.2 Dependensi eksternal
 | Dependensi | Dipakai untuk | Bila gangguan |
 |---|---|---|
-| **DB gmaps** (Postgres **milik founder**, di luar server ini; founder juga menjalankan scraper-nya) | Sumber data: job `import.run` harian dan `msp tool import --country ID` (RB-03), lewat koneksi keluar ber-TLS dengan akun read-only `MSP_SOURCE_DATABASE_URL`. Sisi gmaps mungkin meng-allowlist IP server (06 §2, Q-12) | Import gagal (AL-10) atau data berhenti bertambah (AL-11). App tetap jalan dengan data terakhir dan tanggalnya. Kabari founder |
+| **Dump DB gmaps** dari founder (founder menjalankan scraper dan menyimpan DB aslinya) | Sumber data. Dump diserahkan berkala (`<kadens-dump>`, §4) dan di-restore ke `gmaps-db` (RB-15), lalu dibaca job `import.run` harian dan `msp tool import --country ID` (RB-03) dengan role read-only `msp_source_ro`. Tidak ada koneksi jaringan ke server founder (D-35) | Dump tidak datang → data berhenti bertambah (AL-11). App tetap jalan dengan data terakhir dan tanggalnya. Kabari founder |
 | GeoAPI (`geoapi.mcpke.dev`) | `msp tool geo-sync --country ID`, vector tiles peta | Peta tanpa batas wilayah; tabel peringkat tetap jalan. Tunda geo-sync |
 | Claude (Anthropic API) | Narasi AI (provider dan model diatur di Pengaturan AI, RB-14) | Pindah ke fallback bila fallback aktif (AL-08) |
 | API OpenAI-compatible (fallback) | Narasi AI bila provider utama gagal | Keduanya gagal → kill switch AI (RB-07) |
@@ -73,7 +73,7 @@ WHERE state = 'discarded' AND finalized_at > now() - interval '24 hours' GROUP B
 | Halaman ops `/ops` | Founder, `<staf-ops>` | Akun ops, MFA TOTP (FR-AUTH-03). Termasuk Pengaturan AI, plan, dan parameter estimasi |
 | Grafana | Founder, `<engineer>` | Login admin bawaan Grafana lewat HTTPS |
 | Panel penyedia: hosting, DNS, storage backup, uptime monitor, Anthropic, LLM fallback, SMTP, Google Cloud | Founder | MFA |
-| DB gmaps (akun read-only, allowlist IP) | Founder | Dikelola di sisi gmaps, bukan dari server ini |
+| `gmaps-db` (restore dump, role `msp_source_ro`) | Founder, `<engineer>` | Lewat SSH di `/opt/ops` (RB-15). Dump asli disimpan founder |
 
 ## 3. Prosedur
 ### RB-01 — Deploy production
@@ -92,11 +92,11 @@ WHERE state = 'discarded' AND finalized_at > now() - interval '24 hours' GROUP B
 **Verifikasi:** `docker compose ps --format '{{.Service}} {{.Image}}'` menunjukkan sha tag lama (`git rev-list -n1 <tag-lama>`); `/readyz` OK; 5xx dan p95 kembali normal.
 
 ### RB-03 — Import dari DB gmaps
-**Kapan:** otomatis tiap hari pukul 03.00 WIB lewat job `import.run` (antrean `import`) di production dan staging (masing-masing ke DB-nya sendiri; selesai sebelum jam kerja, NFR-02). Manual untuk import pertama (instalasi baru, setelah RB-04), setelah AL-10 atau AL-11 beres, setelah perbaikan pemetaan kolom, atau bila founder minta data terbaru segera.
+**Kapan:** otomatis tiap hari pukul 03.00 WIB lewat job `import.run` (antrean `import`) di production dan staging (masing-masing ke DB-nya sendiri; selesai sebelum jam kerja, NFR-02). Manual untuk import pertama (instalasi baru, setelah RB-04), setelah restore dump baru (RB-15) bila data perlu segera, setelah AL-10 atau AL-11 beres, setelah perbaikan pemetaan kolom, atau bila founder minta data terbaru segera.
 
-Import membaca snapshot di DB gmaps secara inkremental berdasarkan waktu scrape, hanya untuk negara aktif (`--country ID`; negara lain dilewati dan dihitung), lalu upsert per ID tempat. Membaca ulang rentang yang sama tidak membuat duplikat (FR-DATA-01). Tidak ada file dataset, dan MesinProspek tidak melakukan scraping. Detail di 04.
+Import membaca snapshot di `gmaps-db` (salinan lokal DB gmaps, RB-15) secara inkremental berdasarkan waktu scrape, hanya untuk negara aktif (`--country ID`; negara lain dilewati dan dihitung), lalu upsert per ID tempat. Membaca ulang rentang yang sama tidak membuat duplikat (FR-DATA-01). MesinProspek tidak melakukan scraping; snapshot baru hanya datang lewat dump dari founder. Detail di 04.
 
-1. **Harian:** tidak ada yang dijalankan. Di cek harian (§6), buka `/ops/imports`: import terakhir selesai, jeda snapshot terakhir ≤ 2 hari.
+1. **Harian:** tidak ada yang dijalankan. Di cek harian (§6), buka `/ops/imports`: import terakhir selesai, jeda snapshot terakhir di bawah ambang AL-11.
 2. **Manual.** Pastikan tidak ada job di antrean `import` yang `running` (Q1). Jalankan di `tmux` agar tidak putus saat SSH putus, mulai dari staging:
    ```bash
    ssh -t <user>@<server> tmux new -s import
@@ -104,7 +104,7 @@ Import membaca snapshot di DB gmaps secara inkremental berdasarkan waktu scrape,
    ```
    Bila laporan staging masuk akal (langkah 4), jalankan perintah yang sama di `/opt/msp`.
 3. **Import pertama** membaca seluruh riwayat DB gmaps, jadi bisa berjam-jam.
-   - Kabari founder dulu karena import ini membebani DB gmaps. Jalankan di jam sepi dan cek `df -h` (DB staging dan production di disk yang sama, RB-13).
+   - Import ini membebani `gmaps-db` dan DB MSP di server yang sama. Jalankan di jam sepi dan cek `df -h` (`gmaps-db`, DB staging, dan DB production di disk yang sama, RB-13).
    - Import ini **bisa dilanjutkan**: bila terputus (SSH, restart container, deploy), jalankan ulang perintah yang sama. Import melanjutkan dari titik terakhir tanpa duplikat.
    - Selesaikan staging dulu, baru production; jangan bersamaan. Selama berjalan, AL-03 dan AL-04 (`import`, `score`) wajar.
 4. **Baca laporan** (output tool dan `/ops/imports`): **snapshot baru**, **tempat baru**, **berubah**, **dilewati (negara lain)**, **ditolak per alasan**, serta snapshot terakhir dan jedanya.
@@ -112,7 +112,7 @@ Import membaca snapshot di DB gmaps secara inkremental berdasarkan waktu scrape,
    - Ditolak > 5% dari snapshot Indonesia, atau ada alasan yang tidak dikenal → kirim laporan dan contohnya ke engineering sebelum import berikutnya.
    - Snapshot baru = 0 berhari-hari padahal import sukses → AL-11.
 5. **Skema DB gmaps berubah.** Import memeriksa kolom sumber saat mulai dan **gagal cepat** dengan pesan yang menyebut kolom yang hilang atau berubah. Tidak ada data yang ditulis, dan app tetap jalan dengan data terakhir (FR-DATA-01, PRD §13).
-   1. Simpan pesan error (`/ops/imports` atau L1 untuk `worker`), lalu tanyakan founder apa yang berubah di sisi gmaps.
+   1. Simpan pesan error (`/ops/imports` atau L1 untuk `worker`), lalu tanyakan founder apa yang berubah di skema dump terbaru.
    2. Engineering memperbaiki **satu file pemetaan kolom** (04) lewat MR biasa → `main` (staging otomatis) → tag patch → RB-01.
    3. Jalankan import manual (langkah 2) di staging lalu production. Karena import gagal sebelum membaca data, tidak ada snapshot yang terlewat.
 
@@ -193,27 +193,27 @@ docker compose up -d --wait postgres          # RB-11: lewati; deploy yang menya
 **Kapan:** server rusak, hilang, atau terkompromi. Production, staging, GitLab, dan monitoring semuanya ikut mati: SEV-1, RTO ≤ 8 jam (NFR-04). Bila server terkompromi: jangan hapus server lama (bukti), jalankan langkah kebocoran data (§5), dan rotasi semua secret (RB-12) sebelum deploy.
 1. Pesan server baru di Indonesia dengan spesifikasi yang sama. Turunkan TTL DNS `<domain>` ke 300 detik bila masih sempat.
 2. Bootstrap dari clone repo (06 §9), dengan `/opt/ops/.env` dari password manager founder.
-3. Arahkan DNS semua subdomain `<domain>` ke IP baru. Ini dilakukan sebelum langkah berikutnya karena Caddy butuh DNS untuk sertifikat TLS, dan runner serta registry diakses lewat domain. `app.<domain>` belum melayani sampai langkah 6. Minta founder memasukkan IP baru ke allowlist DB gmaps bila sisi gmaps memakainya (Q-12).
+3. Arahkan DNS semua subdomain `<domain>` ke IP baru. Ini dilakukan sebelum langkah berikutnya karena Caddy butuh DNS untuk sertifikat TLS, dan runner serta registry diakses lewat domain. `app.<domain>` belum melayani sampai langkah 6.
 4. Pulihkan GitLab dari backup off-site terbaru (`gitlab-backup restore`), dengan `gitlab-secrets.json` dan `gitlab.rb` dari password manager (06 §8). Lalu daftarkan ulang runner `ci` dan `deploy`. Tanpa backup: buat GitLab baru, push repo dari clone terbaru, lalu isi ulang variabel CI dari password manager.
 5. Restore DB dengan RB-10 di `/opt/msp`, hanya langkah `restore`, tanpa target waktu dan tanpa `--archive-mode=off`.
-6. Retry `deploy-production` di pipeline tag yang sedang berlaku (RB-01). Lalu jalankan pipeline `main` untuk staging; DB staging kosong, jadi jalankan RB-04 lalu import pertama RB-03 bila perlu.
+6. Retry `deploy-production` di pipeline tag yang sedang berlaku (RB-01). Minta founder mengirim ulang dump DB gmaps terbaru (file di server lama ikut hilang), lalu restore dengan RB-15, termasuk langkah sekali membuat role `msp_source_ro`. Lalu jalankan pipeline `main` untuk staging; DB staging kosong, jadi jalankan RB-04 lalu import pertama RB-03 bila perlu.
 7. Backup penuh: `cd /opt/msp && docker compose exec -u postgres postgres pgbackrest --stanza=msp --type=full backup`.
 
-**Verifikasi:** smoke test RB-01 lulus, RB-09 hijau, uptime monitor eksternal hijau, semua target Prometheus hijau, dan import manual RB-03 di production berhasil terhubung ke DB gmaps.
+**Verifikasi:** smoke test RB-01 lulus, RB-09 hijau, uptime monitor eksternal hijau, semua target Prometheus hijau, dan import manual RB-03 di production berhasil membaca `gmaps-db`.
 
 ### RB-12 — Rotasi secret
-**Kapan:** pemegang secret keluar, secret bocor atau diduga bocor (segera), atau diminta penyedia. Provider, model, dan base URL AI bukan secret; ubah di RB-14. Yang dirotasi di sini adalah API key (`MSP_ANTHROPIC_API_KEY`, `MSP_LLM_FALLBACK_API_KEY`), kredensial DB gmaps (`MSP_SOURCE_DATABASE_URL`), dan secret lain di `.env`.
+**Kapan:** pemegang secret keluar, secret bocor atau diduga bocor (segera), atau diminta penyedia. Provider, model, dan base URL AI bukan secret; ubah di RB-14. Yang dirotasi di sini adalah API key (`MSP_ANTHROPIC_API_KEY`, `MSP_LLM_FALLBACK_API_KEY`), password role `msp_source_ro` di `gmaps-db` (`MSP_SOURCE_DATABASE_URL`), dan secret lain di `.env`.
 1. Buat nilai baru di penyedia; biarkan nilai lama aktif dulu.
 2. GitLab → **Settings → CI/CD → Variables** → ubah variabel `MSP_…` terkait (Protected, Masked). Perbarui salinan di password manager founder.
 3. Jalankan ulang job deploy production untuk tag yang sedang berlaku. `.env` ditulis ulang (izin 600) dan container yang berubah dibuat ulang.
 4. Setelah verifikasi, cabut nilai lama di penyedia.
 
-Kasus khusus: password DB → `ALTER ROLE … PASSWORD …` lalu langsung langkah 2–3 di jam sepi (error singkat di antaranya). `MSP_SOURCE_DATABASE_URL` → founder membuat password atau akun read-only baru di sisi gmaps (nilai lama tetap aktif); langkah 2 untuk scope `staging` dan `production`; langkah 3 untuk keduanya (staging: Retry job `deploy-staging` di pipeline `main` terakhir); verifikasi dengan import manual RB-03 di keduanya; baru founder mencabut nilai lama. `MSP_ENCRYPTION_KEY` → jangan dirotasi tanpa rencana re-enkripsi dari engineering. Secret cookie Kratos → tambahkan nilai baru di depan daftar dan simpan yang lama agar user tidak logout massal. Secret `/opt/ops/.env` (Grafana, SMTP/Telegram Alertmanager) → ubah lewat SSH, `cd /opt/ops && docker compose up -d`, perbarui password manager.
+Kasus khusus: password DB → `ALTER ROLE … PASSWORD …` lalu langsung langkah 2–3 di jam sepi (error singkat di antaranya). `MSP_SOURCE_DATABASE_URL` → password role lokal `msp_source_ro`, satu nilai untuk staging dan production. Di luar jam import (RB-15 langkah 4): `cd /opt/ops && docker compose exec gmaps-db psql -U postgres`, lalu `\password msp_source_ro`; langsung langkah 2 untuk scope `staging` dan `production` dan langkah 3 untuk keduanya (staging: Retry job `deploy-staging` di pipeline `main` terakhir). Import yang mulai di antaranya gagal login; verifikasi dengan import manual RB-03 di keduanya. Password superuser `gmaps-db` → `\password postgres` dengan cara yang sama, lalu perbarui `MSP_GMAPS_DB_PASSWORD` di `/opt/ops/.env` dan password manager (env ini hanya dibaca saat volume `gmaps-data` pertama kali dibuat). `MSP_ENCRYPTION_KEY` → jangan dirotasi tanpa rencana re-enkripsi dari engineering. Secret cookie Kratos → tambahkan nilai baru di depan daftar dan simpan yang lama agar user tidak logout massal. Secret `/opt/ops/.env` (Grafana, SMTP/Telegram Alertmanager) → ubah lewat SSH, `cd /opt/ops && docker compose up -d`, perbarui password manager.
 
 **Verifikasi:** `stat -c '%a %y' /opt/msp/.env` → `600` dengan waktu baru; fitur pemakai secret berfungsi (narasi AI, email, login Google, `pgbackrest check`, import RB-03); status key di Pengaturan AI "Terpasang".
 
 ### RB-13 — Disk hampir penuh
-**Kapan:** AL-07, atau sebelum import pertama (RB-03). Semua project memakai disk yang sama.
+**Kapan:** AL-07, sebelum import pertama (RB-03), atau sebelum restore dump (RB-15). Semua project memakai disk yang sama, termasuk `gmaps-db`.
 ```bash
 df -h && docker system df
 sudo du -xh --max-depth=3 /var/lib/docker /opt /home 2>/dev/null | sort -h | tail -15
@@ -222,7 +222,7 @@ docker builder prune -af --filter "until=168h"   # cache build
 docker volume prune -af --filter "label=com.gitlab.gitlab-runner.managed=true"   # hanya volume cache runner CI
 sudo journalctl --vacuum-size=500M
 ```
-Registry GitLab: `cd /opt/ops && docker compose exec gitlab gitlab-ctl registry-garbage-collect -m` (registry read-only sebentar, jangan saat pipeline jalan). Masih penuh → DB staging boleh dikosongkan (`cd /opt/msp-staging && docker compose down -v`), lalu diisi lagi lewat pipeline `main` + RB-04 + RB-03 saat ruang cukup. Tidak pernah untuk production.
+Registry GitLab: `cd /opt/ops && docker compose exec gitlab gitlab-ctl registry-garbage-collect -m` (registry read-only sebentar, jangan saat pipeline jalan). File dump di `/opt/ops/gmaps-dump/` selain yang terbaru boleh dihapus; database `gmaps_new` atau `gmaps_old` sisa restore yang terhenti boleh di-drop (RB-15). Masih penuh → DB staging boleh dikosongkan (`cd /opt/msp-staging && docker compose down -v`), lalu diisi lagi lewat pipeline `main` + RB-04 + RB-03 saat ruang cukup. Tidak pernah untuk production.
 
 **Jangan pernah** menghapus isi data Postgres atau `pg_wal`, dan jangan `docker volume prune` tanpa filter label runner. `pg_wal` yang membesar berarti arsip WAL gagal → AL-06. Bila disk tetap > 80% setelah dibersihkan, tambah disk (keputusan founder).
 
@@ -242,8 +242,44 @@ Registry GitLab: `cd /opt/ops && docker compose exec gitlab gitlab-ctl registry-
 
 **Verifikasi:** perubahan ada di `/ops/audit` (nilai lama → baru). AI: satu narasi AI di workspace uji berhasil dan L1 `worker` tanpa error provider. Plan: nilai baru tampil di `/ops/plans`. Parameter estimasi: di staging dan production, profil yang dicek menampilkan parameter baru dengan angka yang bergeser sesuai rumus, dan antrean `import` dan `score` kosong.
 
+### RB-15 — Restore dump DB gmaps ke `gmaps-db`
+**Kapan:** founder menyerahkan dump baru (`<kadens-dump>`, §4), instalasi baru (06 §9), bangun ulang server (RB-11), atau `gmaps-db` rusak (restore ulang dari dump terbaru yang disimpan di server). Staging dan production membaca salinan yang sama (06 §2), jadi prosedur ini dijalankan sekali untuk keduanya.
+
+Dump di-restore ke database baru `gmaps_new` sementara `gmaps` tetap dibaca, lalu namanya ditukar. `id` dan `created_at` ikut terbawa, jadi cursor import di DB MSP tetap berlaku dan import berikutnya hanya membaca snapshot yang lebih baru (04 §5.1). Perintah dijalankan di `/opt/ops`, di `tmux` karena restore bisa lama.
+
+**Sekali per volume `gmaps-data`** (instalasi baru, RB-11): buat role read-only dengan password yang sama dengan `MSP_SOURCE_DATABASE_URL` (password manager founder): `docker compose exec gmaps-db psql -U postgres`, lalu `CREATE ROLE msp_source_ro LOGIN;` dan `\password msp_source_ro`.
+
+1. **Terima dump.** Founder membuat dump tabel `business_listings` dengan `pg_dump -Fc -t business_listings`, lalu menyebutkan versi `pg_dump` dan sha256 file-nya. Ops menyalin file ke `/opt/ops/gmaps-dump/` dan mencocokkan `sha256sum`. Cek `df -h`: selama restore, `gmaps` dan `gmaps_new` ada bersamaan (04 §2.1); ruang kurang → RB-13.
+2. **Restore ke `gmaps_new`.** Indeks dan constraint dari founder tidak ikut (`--section`); yang dibutuhkan import hanya indeks di langkah 3.
+   ```bash
+   cd /opt/ops
+   docker compose exec gmaps-db psql -U postgres -c 'DROP DATABASE IF EXISTS gmaps_new' -c 'CREATE DATABASE gmaps_new'
+   docker compose exec gmaps-db pg_restore -U postgres -d gmaps_new --no-owner --no-privileges --exit-on-error \
+     --section=pre-data --section=data /dump/<file>
+   ```
+3. **Indeks keyset dan grant read-only.**
+   ```bash
+   docker compose exec gmaps-db psql -U postgres -d gmaps_new -v ON_ERROR_STOP=1 \
+     -c 'CREATE INDEX ON business_listings (created_at, id)' \
+     -c 'GRANT SELECT ON business_listings TO msp_source_ro' -c 'ANALYZE business_listings'
+   ```
+4. **Pilih waktu tanpa import.** Hindari sekitar 03.00 WIB (job harian `import.run`). `/ops/imports` di staging dan production tidak boleh menunjukkan run yang sedang berjalan (import memegang advisory lock sampai selesai, 04 §5.1).
+5. **Tukar nama.** Rename gagal selama masih ada koneksi ke `gmaps`, jadi sesi sisa diputus dulu. `ON_ERROR_STOP` menghentikan perintah di langkah pertama yang gagal, sehingga `gmaps_old` tidak di-drop sebelum `gmaps` baru ada.
+   ```bash
+   docker compose exec gmaps-db psql -U postgres -d postgres -v ON_ERROR_STOP=1 \
+     -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'gmaps'" \
+     -c 'ALTER DATABASE gmaps RENAME TO gmaps_old' -c 'ALTER DATABASE gmaps_new RENAME TO gmaps' \
+     -c 'DROP DATABASE gmaps_old'
+   ```
+   Lalu hapus file dump yang lebih lama di `/opt/ops/gmaps-dump/`; simpan hanya yang terbaru (06 §8).
+6. **Import.** Jalankan import manual RB-03 langkah 2 (staging dulu, lalu production), atau biarkan job harian mengambil snapshot baru.
+
+**Verifikasi:** `/ops/imports` di staging dan production: import setelah restore berstatus selesai, snapshot terakhir bergeser ke sekitar tanggal dump, dan **snapshot baru** > 0 (bila 0 padahal dump baru → kabari founder, AL-11). Error `permission denied` → ulangi grant langkah 3 di `gmaps`. `source schema mismatch` → RB-03 langkah 5.
+
 ## 4. Alert
 Aturan alert ada di `deploy/ops/` (Prometheus); AL-01 berasal dari uptime monitor eksternal. Ambang di bawah adalah acuannya. Level SEV di §5; L1, L2, Q1, Q2 di §1.3.
+
+**`<kadens-dump>`** = jarak antar-penyerahan dump DB gmaps yang disepakati dengan founder (D-35). **Belum diputuskan: keputusan founder.** Setelah diputuskan, nilainya diisi di aturan AL-11.
 
 | ID | Alert & ambang | Dampak | Langkah pertama |
 |---|---|---|---|
@@ -256,8 +292,8 @@ Aturan alert ada di `deploy/ops/` (Prometheus); AL-01 berasal dari uptime monito
 | AL-07 | **Disk penuh:** > 80% peringatan, > 90% kritis | Postgres berhenti menulis bila disk penuh → situs down. SEV-2, SEV-1 bila > 90% | RB-13 |
 | AL-08 | **Provider AI gagal:** > 20% narasi AI memakai fallback selama 15 menit (peringatan); > 20% gagal di provider utama dan fallback selama 10 menit (kritis) | narasi AI lambat/gagal, fitur lain normal. SEV-3 / SEV-2 | Halaman status penyedia + L1 untuk `worker`. 401/403 → key salah atau dicabut (RB-12). 429 → kuota/rate limit di konsol penyedia. 5xx/timeout → di Pengaturan AI (RB-14) aktifkan fallback atau ganti provider/model utama, cek dengan **Uji koneksi**. Kritis > 30 menit → kill switch AI (RB-07); nyalakan lagi setelah pulih |
 | AL-09 | **Resource host jenuh:** CPU > 85% atau RAM > 90% selama 15 menit | Production bisa melambat (AL-03). SEV-3, SEV-2 bila p95 production ikut naik | `docker stats --no-stream`. Periksa CI dan staging dulu; keduanya boleh dihentikan untuk melindungi production: `cd /opt/msp-staging && docker compose stop` dan `cd /opt/ops && docker compose stop gitlab-runner` (job CI tertunda). Nyalakan lagi dengan `start` setelah reda. Penyebab di production (import, rescore, query) → AL-03. Sering terjadi → founder (kapasitas, atau pisahkan GitLab/CI; PRD §13) |
-| AL-10 | **Import gagal:** tidak ada import sukses dari DB gmaps > 26 jam (job harian gagal, macet, atau tidak jalan) | Data tidak bertambah; app tetap jalan dan estimasi menampilkan tanggal datanya. SEV-3 | Pesan error di `/ops/imports`, Q2, L1 untuk `worker`. Kolom sumber hilang/berubah → RB-03 langkah 5. Koneksi timeout/ditolak/TLS → founder: DB gmaps hidup? IP server masih di allowlist (Q-12)? Login ditolak → kredensial (RB-12). Setelah beres → import manual RB-03 |
-| AL-11 | **Data sumber berhenti bertambah:** import sukses, tetapi tidak ada snapshot baru (Indonesia) > 2 hari | Data makin menua. Penyebabnya di sisi scraper. SEV-3 | AL-10 juga aktif → tangani AL-10 dulu. Bila tidak: cek snapshot terakhir dan jeda di `/ops/imports`, lalu kabari founder (pemilik scraper dan DB gmaps). Tidak ada tindakan di server kita |
+| AL-10 | **Import gagal:** tidak ada import sukses dari `gmaps-db` > 26 jam (job harian gagal, macet, atau tidak jalan) | Data tidak bertambah; app tetap jalan dan estimasi menampilkan tanggal datanya. SEV-3 | Pesan error di `/ops/imports`, Q2, L1 untuk `worker`. Kolom sumber hilang/berubah → RB-03 langkah 5. Koneksi gagal → `cd /opt/ops && docker compose ps gmaps-db`, L1 untuk `gmaps-db`, disk (RB-13). Database `gmaps` tidak ada → tukar nama RB-15 langkah 5 terhenti di tengah; selesaikan. `permission denied` → grant RB-15 langkah 3. Login ditolak → password `msp_source_ro` (RB-12). Setelah beres → import manual RB-03 |
+| AL-11 | **Data sumber berhenti bertambah:** import sukses, tetapi tidak ada snapshot baru (Indonesia) > `<kadens-dump>` + 1 hari | Data makin menua: belum ada dump baru, dump baru belum di-restore, atau dump baru tidak berisi snapshot baru (scraper berhenti). SEV-3 | AL-10 juga aktif → tangani AL-10 dulu. Dump baru sudah diterima tetapi belum di-restore → RB-15. Belum ada dump baru, atau snapshot terakhir di `/ops/imports` tidak bergeser setelah restore → kabari founder (pemilik scraper dan DB gmaps) |
 
 ## 5. Insiden
 | Level | Contoh | Respons |
@@ -294,7 +330,8 @@ Salam, Tim MesinProspek
 ## 6. Jadwal rutin
 | Kapan | Tugas |
 |---|---|
-| Harian | RB-09, termasuk job `backup`. `/ops/imports`: import harian selesai dan jeda snapshot ≤ 2 hari (RB-03). Tinjau alert 24 jam terakhir di Grafana. Bila Grafana tidak terbuka, monitoring mati dan tidak ada yang memperingatkan → SEV-2 |
+| Harian | RB-09, termasuk job `backup`. `/ops/imports`: import harian selesai dan jeda snapshot di bawah ambang AL-11 (RB-03). Tinjau alert 24 jam terakhir di Grafana. Bila Grafana tidak terbuka, monitoring mati dan tidak ada yang memperingatkan → SEV-2 |
 | Mingguan | `df -h` (RB-13 bila > 70%); Q2 job gagal; tren 5xx, p95, CPU, dan RAM di Grafana |
 | Bulanan | Uji restore RB-10 (DB sementara di server yang sama); update paket OS lalu reboot di jam sepi (semua service ikut restart, termasuk GitLab); update image dasar (`postgres`, `caddy`, `kratos`, `gitlab`, monitoring) lewat MR, `/opt/ops` diterapkan manual; tinjau daftar akses §2 |
 | Per rilis | RB-01 lengkap dengan smoke test; catat versi dan waktu deploy di `<log-ops>` |
+| Per dump dari founder | RB-15, lalu cek `/ops/imports` di staging dan production; catat tanggal dump di `<log-ops>` |
