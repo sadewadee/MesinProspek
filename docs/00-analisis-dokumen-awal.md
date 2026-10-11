@@ -145,7 +145,7 @@ Revisi 0.2 menerapkan arahan founder: **KISS, DRY, make it work → right → fa
 | D-11 | Modular monolith, satu binary Go | Accepted |
 | D-12 | PostgreSQL + PostGIS + full-text search Postgres. Tanpa mesin search terpisah | Accepted |
 | D-13 | Kunci wilayah = ID & kode area GeoAPI. Tanpa crosswalk Kemendagri/BPS di F1 | Accepted (menggantikan usulan lama) |
-| D-14 | Data utama dan backup disimpan di Indonesia | Accepted |
+| D-14 | Data utama dan backup disimpan di Indonesia (backup utama: SFTP/FTPS di Indonesia, D-39) | Accepted |
 | D-15 | AI: Claude, fallback ke API OpenAI-compatible | Accepted |
 | D-16 | Beachhead: penjual B2B (agency digital, vendor SaaS UMKM) ke bisnis lokal | Diganti D-30 |
 | D-17 | Brand Forest & Mint; heading Plus Jakarta Sans, body Inter | Accepted |
@@ -170,6 +170,7 @@ Revisi 0.2 menerapkan arahan founder: **KISS, DRY, make it work → right → fa
 | D-36 | Workspace baru mendapat grant awal satu kali **1.000 credit** (AI credit 0), diatur dari dashboard ops | Accepted |
 | D-37 | Dump penuh (±500 GB) tidak muat di disk 1 TB. Founder mengirim **export mingguan ramping**: baris Indonesia, hanya kolom yang dibaca import (tanpa `user_reviews` dan `images`; dari `user_reviews` hanya tanggal ulasan terbaru, D-38), hanya baris baru sejak kiriman sebelumnya − 1 hari; kiriman pertama = seluruh riwayat. `gmaps-db` hanya menampung kiriman terakhir; riwayat disimpan di DB MesinProspek. Memperbarui cara kirim di D-35 | Accepted |
 | D-38 | Laju ulasan punya **metode B**: dari tanggal N ulasan terbaru di satu snapshot (scraper mengambil ulasan urutan "Terbaru"). Metode A (riwayat snapshot ≥ 30 hari) tetap didahulukan. Hanya tanggal ulasan yang diimpor; teks, nama, dan foto tidak (PRD Lampiran E §E.1) | Accepted |
+| D-39 | **Backup off-site:** pgBackRest (WAL kontinu, terenkripsi AES-256 di server kita) menulis ke repo lokal, lalu rclone menyalinnya tiap 5 menit ke **SFTP/FTPS milik founder di Indonesia** (memenuhi D-14). Backup GitLab ikut disalin ke sana. Salinan kedua di Backblaze B2 disiapkan tetapi **nonaktif** sampai tim legal menjawab Q-19 | Accepted |
 
 ## 8. Pertanyaan terbuka
 
@@ -183,7 +184,7 @@ Revisi 0.2 menerapkan arahan founder: **KISS, DRY, make it work → right → fa
 | Q-06 | Data acuan revenue | **Terjawab:** benchmark di dashboard ops (D-32). Omzet nyata usaha tidak tersedia dan tidak dijanjikan |
 | Q-07 | Calon customer beta & Offering mereka | **Terjawab:** peserta sudah ada |
 | Q-08 | GitHub tetap jadi mirror atau ditinggalkan? | **Terjawab:** GitLab repo utama; mirror GitHub opsional, tanpa CI |
-| Q-09 | Spesifikasi satu server & lokasi backup off-site | **Sebagian terjawab:** server 56 core, 128 GB RAM, disk 1 TB (D-37). Lokasi backup off-site masih terbuka |
+| Q-09 | Spesifikasi satu server & lokasi backup off-site | **Terjawab:** server 56 core, 128 GB RAM, disk 1 TB (D-37); backup off-site ke SFTP/FTPS milik founder di Indonesia (D-39) |
 | Q-11 | Validasi hukum PDP | Tim legal |
 | Q-12 | Akses jaringan dari server MesinProspek ke DB gmaps (lokasi DB, cara koneksi, akun read-only), plus index (`created_at`, `id`) di tabel sumber untuk import inkremental | **Terjawab:** lewat import dump (D-35); index dibuat ops setelah restore |
 | Q-13 | Skema lengkap tabel sumber di DB gmaps (nama kolom ID tempat, telepon, website, sosial, koordinat) | **Terjawab:** sampel record lengkap dari founder (PRD §7.1, pemetaan kolom di 04) |
@@ -192,6 +193,7 @@ Revisi 0.2 menerapkan arahan founder: **KISS, DRY, make it work → right → fa
 | Q-16 | Kadens pengiriman data DB gmaps | **Terjawab:** mingguan (ambang AL-11 = 8 hari) |
 | Q-17 | Bisakah scraper mengambil N ulasan **terbaru** per tempat (urutan "Terbaru")? | **Terjawab:** bisa (D-38) |
 | Q-18 | Detail scraper untuk ulasan terbaru: berapa N, dan bagaimana snapshot ditandai sebagai urutan "Terbaru" | **Terjawab:** 20 ulasan terbaru per tempat; ditandai kolom `reviews_sort = 'newest'` |
+| Q-19 | Bolehkah salinan backup terenkripsi disimpan di luar Indonesia (Backblaze B2: region AS/Kanada/Eropa)? Salinan B2 nonaktif sampai dijawab | Tim legal |
 
 ## 9. Peta dokumen lanjutan
 

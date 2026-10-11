@@ -231,7 +231,7 @@ Nilai yang tidak bisa diukur dari data diatur ops dari dashboard (D-29, D-32): r
    - **Warung Kita (Jl. Pulau Kawe):** pola KR dan Joglo dari kasus asli, dengan Joglo sebagai pembanding. Jam inti tetangga 17–21 → saran jam buka **16.00–22.00**. Jam inti pembanding mencakup 12–14 tetapi tetangga tidak. Satu tetangga sejenis → keyakinan **Rendah** + saran cek lapangan. Harga rencana Rp25–50 rb vs KR Rp50–100 rb → **lebih murah**.
 3. Setiap nilai di profil dan analisis lokasi menampilkan claim type, sumber, dan tanggal data.
 4. Test otomatis lulus, termasuk isolasi workspace, SSRF webhook, dan idempotensi credit.
-5. Restore backup sudah dicoba sekali dan berhasil.
+5. Restore backup sudah dicoba sekali dan berhasil, **dari salinan off-site** (SFTP/FTPS, D-39), bukan dari repo lokal.
 6. Founder mencoba onboarding: hasil pertama ≤ 5 menit.
 
 ## 13. Risiko
