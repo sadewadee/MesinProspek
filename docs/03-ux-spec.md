@@ -111,8 +111,8 @@
 
 | # | Layar / alat | Langkah | Catatan |
 |---|---|---|---|
-| 1 | Job harian / CLI | Job `import` harian membaca snapshot baru dari DB gmaps (read-only, inkremental per waktu scrape). Manual: `msp tool import --country ID` (prosedur 09 RB-03). Bila area belum ada: `msp tool geo-sync --country ID` | Import pertama membaca seluruh riwayat. F1 hanya negara aktif `ID` (D-28); negara lain dilewati dan dihitung |
-| 2 | SCR-12 Import | Status sumber (snapshot terakhir, jeda) + riwayat job: status, laporan snapshot baru / tempat baru / berubah / dilewati (negara lain) / ditolak per alasan | "Dilewati (negara lain)" bukan error. Kolom sumber hilang → job gagal dengan pesan yang menyebut kolomnya, tidak ada data yang ditulis |
+| 1 | Job harian / CLI | Job `import.run` (tiap hari 03.00 WIB) membaca snapshot baru dari DB gmaps (read-only, inkremental per waktu scrape). Manual: `msp tool import --country ID`, atau `--reset` untuk membaca ulang seluruh riwayat setelah normalisasi berubah (09 RB-03). Bila area belum ada: `msp tool geo-sync --country ID` | Import pertama membaca seluruh riwayat. F1 hanya negara aktif `ID` (D-28); negara lain dilewati dan dihitung. Satu import per environment: bila import sedang berjalan, CLI berhenti dengan pesan "import sedang berjalan" dan job harian dilewati (04 §5.1) |
+| 2 | SCR-12 Import | Status sumber (snapshot terakhir, jeda) + riwayat job: status, laporan snapshot baru / tempat baru / berubah / dilewati (negara lain) / ditolak dan peringatan per alasan | "Dilewati (negara lain)" bukan error. Skema sumber tidak cocok → job gagal dengan pesan yang menyebut kolomnya, tidak ada data yang ditulis |
 | 3 | SCR-12 Import | Rantai hitung ulang berjalan: wilayah → estimasi → metrik wilayah → opportunity → skor → status "Diperbarui" | Customer melihat banner MENGHITUNG bila skor ICP-nya berubah. Estimasi baru tampil dengan "Data per" barunya |
 | 4 | SCR-12 Kesehatan | Cek jumlah bisnis, % terisi per field, % bisnis ber-riwayat cukup, % terpetakan | Target ≥ 98% terpetakan (FR-DATA-04). Di bawah target → indikator peringatan |
 
@@ -121,8 +121,8 @@
 | # | Layar | Langkah | Catatan |
 |---|---|---|---|
 | 1 | SCR-13 | Masuk dari sidebar, onboarding, profil ("Analisis lokasi di sini"), atau wilayah ("Analisis lokasi di area ini") | Dari profil: titik = koordinat bisnis itu, kelompok = kelompoknya |
-| 2 | SCR-13 | Isi input: titik, radius, kelompok target, harga per orang rencana (opsional), bisnis pembanding (opsional) | Lampiran F § Input |
-| 3 | SCR-13 | **Jalankan analisis · 1 credit** → dialog: biaya, saldo sebelum → sesudah, pratinjau gratis jumlah tetangga sejenis dengan data cukup | Pratinjau mencegah membayar untuk hasil "Tidak dapat dianalisis" |
+| 2 | SCR-13 | Isi input: titik, radius, kelompok target, harga per orang rencana (opsional), bisnis pembanding (opsional) | Lampiran F § Input. Pembanding = bisnis mana pun di data (mis. konsep yang ingin ditiru), tidak harus milik user. Tanpa pembanding analisis tetap lengkap |
+| 3 | SCR-13 | **Jalankan analisis · 1 credit** → dialog: biaya, saldo sebelum → sesudah | Hasil "Tidak dapat dianalisis" tidak ditagih (Lampiran D) |
 | 4 | SCR-13 | Hasil (≤ 3 s, NFR-01): kesimpulan → keyakinan → pola → jam inti & pembanding → posisi harga → sumber pengunjung siang → tetangga | Tersimpan otomatis. Feedback Relevan/Tidak relevan pada kesimpulan (FR-INTL-05) |
 | 5 | SCR-13 | Opsional: Narasi AI (FLOW-04) | 1 AI credit |
 | 6 | SCR-13 | Buka ulang dari daftar analisis tersimpan → gratis, hasil sama dengan saat dijalankan | Data lebih baru tersedia → info + "Jalankan ulang · 1 credit" (Lampiran D) |
@@ -170,7 +170,7 @@
 | | |
 |---|---|
 | Pertanyaan | "Apa yang ingin saya ketahui lebih dulu?" |
-| Langkah 1 | **Tujuan** (3 kartu, pilih satu): **Analisis lokasi** — "Di mana dan jam berapa cabang baru sebaiknya buka?" · **Kompetitor & omzet** — "Berapa kira-kira kunjungan dan omzet usaha di sekitar saya?" · **Cari prospek** — "Bisnis mana yang paling layak saya hubungi?" |
+| Langkah 1 | **Tujuan** (3 kartu, pilih satu): **Analisis lokasi** — "Di mana dan jam berapa usaha baru sebaiknya buka?" · **Kompetitor & omzet** — "Berapa kira-kira kunjungan dan omzet usaha di sekitar saya?" · **Cari prospek** — "Bisnis mana yang paling layak saya hubungi?" |
 | Kompetitor & omzet | Satu langkah: kelompok (Makan / Kafe / Hotel) + kab/kota → SCR-03 tampilan Estimasi, urut perkiraan omzet |
 | Cari prospek | **Offering**: chip tag `website_dev` (Pembuatan website), `social_media`, `local_seo`, `digital_ads`, `reputation_mgmt`, `booking_system`, `other` (label id-ID + 1 baris deskripsi; boleh > 1, tag pertama = primer) → **ICP**: kategori (taksonomi 2 level), wilayah (provinsi → kab/kota → kecamatan), kondisi digital, minimum rating & ulasan, toggle *Wajib/Preferensi* per kriteria; panel kanan "± 418 bisnis cocok" → progres skor → SCR-03 tampilan Prospek |
 | Analisis lokasi | Langsung ke `/locations/new` (SCR-13) |
@@ -184,7 +184,7 @@
 | Pertanyaan | "Bisnis mana yang paling layak saya perhatikan, dan kenapa?" |
 | Isi | Search kata kunci (nama, kategori, alamat). Panel filter (FR-SRCH-01): kategori, **kelompok estimasi**, wilayah, **rentang perkiraan omzet/tahun** (dibandingkan dengan nilai tengah), **punya pola keramaian**, rating, ada telepon / website / sosial, dan bila ICP aktif: band, tipe opportunity. Header hasil: jumlah tepat + "untuk ICP X" (bila ada) + tampilan + urutan. "Muat 50 lagi" |
 | Tampilan | **Estimasi** (default tanpa ICP): nama, kategori, kelurahan, "Data per" · perkiraan kunjungan/tahun (tengah + rentang) · perkiraan omzet/tahun (tengah + rentang + sumber harga) · laju ulasan · pola (label pola datar atau jam puncak) · penanda FR-EST-05 sebagai ikon + teks tooltip. **Prospek** (default dengan ICP): `ScoreBadge` · nama, kategori, kelurahan, freshness · opportunity teratas (1 baris alasan) · indikator kontak & digital (teks, bukan ikon saja) · rating. Hotel: kolom omzet berisi omzet kamar |
-| Urut | Skor (hanya dengan ICP aktif) · perkiraan kunjungan · perkiraan omzet (nilai tengah) · laju ulasan. Nilai "Belum dapat diperkirakan" selalu di akhir |
+| Urut | Skor (default bila ICP aktif) · perkiraan kunjungan (default tanpa ICP) · perkiraan omzet (nilai tengah) · laju ulasan. Nilai "Belum dapat diperkirakan" selalu di akhir. Urut skor atau filter band → hanya kandidat ICP aktif; tanpa ICP keduanya tidak tersedia |
 | Aksi | Buka profil · Simpan pencarian · Pilih banyak → bar aksi: Simpan ke list, Tag, Tugaskan, Unlock (n credit), Export, Kirim ke webhook. "Pilih semua hasil" maks. 10.000. **Batas per aksi:** Unlock dan Kirim ke webhook maks. 100 bisnis; Export maks. 10.000 baris per job. Di atas batas → tombol nonaktif + tooltip batasnya |
 | State khusus | NOL HASIL · MENGHITUNG (urutan bisa berubah → "Muat ulang dari atas") · DATA TERBATAS pada baris · BELUM DAPAT DIPERKIRAKAN per sel · FITUR DIMATIKAN (Export/Webhook di bar aksi). Di 360 px: daftar kartu |
 
@@ -194,8 +194,8 @@
 |---|---|
 | Pertanyaan | "Seberapa ramai dan besar usaha ini, seberapa yakin angkanya, dan apa langkah saya berikutnya?" |
 | Header | Nama · kategori (Turunan; kategori tambahan dari daftar kategori) · alamat · kelurahan › kecamatan · freshness · "Listing diklaim pemilik" bila ada (Teramati) · "Lihat di Google Maps" · **Analisis lokasi di sini** (nonaktif + tooltip bila koordinat tidak diketahui) · bila ICP aktif: `ScoreBadge` besar "untuk ICP X" + "Data terbatas" bila berlaku |
-| Perkiraan kunjungan & omzet (`makan`, `kafe`; FR-EST-02, Lampiran E §E.2) | Badge Perkiraan · "Data per <snapshot terbaru>" · `est-X.Y.Z`. Tabel 3 kolom **Rendah · Tengah · Tinggi** (tengah ditebalkan): kunjungan/tahun, tamu per hari buka, omzet/tahun, dibulatkan per BR-EST-02; baris kunjungan dan omzet diberi chart "Rentang estimasi" (02 §3.3). Baris **Dasar** (selalu terlihat): laju ulasan + 2 snapshot pembentuknya, **sumber harga** (harga tempat ini · median N bisnis sekelompok di kab/kota · benchmark ops · tidak diketahui), harga per orang, faktor belanja, review rate, hari buka per minggu ("jam buka tidak diketahui → dianggap 7 hari"). Expand **Tabel sensitivitas**: review rate bawah/tengah/atas → tamu per hari, omzet/tahun. Penanda FR-EST-05 di bawah angka. "Lihat evidence" membuka rumus langkah demi langkah |
-| Varian hotel (FR-EST-03, Lampiran E §E.3) | Kunjungan menginap/tahun · room-night/tahun · okupasi tahunan · omzet kamar/tahun ("tidak termasuk F&B dan acara"). Dasar: laju ulasan, review rate hotel, kelas akomodasi, lama menginap, jumlah kamar, ADR (benchmark ops, Perkiraan). Okupasi > 100% → baris okupasi diganti badge **"Asumsi tidak konsisten"** + 1 kalimat penjelasan, nilai okupasi tidak ditampilkan; nilai lain tetap tampil. Parameter kelas belum diisi ops → nilai yang bergantung padanya BELUM DAPAT DIPERKIRAKAN ("parameter hotel <kelas> belum diisi") |
+| Perkiraan kunjungan & omzet (`makan`, `kafe`; FR-EST-02, Lampiran E §E.2) | Badge Perkiraan · "Data per <snapshot terbaru>" · `est-X.Y.Z`. Tabel 3 kolom **Rendah · Tengah · Tinggi** (tengah ditebalkan): kunjungan/tahun, tamu per hari buka, omzet/tahun, dibulatkan per BR-EST-02; baris kunjungan dan omzet diberi chart "Rentang estimasi" (02 §3.3). Baris **Dasar** (selalu terlihat): laju ulasan + 2 snapshot pembentuknya, **sumber harga** (harga tempat ini · median N bisnis sekelompok di kab/kota · asumsi harga ops · tidak diketahui), harga per orang, faktor belanja dan review rate (disebut **asumsi**), hari buka per minggu ("jam buka tidak diketahui → dianggap 7 hari"). **Catatan metode** (selalu tampil, §E.2): pesanan aplikasi pesan-antar umumnya tidak tercakup. Expand **Tabel sensitivitas**: review rate bawah/tengah/atas → tamu per hari, omzet/tahun. Penanda FR-EST-05 di bawah angka (copy §7). "Lihat evidence" membuka rumus langkah demi langkah |
+| Varian hotel (FR-EST-03, Lampiran E §E.3) | Kunjungan menginap/tahun dan omzet kamar/tahun ("tidak termasuk F&B dan acara") sebagai rentang Rendah · Tengah · Tinggi (review rate hotel atas/tengah/bawah); room-night/tahun dan okupasi tahunan dari nilai tengah (04 §4.1). Dasar: laju ulasan, kelas akomodasi, dan asumsi ops (review rate hotel, lama menginap, jumlah kamar, ADR; Perkiraan). Okupasi > 100% → baris okupasi diganti badge **"Asumsi tidak konsisten"** + 1 kalimat penjelasan, nilai okupasi tidak ditampilkan; nilai lain tetap tampil. Asumsi kelas belum diisi ops → nilai yang bergantung padanya BELUM DAPAT DIPERKIRAKAN (copy §7) |
 | Pola keramaian (FR-EST-04, Lampiran E §E.4) | Label tetap (bukan tooltip): **"Relatif terhadap jam tersibuk tempat ini, bukan jumlah orang."** · "Data per <tanggal>" · zona waktu lokal. Tab **Rata-rata 7 hari** · Sen … Min. Chart "Pola keramaian satu tempat" (02 §3.3 Chart F1); jam puncak diberi label teks. Ringkasan: jam puncak (juga per hari), jam inti, **"Ramai sepanjang hari"** bila pola datar, keramaian rata-rata ("rata-rata 76% dari jam tersibuknya"), bentuk per blok waktu (Pagi/Siang/Sore/Malam/Larut, %). **Lihat sebagai tabel** (NFR-06): jam · nilai · perkiraan tamu per jam (tengah, hanya bila kunjungan diketahui). Hari dengan semua nilai 0 → "Tutup". Tanpa `popular_times` → BELUM DAPAT DIPERKIRAKAN ("data pola keramaian tidak tersedia untuk tempat ini") |
 | Riwayat ulasan (FR-EST-01) | Chart "Riwayat ulasan" (02 §3.3): jumlah ulasan per hari snapshot · laju setahun dan laju 90 hari terakhir. "Lihat data" → tabel tanggal, jumlah ulasan, rating. Riwayat < 30 hari → "Belum cukup riwayat (data sejak <tanggal>)" |
 | Harga, jam buka & atribut | Harga per orang (Teramati + tanggal snapshot-nya, BR-NORM-05) · jam buka per hari + zona · atribut tempat (Populer untuk, Tipe pengunjung, opsi layanan; Teramati) |
@@ -203,7 +203,7 @@
 | Opportunity (hanya bila ICP aktif) | Kartu per opportunity relevan (Lampiran B): judul, alasan + pembanding, badge Perkiraan, relevansi primer/sekunder, "Lihat evidence", **Relevan / Tidak relevan** (FR-INTL-05). Gap yang tidak relevan dengan Offering hanya tampil di Kehadiran digital |
 | Kontak | Telepon ter-mask + "Kemungkinan WhatsApp" bila seluler (BR-NORM-01). **Unlock · 1 credit** → nilai penuh + Salin / Telepon / WhatsApp (`wa.me`) + "Di-unlock oleh Rina · 10 Okt". Nilai yang di-suppress: "Kontak tidak tersedia", tombol Unlock tidak muncul (FR-PRIV-02) |
 | Kehadiran digital | Website + klasifikasi BR-NORM-02 · akun sosial · rating & jumlah ulasan. Website, sosial, dan Maps **tidak** ter-mask |
-| Konteks wilayah | Kelurahan: populasi (perkiraan model Kontur 2023), jumlah & densitas bisnis sekelompok per 1.000, kompetisi, permintaan terbukti, `market_score` → "Lihat wilayah" (SCR-05) |
+| Konteks wilayah | Kelurahan: populasi (perkiraan model Kontur 2023), jumlah & densitas bisnis sekelompok per 1.000 (kelompok `lainnya`: semua bisnis, Lampiran C), kompetisi, permintaan terbukti, `market_score` → "Lihat wilayah" (SCR-05) |
 | Narasi AI | FLOW-04. Teks `text.body-lg`, rujukan `[n]` |
 | Aksi & kerja tim | Unlock · Simpan ke list · Tugaskan · Kirim ke webhook · ‹ › bisnis berikutnya. Panel list, tag, catatan, pemilik (FR-ACT-01) |
 | State khusus | Setiap nilai punya claim type + evidence (§5). Kelompok `lainnya` → panel perkiraan BELUM DAPAT DIPERKIRAKAN ("kategori belum didukung estimasi"), pola keramaian tetap tampil bila ada. Tanpa koordinat / di luar semua poligon → wilayah dan Konteks wilayah "Tidak diketahui" (tanpa tebakan desa terdekat). AI dimatikan → FITUR DIMATIKAN. Di 360 px: satu kolom akordeon (urutan: perkiraan, pola, riwayat, harga & jam, lainnya) + bar bawah sticky [Unlock · 1 credit] [Aksi lain]; grafik pola default ke tampilan tabel |
@@ -232,7 +232,7 @@
 | | |
 |---|---|
 | Pertanyaan | "Berapa bisnis yang perlu di-unlock dulu, dan di mana file saya?" |
-| Dialog | Export gratis. Biaya = preview unlock yang sama dengan bulk Unlock: jumlah bisnis · sudah di-unlock (gratis) · akan di-unlock (n credit) · saldo sebelum → sesudah · format CSV/XLSX · "Unlock dijalankan sekarang; export yang gagal bisa diulang gratis" (FR-ACT-03, BR-CRED-01). Bisnis yang kontaknya di-suppress tidak di-unlock/ditagih dan disebutkan jumlahnya. File memuat kolom estimasi (rentang, sumber harga, "Data per", versi; daftar kolom di 04) |
+| Dialog | Export gratis. Bila ada bisnis yang belum di-unlock, dua pilihan: **Export tanpa unlock** (telepon ter-mask, gratis) atau **Unlock & export** dengan preview yang sama dengan bulk Unlock: jumlah bisnis · sudah di-unlock (gratis) · akan di-unlock (n credit) · saldo sebelum → sesudah · "Unlock dijalankan sekarang; export yang gagal bisa diulang gratis" (FR-ACT-03, BR-CRED-01). Format CSV/XLSX. Bisnis yang kontaknya di-suppress tidak di-unlock/ditagih dan disebutkan jumlahnya. File memuat kolom estimasi (rentang, sumber harga, "Data per", versi; daftar kolom di 04) |
 | Riwayat | Tabel job: dibuat, oleh, jumlah baris, status (Antre / Diproses / Selesai / Gagal), Unduh / Coba lagi. Status job diperbarui otomatis |
 | State khusus | CREDIT KURANG · FITUR DIMATIKAN · Gagal → ulangi gratis, unlock yang sudah jalan tetap berlaku · lebih dari 10.000 baris → minta persempit filter |
 
@@ -280,31 +280,31 @@
 | Pertanyaan | "Apakah data sehat, estimasi masuk akal, dan sistem terkendali?" |
 | Import | **Status sumber DB gmaps**: snapshot terakhir yang terbaca (waktu scrape, Indonesia), jeda sejak itu, import sukses terakhir; ambang peringatan mengikuti alert 09 AL-10/AL-11. **Riwayat job** `import`: pemicu (harian / manual), mulai–selesai, rentang waktu scrape yang dibaca, status, snapshot baru, tempat baru, berubah, dilewati (negara lain), ditolak per alasan, lalu status rantai hitung ulang. Job gagal → pesan utuh (mis. kolom sumber yang hilang) + "Tidak ada data yang ditulis". Laporan tampil di layar saja (FR-DATA-01) |
 | Kesehatan data | Jumlah bisnis (total dan per kelompok estimasi) · % terisi per field: telepon, website, sosial, jam buka, rating, koordinat, **harga**, **`popular_times`**, distribusi bintang · **% bisnis dengan ≥ 2 snapshot berjarak ≥ 30 hari** · % terpetakan kelurahan (target ≥ 98%) · distribusi band · versi model aktif (`est-`, `loc-`, `geo-`, `priority-`) |
-| Parameter estimasi (PRD Lampiran E §E.5) | Form per grup, setiap field menampilkan default PRD sebagai petunjuk: **Review rate** `makan`, `kafe` (bawah / tengah / atas) · `hotel` · **faktor belanja** · **benchmark harga per orang** per kelompok (Rp) · **hotel per kelas akomodasi** (bintang 1–5, hotel umum, resor, vila, penginapan): lama menginap, jumlah kamar, ADR · **ambang**: penanda bintang 5, laju berubah, jam inti, pola datar. Field kosong = estimasi yang bergantung padanya "Belum dapat diperkirakan". Validasi: persen 0 < x ≤ 100, bawah ≤ tengah ≤ atas, angka ≥ 0. Simpan (alasan wajib) → konfirmasi "Estimasi semua bisnis akan dihitung ulang" → status hitung ulang (FR-EST-06); tercatat di audit (nilai lama → baru) |
+| Parameter estimasi (PRD Lampiran E §E.5; kunci `est.*` di 04) | Judul tab dan label menyebut nilai ini **asumsi**, bukan benchmark. Form per grup, setiap field menampilkan default PRD sebagai petunjuk: **Review rate** `makan`, `kafe`, `hotel` (bawah / tengah / atas) · **faktor belanja** · **asumsi harga per orang** per kelompok (Rp min–max) · **hotel per kelas akomodasi** (bintang 1–5, hotel umum, resor, vila, penginapan): lama menginap, jumlah kamar, ADR · **ambang**: penanda bintang 5, laju berubah, jam inti, pola datar. Field kosong = estimasi yang bergantung padanya "Belum dapat diperkirakan". Validasi: persen 0 < x ≤ 100, bawah ≤ tengah ≤ atas, angka ≥ 0. Simpan (alasan wajib) → konfirmasi "Estimasi semua bisnis akan dihitung ulang" → status hitung ulang (FR-EST-06); tercatat di audit (nilai lama → baru) |
 | Flag | Toggle AI / export / webhook + alasan wajib → banner FITUR DIMATIKAN di app customer |
 | Pengaturan AI | Form (FR-ACT-05, D-29): provider utama (Claude / OpenAI-compatible) + model utama · fallback aktif/nonaktif + base URL (HTTPS) + model · status API key per provider "Terpasang" / "Belum diset" (hanya status; key adalah secret server, tidak bisa dilihat atau diubah di UI). **Uji koneksi**: prompt uji tanpa data bisnis ke provider utama & fallback memakai nilai di form → OK/gagal + latensi + pesan error, tanpa AI credit. Simpan → berlaku untuk narasi baru ≤ 60 s tanpa redeploy; tercatat di audit (nilai lama → baru). Kill switch tetap di Flag |
 | Suppression | Cari / tambah / hapus nilai (telepon, URL) + alasan (FR-PRIV-02). Efek: hilang dari tampilan, export, dan webhook |
-| State khusus | Semua aksi tulis masuk audit. Persentase di bawah target ditandai ikon + teks "Di bawah target". Pengaturan AI: API key provider terpilih belum diset → Simpan nonaktif + "API key belum diset di server". Parameter: hitung ulang sedang berjalan → Simpan nonaktif sampai selesai |
+| State khusus | Semua aksi tulis masuk audit. Import sedang berjalan → status "Berjalan" + progres batch. Persentase di bawah target ditandai ikon + teks "Di bawah target". Pengaturan AI: API key provider terpilih belum diset → Simpan nonaktif + "API key belum diset di server". Parameter: hitung ulang sedang berjalan → Simpan nonaktif sampai selesai |
 
 ### SCR-13 — Analisis lokasi
 
 | | |
 |---|---|
-| Pertanyaan | "Apakah titik ini cocok untuk cabang saya, jam berapa sebaiknya buka, dan di posisi harga mana?" |
+| Pertanyaan | "Apakah titik ini cocok untuk usaha saya, jam berapa sebaiknya buka, dan di posisi harga mana?" |
 | Daftar (`/locations`) | Analisis tersimpan: nama, titik, kelompok, radius, keyakinan, "Data per", dibuat oleh, tanggal. Ubah nama · hapus · buka (gratis). CTA **Analisis baru** |
-| Form (`/locations/new`) | Peta (MapLibre, basemap OSM + tiles GeoAPI) + panel input (Lampiran F § Input): **Titik** = klik peta, cari alamat (dicari di alamat bisnis dan nama wilayah yang sudah ada di database; titik dipastikan dengan klik peta), atau pilih bisnis yang sudah ada · **Radius** slider + input angka 100–2.000 m (default 500, lingkaran tampil di peta) · **Kelompok target** Makan / Kafe / Hotel · **Harga per orang rencana** (opsional): Rp min – Rp max (max boleh kosong = rentang terbuka) · **Bisnis pembanding** (opsional, mis. outlet milik Anda): cari bisnis. Nama otomatis "<jalan/kelurahan> · <kelompok> · <radius>" |
-| Biaya | **Jalankan analisis · 1 credit** → dialog: biaya, saldo sebelum → sesudah, **pratinjau gratis** "Dalam radius ini: N tetangga sejenis dengan data cukup (keyakinan X)", "Hasil tersimpan dan bisa dibuka ulang gratis" (Lampiran D). Mengubah input apa pun = analisis baru |
+| Form (`/locations/new`) | Peta (MapLibre, basemap OSM + tiles GeoAPI) + panel input (Lampiran F § Input): **Titik** = klik peta, atau cari alamat = pilih bisnis atau wilayah dari pencarian (F1 tanpa geocoder eksternal, 04 §7.3), lalu titik bisa digeser dengan klik peta · **Radius** slider + input angka 100–2.000 m (default 500, lingkaran tampil di peta) · **Kelompok target** Makan / Kafe / Hotel · **Harga per orang rencana** (opsional): Rp min – Rp max (max boleh kosong = rentang terbuka) · **Bisnis pembanding (opsional)**: cari bisnis mana pun di data, mis. konsep yang ingin ditiru; tidak harus milik Anda. Nama otomatis "<jalan/kelurahan> · <kelompok> · <radius>" |
+| Biaya | **Jalankan analisis · 1 credit** → dialog: biaya, saldo sebelum → sesudah, "Hasil tersimpan dan bisa dibuka ulang gratis. Tidak ditagih bila hasilnya Tidak dapat dianalisis" (Lampiran D). Mengubah input apa pun = analisis baru |
 | Hasil (`/locations/[id]`) — kepala | Ringkasan input · "Data per <snapshot tetangga terbaru>" · `loc-X.Y.Z` · dibuat oleh, tanggal. Aksi: Ubah nama · **Jalankan ulang · 1 credit** (input sama, data terbaru) · Ubah input (analisis baru) · Hapus. Peta: titik, lingkaran radius, penanda tetangga per kelompok (bentuk + label, tabel Tetangga sebagai padanan) |
-| 1. Kesimpulan | Deterministik (Lampiran F § Kesimpulan): saran jam buka, posisi harga, jam inti pembanding yang tidak didukung tetangga, keyakinan. Badge Turunan. **Relevan / Tidak relevan** (FR-INTL-05) |
+| 1. Kesimpulan | Deterministik (Lampiran F § Kesimpulan): saran jam buka, posisi harga, jam inti pembanding yang tidak didukung tetangga (bila ada pembanding), keyakinan. Badge Turunan. **Relevan / Tidak relevan** (FR-INTL-05) |
 | 2. Keyakinan | `ConfidenceMeter` + label Tinggi/Sedang/Rendah + "N tetangga sejenis dengan data cukup". Rendah → kotak **saran cek lapangan** (teks Lampiran F, dengan nama tetangga dan jam puncak/sepi terisi). 0 → state TIDAK DAPAT DIANALISIS |
-| 3. Pola keramaian tetangga vs pembanding | Chart "Perbandingan pola" (02 §3.3): **bentuk** per jam (% dari total harian, BR-EST-03) untuk rata-rata tetangga sejenis (data cukup), pembanding, dan F&B lain (konteks, mis. kafe yang ramai larut malam). Label "Relatif terhadap jam tersibuk, bukan jumlah orang" + zona waktu lokal. **Lihat sebagai tabel** (NFR-06): jam × seri |
+| 3. Pola keramaian tetangga vs pembanding | Chart "Perbandingan pola" (02 §3.3): **bentuk** per jam (% dari total harian, BR-EST-03) untuk rata-rata tetangga sejenis (data cukup), pembanding (bila dipilih), dan F&B lain (konteks, mis. kafe yang ramai larut malam). Label "Relatif terhadap jam tersibuk, bukan jumlah orang" + zona waktu lokal. **Lihat sebagai tabel** (NFR-06): jam × seri |
 | 4. Jam inti & saran jam buka | Jam inti tetangga sejenis → saran jam buka + aturan singkatnya ("1 jam sebelum jam inti pertama sampai 1 jam setelah awal jam inti terakhir") |
-| 5. Pembanding berdampingan | Tabel 2 kolom Tetangga sejenis · Pembanding: jam inti, bentuk per blok waktu (%). Jam inti pembanding yang tidak ada di tetangga ditandai `triangle-alert` + "tidak didukung tetangga" |
+| 5. Pembanding berdampingan | Tabel 2 kolom Tetangga sejenis · Pembanding: jam inti, bentuk per blok waktu (%). Jam inti pembanding yang tidak ada di tetangga ditandai `triangle-alert` + "tidak didukung tetangga". Tanpa pembanding: kolom Tetangga sejenis saja + tautan "Tambah pembanding di analisis berikutnya" |
 | 6. Posisi harga | Titik tengah harga rencana vs median titik tengah tetangga sejenis → **Lebih murah / Setara / Lebih mahal** + rasio + ambang (Lampiran F). Harga rencana kosong → "Isi harga rencana di analisis berikutnya untuk melihat posisi harga". Tidak ada tetangga sejenis berharga → "Tidak diketahui" |
 | 7. Sumber pengunjung siang | Jumlah bisnis non-F&B dalam radius per jenis (kesehatan, akomodasi, kantor/pendidikan, ritel; 0 tetap ditulis 0 karena terhitung) + 3 nama terdekat dengan jarak |
 | 8. Tetangga | Tab **Sejenis · F&B lain · Non-F&B** (dengan jumlah). Kolom: nama (→ profil), kategori, jarak, ulasan, rating, harga, pola keramaian (Ada/Tidak ada), data cukup (Ya / Tidak + alasan), jam inti, penanda FR-EST-05, **Data per** |
 | 9. Narasi AI | FLOW-04: Masalah · Data · Cara membaca · Kesimpulan · Batasan |
-| State khusus | TIDAK DAPAT DIANALISIS (0 tetangga sejenis dengan data cukup): bagian 3–5 diganti pesan + saran memperbesar radius; F&B lain, posisi harga (bila ada harga tetangga), sumber pengunjung siang, dan tabel Tetangga tetap tampil. Dibuka ulang setelah ada import baru → info "Ada data lebih baru sejak analisis ini" + Jalankan ulang · 1 credit. CREDIT KURANG. Gagal hitung → error, tidak ditagih, tidak tersimpan. KOSONG (daftar): "Analisis satu titik untuk melihat keramaian tetangga, saran jam buka, dan posisi harga." CTA: Analisis baru · 1 credit |
+| State khusus | TIDAK DAPAT DIANALISIS (0 tetangga sejenis dengan data cukup): **tidak ditagih**, tetap tersimpan; bagian 3–5 diganti pesan + saran memperbesar radius; F&B lain, posisi harga (bila ada harga tetangga), sumber pengunjung siang, dan tabel Tetangga tetap tampil. Dibuka ulang setelah ada import baru → info "Ada data lebih baru sejak analisis ini" + Jalankan ulang · 1 credit. CREDIT KURANG. Gagal hitung → error, tidak ditagih, tidak tersimpan. KOSONG (daftar): "Analisis satu titik untuk melihat keramaian tetangga, saran jam buka, dan posisi harga." CTA: Analisis baru · 1 credit |
 
 ---
 
@@ -316,12 +316,12 @@ Aturan umum: **status tidak pernah ditampilkan hanya dengan warna.** Selalu paka
 |---|---|---|---|
 | Claim: Teramati | `eye` · "Teramati" | `color.claim.observed.*`, `border-style.claim.observed` (solid) | Nilai langsung dari snapshot (BR-TRUST-01), mis. harga, jam buka, atribut. Di tabel padat boleh ikon + tooltip |
 | Claim: Turunan | `calculator` · "Turunan" | `color.claim.derived.*` (solid) | Hasil aturan, mis. kategori, klasifikasi URL, laju ulasan, jam inti, kesimpulan analisis lokasi |
-| Claim: Perkiraan | `sparkles` · "Perkiraan" | `color.claim.inferred.*` (**dashed**) | Selalu label penuh. Dipakai untuk kunjungan, omzet, okupasi, tamu per jam, benchmark ops, opportunity, "Kemungkinan WhatsApp", populasi |
+| Claim: Perkiraan | `sparkles` · "Perkiraan" | `color.claim.inferred.*` (**dashed**) | Selalu label penuh. Dipakai untuk kunjungan, omzet, okupasi, tamu per jam, asumsi ops, opportunity, "Kemungkinan WhatsApp", populasi |
 | Claim: Tidak diketahui | `circle-help` · "Tidak diketahui" | `color.claim.unknown.*` (**dotted**) | Selalu label penuh + tooltip alasan (BR-TRUST-03) |
 | Belum dapat diperkirakan | `circle-help` · "Belum dapat diperkirakan" + alasan | `color.claim.unknown.*` (dotted) | Alasan tertulis di samping label (BR-EST-01). Tidak pernah "0" atau kosong |
-| Rentang perkiraan | Rendah · **Tengah** · Tinggi | `text.numeric`, badge Perkiraan, chart "Rentang estimasi" (02 §3.3) | Tidak pernah satu angka saja (BR-EST-02). Selalu didampingi "Data per <tanggal>", sumber harga, dan parameter |
+| Rentang perkiraan | Rendah · **Tengah** · Tinggi | `text.numeric`, badge Perkiraan, chart "Rentang estimasi" (02 §3.3) | Tidak pernah satu angka saja (BR-EST-02). Selalu didampingi "Data per <tanggal>", sumber harga, asumsi yang dipakai, dan catatan metode. Tidak pernah disebut omzet pasti |
 | Tanggal data | `calendar` · "Data per 24 Sep 2026" | `text.caption`, `color.fg.muted` | Wajib di setiap estimasi, pola keramaian, tetangga, dan analisis (BR-TRUST-02) |
-| Penanda kualitas estimasi | `triangle-alert` · kalimat FR-EST-05 utuh | `color.status.warning.*` | Tampil di profil dan analisis lokasi. Di tabel padat: ikon + tooltip berisi kalimat utuh |
+| Penanda kualitas estimasi | `triangle-alert` · kalimat FR-EST-05 utuh | `color.status.warning.*` | Netral, tidak menuduh (copy §7). Tampil di profil dan analisis lokasi. Di tabel padat: ikon + tooltip berisi kalimat utuh |
 | Asumsi tidak konsisten | `triangle-alert` · "Asumsi tidak konsisten" | `color.status.warning.*` | Hotel, okupasi > 100% (FR-EST-03). Nilai okupasi tidak ditampilkan |
 | Label pola keramaian | `info` · "Relatif terhadap jam tersibuk, bukan jumlah orang" | `text.caption` | Selalu terlihat di setiap grafik/tabel pola (FR-EST-04) |
 | Keyakinan analisis | Meter 3 bar · "Tinggi" / "Sedang" / "Rendah"; `ban` · "Tidak dapat dianalisis" | `ConfidenceMeter`, `color.confidence.*` | Hanya untuk Lampiran F. Jumlah bar + label, bukan warna saja |
@@ -330,7 +330,7 @@ Aturan umum: **status tidak pernah ditampilkan hanya dengan warna.** Selalu paka
 | Data terbatas | `triangle-alert` · "Data terbatas" | `color.status.warning.*` · peta: `color.geo.no-data` + arsir 45° | Bisnis: BR-SCORE-02 (band dibatasi WARM, tooltip menyebut coverage). Area: Lampiran C (tanpa `market_score`) |
 | Kontak ter-mask | `lock` · "+62 812-****-**90" | `MaskedValue`, `color.fg.muted`, `text.mono` | Belum di-unlock → tidak ada Salin / WhatsApp. Screen reader: "Nomor disembunyikan" |
 | Chart | Pola keramaian · perbandingan pola · rentang estimasi · riwayat ulasan | 02 §3.3 "Chart F1" (bentuk, seri, token) | Tidak didefinisikan ulang di sini. Padanan tabel wajib (NFR-06) |
-| Evidence drawer | `file-search` · "Lihat evidence" | `EvidenceDrawer`, `color.bg.surface-raised`, `shadow.lg`, `size.drawer` | Isi: nilai, claim type, sumber (import + tanggal snapshot), nilai mentah kolom sumber (`text.mono`), aturan atau versi model (`est-` / `loc-` / `priority-` / `geo-` / `brief-X.Y.Z`), freshness. Untuk estimasi: rumus langkah demi langkah dengan input (snapshot & jumlah ulasan, sumber harga, parameter). Untuk opportunity: field + pembanding |
+| Evidence drawer | `file-search` · "Lihat evidence" | `EvidenceDrawer`, `color.bg.surface-raised`, `shadow.lg`, `size.drawer` | Isi: nilai, claim type, sumber (`cid` + waktu snapshot asal nilai), nilai mentah sumber (`text.mono`), aturan atau versi model (`est-` / `loc-` / `priority-` / `geo-` / `brief-X.Y.Z`), freshness. Untuk estimasi: rumus langkah demi langkah dengan input (snapshot & jumlah ulasan, sumber harga, parameter). Untuk opportunity: field + pembanding |
 
 ---
 
@@ -362,7 +362,7 @@ Wireframe bersifat struktural. WF-02 memakai data golden test Signa Cafe dan WF-
 |             |                        |---------------------------------------------------------------------|
 |             |                        | [ ] Kedai Contoh Dua     4.000           Rp190 jt        Puncak     |
 |             |                        |     Restoran · <kel.>    3.000–6.000     140–290 jt      12.00 WITA |
-|             |                        |     Data per 18 Sep 2026 laju 60/thn     benchmark ops              |
+|             |                        |     Data per 18 Sep 2026 laju 60/thn     asumsi harga               |
 |             |                        |---------------------------------------------------------------------|
 |             |                        | Menampilkan 50 dari 214                           [Muat 50 lagi]    |
 +-------------+------------------------+---------------------------------------------------------------------+
@@ -388,11 +388,13 @@ Urut omzet memakai nilai tengah; bisnis yang omzetnya "Belum dapat diperkirakan"
 | Tamu per hari buka       37,8        50,4        75,7               | Jam    Setiap hari 08.00–23.00 WITA  |
 | Omzet/tahun              Rp1,8 M     Rp2,4 M     Rp3,6 M            |        Teramati                  [i] |
 | Dasar: laju ulasan 276/tahun (1.336 → 1.507 ulasan, 10 Feb–24 Sep)  | Populer untuk: Sarapan, Makan siang, |
-|   · harga tempat ini · faktor belanja 0,8 · review rate 2% / 1,5%   |   Makan malam · Pengunjung: Turis    |
-|   / 1% · buka 7 hari/minggu                                         |--------------------------------------|
-| [!] Ulasan kemungkinan diminta aktif (87,5% bintang 5); omzet       | KONTAK              Belum di-unlock  |
-|     sebenarnya cenderung di sisi bawah rentang.                     | Telepon [lock] <ter-mask>            |
-| [Tabel sensitivitas v]  [Lihat evidence]                est-1.0.0   |                   [Unlock · 1 credit]|
+|   · harga tempat ini · asumsi: faktor belanja 0,8, review rate      |   Makan malam · Pengunjung: Turis    |
+|   2% / 1,5% / 1% · buka 7 hari/minggu                               |--------------------------------------|
+| Pesanan aplikasi pesan-antar umumnya tidak tercakup.                | KONTAK              Belum di-unlock  |
+| [!] Proporsi bintang 5 sangat tinggi (87,5%); bisa jadi lebih       | Telepon [lock] <ter-mask>            |
+|     banyak tamu menulis ulasan dari biasanya, sehingga omzet        |                   [Unlock · 1 credit]|
+|     cenderung di sisi bawah rentang.                                |                                      |
+| [Tabel sensitivitas v]  [Lihat evidence]                est-1.0.0   |                                      |
 |---------------------------------------------------------------------|--------------------------------------|
 | POLA KERAMAIAN   Data per 24 Sep 2026 · waktu lokal WITA            | KEHADIRAN DIGITAL                    |
 | Relatif terhadap jam tersibuk tempat ini, bukan jumlah orang.       | Website signa.cafe  Domain sendiri   |
@@ -516,16 +518,9 @@ Nada: lugas, sopan, tanpa menyalahkan user. Istilah produk mengikuti PRD: *credi
 |---|---|
 | Dialog unlock | "Unlock kontak Rumah Makan Sari Rasa? Biaya 1 credit · saldo 184 → 183. Kontak terbuka permanen untuk workspace ini." |
 | Dialog Unlock & export | "Export 120 bisnis (CSV). 85 sudah di-unlock (gratis), 35 akan di-unlock · 35 credit. Saldo 184 → 149. Unlock dijalankan sekarang; bila export gagal, ulangi tanpa biaya." |
-| Dialog analisis lokasi | "Jalankan analisis lokasi? Biaya 1 credit · saldo 184 → 183. Dalam radius 500 m ada 1 tetangga sejenis dengan data cukup (keyakinan Rendah). Hasil tersimpan dan bisa dibuka ulang gratis." |
+| Dialog analisis lokasi | "Jalankan analisis lokasi? Biaya 1 credit · saldo 184 → 183. Hasil tersimpan dan bisa dibuka ulang gratis. Tidak ditagih bila hasilnya Tidak dapat dianalisis." |
 | Credit kurang | "Credit tidak cukup. Aksi ini butuh 35 credit, saldo Anda 20. Minta Admin workspace menambah credit." |
 | Tidak diketahui | "Tidak diketahui — data sumber tidak memuat jam buka." |
-| Belum dapat diperkirakan | "Belum dapat diperkirakan — riwayat ulasan kurang dari 30 hari (snapshot pertama 2 Okt 2026)." |
-| Omzet tanpa harga | "Omzet belum dapat diperkirakan — harga per orang tidak diketahui, dan belum ada median wilayah atau benchmark untuk kelompok ini. Perkiraan kunjungan tetap ditampilkan." |
-| Penanda bintang 5 | "Ulasan kemungkinan diminta aktif (87,5% bintang 5); omzet sebenarnya cenderung di sisi bawah rentang." |
-| Penanda laju berubah | "Laju ulasan berubah: 90 hari terakhir 410 ulasan/tahun, setahun 276 ulasan/tahun." |
-| Asumsi tidak konsisten | "Okupasi tidak ditampilkan: hasil hitungnya melebihi 100%, jadi jumlah kamar atau lama menginap di parameter kemungkinan tidak cocok untuk tempat ini." |
-| Label pola keramaian | "Relatif terhadap jam tersibuk tempat ini, bukan jumlah orang." |
-| Pola datar | "Ramai sepanjang hari: jam inti mencakup hampir semua jam buka." |
 | Keyakinan rendah | "Keyakinan rendah: hanya 1 tetangga sejenis dengan data keramaian. Cek lapangan: hitung kendaraan parkir di Kampoeng Renon pada jam puncak dan jam sepi selama 2–3 hari." |
 | Tidak dapat dianalisis | "Tidak dapat dianalisis: tidak ada tetangga sejenis dengan data keramaian dalam radius 500 m. Perbesar radius atau lihat F&B lain di bawah." |
 | Tidak didukung tetangga | "Jam inti pembanding 12–14 tidak didukung tetangga: tetangga sejenis tidak ramai di jam ini." |
@@ -535,7 +530,25 @@ Nada: lugas, sopan, tanpa menyalahkan user. Istilah produk mengikuti PRD: *credi
 | Seat penuh | "Seat plan Growth sudah terpakai 5 dari 5. Keluarkan anggota atau batalkan undangan, atau hubungi tim MesinProspek untuk menambah seat." |
 | Pengaturan AI disimpan (ops) | "Pengaturan AI disimpan. Narasi baru memakai model ini dalam 1 menit." |
 | Parameter estimasi disimpan (ops) | "Parameter estimasi disimpan. Estimasi semua bisnis sedang dihitung ulang." |
-| Import gagal: skema sumber (ops) | "Import gagal. Kolom `price_range` tidak ditemukan di DB gmaps. Tidak ada data yang ditulis; aplikasi tetap memakai data terakhir. Lihat 09 RB-03." |
+| Import gagal: skema sumber (ops) | "Import gagal: skema DB gmaps tidak cocok (kolom `price_range` tidak ditemukan). Tidak ada data yang ditulis; aplikasi tetap memakai data terakhir. Perbaiki `source.sql`, lihat 09 RB-03." + pesan teknis utuh di bawahnya |
+| Import sedang berjalan (ops, CLI) | "Import sedang berjalan. Tunggu sampai selesai; sisa data terbaca di run berikutnya." |
+
+**Teks estimasi.** 04 §4.1 menyimpan kode `flags`/`reason` yang stabil; teks Indonesianya hanya di tabel ini (DRY). Angka di contoh diisi dari data.
+
+| Kode / situasi | Tampil di | Copy |
+|---|---|---|
+| `five_star_heavy` | Panel perkiraan, baris tetangga | "Proporsi bintang 5 sangat tinggi (87,5%); bisa jadi lebih banyak tamu menulis ulasan dari biasanya, sehingga omzet cenderung di sisi bawah rentang." |
+| `velocity_changed` | Panel perkiraan, baris tetangga | "Laju ulasan berubah: 90 hari terakhir 410 ulasan/tahun, setahun 276 ulasan/tahun." |
+| `price_unknown` | Baris omzet | "Omzet belum dapat diperkirakan — harga per orang tidak diketahui, dan belum ada median wilayah atau asumsi harga untuk kelompok ini. Perkiraan kunjungan tetap ditampilkan." |
+| `hotel_params_missing` | Panel hotel | "Belum dapat diperkirakan — asumsi hotel kelas <kelas> belum diisi tim MesinProspek." |
+| `occupancy_inconsistent` | Baris okupasi | "Okupasi tidak ditampilkan: hasil hitungnya melebihi 100%, jadi asumsi jumlah kamar atau lama menginap kemungkinan tidak cocok untuk tempat ini." |
+| `history_lt_30d` | Panel perkiraan, riwayat ulasan | "Belum dapat diperkirakan — riwayat ulasan kurang dari 30 hari (snapshot pertama 2 Okt 2026)." |
+| Jumlah ulasan tidak diketahui | Panel perkiraan | "Belum dapat diperkirakan — jumlah ulasan tidak diketahui." |
+| Kelompok `lainnya` | Panel perkiraan | "Belum dapat diperkirakan — estimasi belum mendukung kategori ini." |
+| Tanpa `popular_times` | Panel pola keramaian | "Belum dapat diperkirakan — data pola keramaian tidak tersedia untuk tempat ini." |
+| Catatan metode (selalu) | Panel perkiraan | "Kunjungan dihitung dari ulasan Google Maps, sehingga pesanan lewat aplikasi pesan-antar umumnya tidak tercakup." |
+| Label pola (selalu) | Setiap chart/tabel pola | "Relatif terhadap jam tersibuk tempat ini, bukan jumlah orang." |
+| Pola datar | Ringkasan pola | "Ramai sepanjang hari: jam inti mencakup hampir semua jam buka." |
 
 ---
 
@@ -547,7 +560,7 @@ Nada: lugas, sopan, tanpa menyalahkan user. Istilah produk mengikuti PRD: *credi
 - Dialog dan drawer (Radix): focus trap, Esc menutup, dan fokus kembali ke pemicu.
 - Tabel: `<th scope>`, `aria-sort` pada kolom urut. Checkbox dan target ≥ 24px (`size.target-min`); 44px di layar sentuh.
 - **Setiap chart punya padanan tabel** (02 §3.3): pola keramaian (profil & analisis), perbandingan pola, rentang estimasi (tabel Rendah · Tengah · Tinggi), dan riwayat ulasan. Sparkline punya ringkasan teks (nilai awal, akhir, laju).
-- Peta wilayah selalu punya padanan tabel peringkat; peta analisis lokasi punya tabel Tetangga. Titik analisis bisa dipilih tanpa peta (cari alamat atau bisnis). Radius bisa diisi lewat input angka. Legend berlabel teks.
+- Peta wilayah selalu punya padanan tabel peringkat; peta analisis lokasi punya tabel Tetangga. Titik analisis bisa dipilih tanpa peta (pilih bisnis atau wilayah dari pencarian). Radius bisa diisi lewat input angka. Legend berlabel teks.
 - Label screen reader: `ScoreBadge` "Skor prioritas 85, HOT"; `MaskedValue` "Nomor disembunyikan, unlock 1 credit"; `ConfidenceMeter` "Keyakinan rendah, 1 dari 3"; rentang "Perkiraan omzet per tahun, rendah 1,8 miliar, tengah 2,4 miliar, tinggi 3,6 miliar"; `FactorBar` disajikan sebagai `<table>`.
 - `lang="id"`. Progres skor/export/narasi/analisis diumumkan lewat `role="status"`. `prefers-reduced-motion` dihormati (durasi 0 di `tokens.css`).
 
@@ -556,5 +569,5 @@ Nada: lugas, sopan, tanpa menyalahkan user. Istilah produk mengikuti PRD: *credi
 ## 9. Di luar F1
 
 - Analytics produk: F2 (lihat PRD §6).
-- Perbandingan bebas antar bisnis dan antar wilayah, kalibrasi review rate, estimasi kategori lain, watch/alert: F2.
+- Perbandingan bebas antar bisnis dan antar wilayah, estimasi kategori lain, watch/alert: F2.
 - F2/F3 lainnya: lihat [PRD §6](01-prd.md).
