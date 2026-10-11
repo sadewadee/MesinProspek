@@ -153,7 +153,7 @@ Palet data-viz memakai palet referensi skill dataviz yang **sudah divalidasi ula
 
 | Token | Isi | Aturan |
 |---|---|---|
-| `color.chart.categorical.1..8` *(F2: chart analitik; F1 hanya memakai peta & FactorBar)* | blue, orange, aqua, yellow, magenta, green, violet, red | **Urutan tetap**, diberikan berurutan, tidak pernah di-cycle. Seri ke-9 dilebur ke "Lainnya". Di mode terang, slot 3, 4, dan 5 berada di bawah 3:1 terhadap surface, sehingga **wajib** ada label langsung atau tampilan tabel. |
+| `color.chart.categorical.1..8` *(F1 memakai slot 1–3: pola keramaian dan perbandingan; slot 4–8 untuk F2)* | blue, orange, aqua, yellow, magenta, green, violet, red | **Urutan tetap**, diberikan berurutan, tidak pernah di-cycle. Seri ke-9 dilebur ke "Lainnya". Di mode terang, slot 3, 4, dan 5 berada di bawah 3:1 terhadap surface, sehingga **wajib** ada label langsung atau tampilan tabel. |
 | — (batas) | Chart all-pairs (peta, scatter, small multiples) | Maksimal **3 seri**. Lebih dari itu: lebur ke "Lainnya" atau pecah menjadi facet. |
 | `color.geo.sequential.1..7` | Satu hue biru, terang → gelap | Untuk metrik area kontinu (densitas, skor). Mode gelap **membalik anchor**: nilai kecil mendekati warna surface. Tidak pernah rainbow. |
 | `color.geo.competition.{low,medium,high}` | Ramp ordinal oranye | Legend selalu menyertakan label Rendah/Sedang/Tinggi. |
@@ -161,6 +161,15 @@ Palet data-viz memakai palet referensi skill dataviz yang **sudah divalidasi ula
 | `color.geo.boundary` / `selected` | Garis batas / area terpilih | — |
 | `color.chart.status.{good,warning,serious,critical}` | Status data-viz tetap | Tidak ikut tema, tidak dipakai sebagai "seri ke-n". Selalu ikon + label. |
 | `color.chart.grid` / `axis` / `label` | Chrome chart | Grid samar, label memakai warna teks, bukan warna seri. |
+
+**Chart F1 (market intelligence):**
+
+| Chart | Bentuk | Aturan |
+|---|---|---|
+| Pola keramaian satu tempat | Bar per jam, satu seri `categorical.1` | Jam inti diberi penanda di sumbu X (bukan warna kedua). Sumbu Y 0–100 berlabel "relatif terhadap jam tersibuk" |
+| Perbandingan pola (analisis lokasi) | Garis per jam, maksimal 3 seri: tetangga sejenis `categorical.1`, pembanding `categorical.2`, F&B lain `categorical.3` | Yang dibandingkan adalah **bentuk** (BR-EST-03); seri ke-4 dst. masuk tabel |
+| Rentang estimasi | Bar horizontal rendah–tinggi dengan penanda titik tengah | Warna `accent`, bukan warna status. Angka rendah/tengah/tinggi selalu tertulis |
+| Riwayat ulasan | Sparkline satu seri | Tanpa sumbu; tanggal awal/akhir dan nilainya tertulis |
 
 Aturan chart tambahan: satu sumbu Y (tidak ada dual-axis); legend selalu ada untuk ≥ 2 seri; setiap chart dan peta punya **tampilan tabel** (wajib untuk peta choropleth, lihat `03-ux-spec.md`); tooltip saat hover; garis 2px; ujung bar membulat 4px; celah 2px antar segmen.
 
