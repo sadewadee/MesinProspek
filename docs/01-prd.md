@@ -79,18 +79,23 @@ PER-01 dan PER-02 adalah pengguna utama F1 (D-30). PER-03 tetap dilayani lewat f
 
 DB gmaps adalah sumber dataset kita. Export JSON-LD-nya (D-24) membuang `popular_times`, harga, distribusi bintang, dan riwayat snapshot, padahal semuanya dibutuhkan estimasi. Karena itu MesinProspek membaca DB gmaps langsung lewat koneksi **read-only**, secara inkremental berdasarkan waktu scrape. **Satu baris = satu snapshot satu tempat.** Satu tempat bisa punya ratusan snapshot (Signa Cafe: 171 snapshot, Februari–September 2026). Snapshot inilah yang membuat laju ulasan bisa diukur, bukan ditebak.
 
-| Data | Dipakai untuk | Catatan dari data nyata |
+| Data | Dipakai untuk | Catatan dari data nyata (sampel Signa Cafe) |
 |---|---|---|
-| ID tempat (`cid`, place ID) | **Kunci unik** | Banyak baris per tempat |
-| Nama, kategori | Identitas, kategori, kelompok estimasi | Kategori bisa berbahasa Inggris atau Indonesia ("Restaurant" / "Restoran") |
-| Alamat, koordinat | Alamat, negara, wilayah | Alamat juga dwibahasa |
-| Telepon, website, akun sosial | Kontak, kehadiran digital, opportunity | — |
+| ID tempat: `cid`, `place_id` | **Kunci unik** `cid` (D-05) | Banyak baris per tempat |
+| Nama, kategori utama, daftar kategori | Identitas, taksonomi, kelompok estimasi | Dwibahasa ("Restaurant" / "Restoran"). Daftar kategori membantu, mis. "Restoran" yang juga "Kafe" |
+| Alamat (lengkap & per bagian), kode negara | Alamat tampilan, filter negara | Kode negara ISO ("ID") |
+| Koordinat, zona waktu | Wilayah, jam lokal | Zona waktu IANA, mis. Bali = `Asia/Makassar` (WITA) |
+| Telepon, website, akun sosial, tautan menu | Kontak, kehadiran digital, opportunity | — |
 | Jumlah ulasan, rating | Reputasi, **laju ulasan** antar snapshot | Bisa turun sedikit (ulasan dihapus) |
 | Distribusi bintang 1–5 | Penanda pola ulasan janggal | — |
-| Harga per orang (`price_range`) | Belanja per tamu | Terisi ±0,8% baris. Format bervariasi: "Rp 75–200K", "Rp 100–225 rb", "Rp 250,000+", "$$" |
-| Jam buka | Hari & jam buka, kelengkapan | Kunci hari berbahasa Indonesia, format "08.00–23.00" |
-| `popular_times` | **Pola keramaian** 7 hari × 24 jam | Terisi ±13% baris. Nilai 0–100 **relatif terhadap jam tersibuk tempat itu sendiri, bukan jumlah orang**. Hotel jarang punya |
+| Harga per orang | Belanja per tamu | Terisi ±0,8% baris. Format bervariasi: "Rp 75–200K", "Rp 100–225 rb", "Rp 250,000+", "$$" |
+| Jam buka | Hari & jam buka, kelengkapan | Kunci hari berbahasa Indonesia, format "08.00–23.00", waktu lokal |
+| `popular_times` | **Pola keramaian** 7 hari × 24 jam | Terisi ±13% baris. Nilai 0–100 **relatif terhadap jam tersibuk tempat itu sendiri, bukan jumlah orang**. Jam tutup bernilai 0. Hotel jarang punya |
+| Atribut tempat (`about`) | Profil dan fakta narasi AI | Mis. "Populer untuk: Sarapan, Makan siang, Makan malam", "Tipe pengunjung: Turis", opsi layanan, parkir, pembayaran |
+| Pemilik (`owner`) | Penanda "listing diklaim pemilik" | — |
 | Waktu scrape | Tanggal snapshot (`observed_at`) | — |
+| Status, foto, deskripsi | Tidak dipakai di F1 | Status tidak andal (sampel berisi "Anjing boleh masuk") |
+| Contoh ulasan (`user_reviews`) | **Tidak diimpor di F1** | Hanya ±8 ulasan pilihan Google, tidak mewakili, dan memuat nama pengulas |
 | Email, nama pemilik/person | Tidak ada → "Tidak diketahui" | — |
 
 Nama kolom persis dan cara membacanya ditulis sekali di 04 (DRY). Snapshot yang berbeda bisa menyimpan atribut berbeda. Contoh: harga Signa hanya ada di sebagian snapshot, dan kategorinya kadang "Restaurant", kadang "Restoran". Aturan penggabungannya ada di BR-NORM-05.
@@ -159,7 +164,7 @@ Nilai yang tidak bisa diukur dari data diatur ops dari dashboard (D-29, D-32): r
 | **SRCH / PROF / GEO** | | |
 | FR-SRCH-01 | Search kata kunci (nama, kategori, alamat) + filter (kategori, kelompok estimasi, wilayah, rentang perkiraan omzet, punya pola keramaian, band skor, tipe opportunity, ada telepon/website/sosial, rating). Urut: skor, perkiraan kunjungan, perkiraan omzet, atau laju ulasan | Jumlah hasil konsisten dengan filter |
 | FR-SRCH-02 | Simpan pencarian (sekaligus berfungsi sebagai segment dinamis) | Pencarian tersimpan bisa dibuka ulang |
-| FR-PROF-01 | Profil bisnis: identitas, **perkiraan kunjungan & omzet** (atau okupasi untuk hotel), **pola keramaian**, riwayat ulasan, harga, jam buka, skor + "Kenapa bisnis ini?" (bila ada ICP aktif), opportunity, kontak (ter-mask sampai unlock), kehadiran digital, konteks wilayah, evidence tiap nilai, tautan Google Maps, tombol "Analisis lokasi di sini" | Setiap nilai menampilkan claim type dan tanggal data |
+| FR-PROF-01 | Profil bisnis: identitas, **perkiraan kunjungan & omzet** (atau okupasi untuk hotel), **pola keramaian**, riwayat ulasan, harga, jam buka, atribut tempat (populer untuk, tipe pengunjung, opsi layanan), penanda listing diklaim pemilik, skor + "Kenapa bisnis ini?" (bila ada ICP aktif), opportunity, kontak (ter-mask sampai unlock), kehadiran digital, konteks wilayah, evidence tiap nilai, tautan Google Maps, tombol "Analisis lokasi di sini" | Setiap nilai menampilkan claim type dan tanggal data |
 | FR-GEO-01 | Peringkat wilayah (kecamatan dan kelurahan dalam kab/kota) untuk satu kelompok estimasi (Lampiran C): populasi, jumlah & densitas bisnis sejenis, kompetisi, permintaan terbukti, rentang harga. Bila ada ICP aktif, ditambah jumlah prospek HOT/WARM. Peta berwarna dari tiles GeoAPI + tabel, drilldown ke daftar bisnis dan ke analisis lokasi | Peta selalu punya padanan tabel |
 | **ACT** | | |
 | FR-ACT-01 | List, tag, catatan, dan pemilik (assign ke anggota) untuk bisnis. Kolom list bisa menampilkan estimasi, sehingga list juga berfungsi sebagai tabel perbandingan sederhana | — |
@@ -190,7 +195,7 @@ Nilai yang tidak bisa diukur dari data diatur ops dari dashboard (D-29, D-32): r
 | BR-NORM-03 | Kategori sumber (Inggris atau Indonesia) dipetakan lewat **satu tabel mapping** ke taksonomi MSP dua level dan ke kelompok estimasi (`makan`, `kafe`, `hotel`, `lainnya`) |
 | BR-NORM-04 | Harga per orang → rentang Rupiah `min`–`max`. Contoh: "Rp 25–50K" → 25.000–50.000, "Rp 100–225 rb" → 100.000–225.000, "Rp 1–25.000" → 1–25.000. Rentang terbuka "Rp 250,000+" → min 250.000 tanpa max. Simbol "$"/"$$" atau format tak dikenal → "Tidak diketahui" |
 | BR-NORM-05 | Penggabungan snapshot: nilai terkini tiap field = nilai **tidak kosong terbaru** di antara snapshot, dengan tanggal snapshot-nya sendiri. Riwayat disimpan satu baris per tempat per hari (snapshot terakhir hari itu) untuk jumlah ulasan, rating, distribusi bintang, dan harga |
-| BR-NORM-06 | Jam buka → jadwal per hari (Senin–Minggu) dalam zona waktu lokal. `popular_times` → matriks 7 × 24 nilai 0–100; hari dengan semua nilai 0 dianggap tutup. Data di luar 0–100 → ditolak per field |
+| BR-NORM-06 | Jam buka dan `popular_times` memakai **zona waktu lokal tempat** (kolom zona waktu sumber) dan ditampilkan dengan labelnya (WIB/WITA/WIT). Jam buka → jadwal per hari (Senin–Minggu). `popular_times` → matriks 7 × 24 nilai 0–100; hari dengan semua nilai 0 dianggap tutup. Data di luar 0–100 → ditolak per field |
 | BR-EST-01 | Estimasi hanya dihitung bila data minimumnya ada (Lampiran E). Bila tidak, tampil "Belum dapat diperkirakan" beserta alasannya (mis. "riwayat ulasan < 30 hari", "harga tidak diketahui"). Tidak ada fallback ke tebakan umur usaha |
 | BR-EST-02 | Kunjungan dan omzet selalu ditampilkan sebagai rentang rendah–tengah–tinggi, dibulatkan (kunjungan ke ratusan, omzet ke Rp0,1 miliar bila ≥ Rp1 miliar, selain itu ke Rp10 juta) |
 | BR-EST-03 | `popular_times` antar tempat hanya dibandingkan **bentuknya** (pola dan proporsi), bukan angka mentahnya |
@@ -211,7 +216,7 @@ Nilai yang tidak bisa diukur dari data diatur ops dari dashboard (D-29, D-32): r
 | NFR-04 | Backup: RPO ≤ 15 menit, RTO ≤ 8 jam (F1). Restore diuji sebelum rilis F1 |
 | NFR-05 | HTTPS, isolasi workspace (RLS), secret tidak ada di repo, koneksi ke DB gmaps memakai akun read-only, pengecekan SSRF untuk webhook |
 | NFR-06 | WCAG 2.2 AA dasar: kontras, keyboard, status tidak hanya dengan warna. Grafik keramaian punya padanan tabel |
-| NFR-07 | Bahasa Indonesia (F1), format Rupiah/angka/tanggal id-ID, zona waktu Asia/Jakarta |
+| NFR-07 | Bahasa Indonesia (F1), format Rupiah/angka/tanggal id-ID. Waktu sistem Asia/Jakarta; jam buka dan pola keramaian dalam zona waktu lokal tempat (BR-NORM-06) |
 | NFR-08 | Browser: 2 versi terakhir Chrome, Edge, Firefox, Safari. Desktop utama; profil dan list bisa dipakai di ponsel |
 | NFR-09 | Test otomatis untuk logika inti (normalisasi, estimasi, analisis lokasi, skor, opportunity, credit, isolasi workspace). Coverage paket inti ≥ 80% |
 
@@ -219,7 +224,7 @@ Nilai yang tidak bisa diukur dari data diatur ops dari dashboard (D-29, D-32): r
 
 1. Alur end-to-end berjalan di staging dengan data nyata: import dari DB gmaps → wilayah → estimasi → search → profil → analisis lokasi → narasi AI → unlock → export/webhook.
 2. **Sample case founder direproduksi** sebagai test otomatis (golden test) dengan data dari kasus aslinya:
-   - **Signa Cafe:** snapshot 1.336 ulasan (10 Feb 2026) dan 1.507 ulasan (24 Sep 2026) → laju ≈ 276/tahun. Harga "Rp 100–225 rb", faktor belanja 0,8, review rate 2% / 1,5% / 1% → kunjungan ≈ 13.800 / 18.400 / 27.600 per tahun dan omzet ≈ **Rp1,8 / 2,4 / 3,6 miliar** per tahun. Bintang 5 = 87,5% → penanda FR-EST-05 tampil.
+   - **Signa Cafe:** snapshot 1.336 ulasan (10 Feb 2026) dan 1.507 ulasan (24 Sep 2026) → laju ≈ 276/tahun. Harga "Rp 100–225 rb", faktor belanja 0,8, review rate 2% / 1,5% / 1% → kunjungan ≈ 13.800 / 18.400 / 27.600 per tahun dan omzet ≈ **Rp1,8 / 2,4 / 3,6 miliar** per tahun. Bintang 5 = 87,5% → penanda FR-EST-05 tampil. Pola keramaian (data asli 7 hari): puncak rata-rata jam 20, jam inti 08–22 → "Ramai sepanjang hari"; puncak Selasa jam 13 (= 100).
    - **Warung Kita (Jl. Pulau Kawe):** pola KR dan Joglo dari kasus asli, dengan Joglo sebagai pembanding. Jam inti tetangga 17–21 → saran jam buka **16.00–22.00**. Jam inti pembanding mencakup 12–14 tetapi tetangga tidak. Satu tetangga sejenis → keyakinan **Rendah** + saran cek lapangan. Harga rencana Rp25–50 rb vs KR Rp50–100 rb → **lebih murah**.
 3. Setiap nilai di profil dan analisis lokasi menampilkan claim type, sumber, dan tanggal data.
 4. Test otomatis lulus, termasuk isolasi workspace, SSRF webhook, dan idempotensi credit.
@@ -340,6 +345,7 @@ Lama menginap, jumlah kamar, dan ADR diambil dari benchmark ops per **kelas akom
 - **Bentuk:** nilai jam ÷ jumlah nilai semua jam. Inilah yang dibandingkan antar tempat (BR-EST-03).
 - **Jam puncak:** jam dengan nilai rata-rata tertinggi, juga per hari.
 - **Jam inti:** semua jam dengan nilai rata-rata ≥ 60% dari nilai puncak. Bisa lebih dari satu rentang, mis. 12–14 dan 17–20.
+- **Pola datar:** jam inti mencakup ≥ 80% jam buka → label "Ramai sepanjang hari" (contoh: Signa Cafe, jam inti 08–22 dari jam buka 08–23).
 - **Keramaian rata-rata:** rata-rata nilai selama jam buka ÷ 100, ditampilkan sebagai "rata-rata X% dari jam tersibuknya".
 - **Tamu per jam (Perkiraan):** tamu per hari buka (tengah) × nilai jam ÷ jumlah nilai hari itu.
 
@@ -355,6 +361,7 @@ Lama menginap, jumlah kamar, dan ADR diambil dari benchmark ops per **kelas akom
 | Penanda bintang 5 | ≥ 85% |
 | Penanda laju berubah | Selisih > 30% |
 | Ambang jam inti | 60% dari puncak |
+| Ambang pola datar | 80% jam buka |
 
 Mengubah parameter memicu hitung ulang (FR-EST-06) dan tercatat di audit.
 
