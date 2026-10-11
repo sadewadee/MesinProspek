@@ -4,10 +4,10 @@
 
 | Field | Value |
 |---|---|
-| Versi | 0.2 (lean). Menggantikan v0.1 |
-| Tanggal | 2026-10-10 |
+| Versi | 0.3 (lean). Sumber DB gmaps, estimasi, analisis lokasi |
+| Tanggal | 2026-10-11 |
 | Prinsip | **KISS**, **DRY**, **make it work → make it right → make it fast** (D-23) |
-| Basis | `README.md` (stack F1, kosakata, struktur monorepo), `01-prd.md` v0.2 (BR-TRUST, BR-SCORE, BR-CRED, BR-AI-01, NFR-05/06/07/09), `02-design-system/` (tokens) |
+| Basis | `README.md` (stack F1, kosakata, struktur monorepo), `01-prd.md` v0.3 (BR-TRUST, BR-EST, BR-SCORE, BR-CRED, BR-AI-01, NFR-05/06/07/09, Lampiran E/F), `02-design-system/` (tokens) |
 | Pembaca | Agent AI pembangun (maks. 8 paralel), orchestrator (Claude), founder |
 
 > **Cara membaca.** Satu aturan = satu baris dengan ID `STD-<AREA>-nn`. Kolom **Ditegakkan oleh**:
@@ -55,21 +55,23 @@ Konfigurasi lint:
 | STD-GO-02 | Error dibungkus `fmt.Errorf("op: %w", err)` dan dicek dengan `errors.Is`/`errors.As`. Pemetaan ke problem+json hanya terjadi di tepi HTTP (satu fungsi mapper), tidak di kode domain | lint (`errorlint`, `errcheck`), review |
 | STD-GO-03 | `ctx context.Context` adalah parameter pertama setiap fungsi yang melakukan I/O atau bisa berjalan lama. `ctx` tidak disimpan di struct | review |
 | STD-GO-04 | Tanpa state global yang bisa berubah dan tanpa `init()` yang punya efek samping. Dependency masuk lewat constructor `NewX(...)` dan dirakit di `cmd/msp` | lint (`gochecknoglobals`, `gochecknoinits`) |
-| STD-GO-05 | Konfigurasi proses dan secret hanya dari env `MSP_*` (README). Env dibaca sekali ke struct `Config` dan divalidasi saat start. Nilai salah → proses berhenti dengan pesan jelas. `os.Getenv` hanya boleh di paket config. Nilai yang diatur ops saat runtime (model AI, plan & kuota, D-29) dibaca dari DB ([04 §14](04-technical-design.md#14-konfigurasi--observability)): model ID, harga, dan kuota tidak di-hard-code di kode, dan secret tidak pernah disimpan di DB | lint (`forbidigo`), test, review |
+| STD-GO-05 | Konfigurasi proses dan secret hanya dari env `MSP_*` (README). Env dibaca sekali ke struct `Config` dan divalidasi saat start. Nilai salah → proses berhenti dengan pesan jelas. `os.Getenv` hanya boleh di paket config. Nilai yang diatur ops saat runtime (model AI, plan & kuota, parameter estimasi, D-29) dibaca dari DB ([04 §14](04-technical-design.md#14-konfigurasi--observability)): model ID, harga, dan kuota tidak di-hard-code di kode, dan secret tidak pernah disimpan di DB | lint (`forbidigo`), test, review |
 | STD-GO-06 | Log hanya lewat `log/slog` dengan handler JSON dari `cmd/msp`. `fmt.Print*` dan `log.*` dilarang. Sertakan `request_id`, `workspace_id`, atau `job_id` bila ada | lint (`forbidigo`) |
-| STD-GO-07 | Logika yang harus deterministik (skor, opportunity, metrik wilayah, freshness BR-TRUST-02, cache AI) menerima waktu sebagai parameter (`asOf time.Time`) atau lewat clock yang di-inject. Logika ini tidak memanggil `time.Now()` (FR-INTL-04) | test (input + versi sama → output identik), review |
+| STD-GO-07 | Logika yang harus deterministik (estimasi, analisis lokasi, skor, opportunity, metrik wilayah, freshness BR-TRUST-02, cache AI) menerima waktu sebagai parameter (`asOf time.Time`) atau lewat clock yang di-inject. Logika ini tidak memanggil `time.Now()` (FR-INTL-04) | test (input + versi sama → output identik), review |
 | STD-GO-08 | Paket dibuat datar: `apps/api/internal/<modul>` (nama modul di 04). Tidak ada paket `util`, `common`, atau `helpers`. Sub-paket hanya dibuat dengan alasan di MR | review |
+| STD-GO-09 | Rumus estimasi dan analisis lokasi (PRD Lampiran E, F) hanya ada di paket `internal/estimate`, sebagai fungsi murni (tanpa I/O, tanpa `time.Now()`). Parameter `est.*` masuk sebagai argumen, tidak di-hard-code. Perubahan yang bisa mengubah hasil menaikkan konstanta versi `est-`/`loc-` ([04 §5.4](04-technical-design.md#54-estimasi-estcompute)) | test (golden test PRD §12; input + parameter + versi sama → hasil sama), review |
 
 ## 3. Database (DB)
 
 | ID | Aturan | Ditegakkan oleh |
 |---|---|---|
 | STD-DB-01 | Skema hanya diubah lewat migrasi goose bernomor urut (`goose create -s`) di `apps/api/db/migrations`. Migrasi yang sudah ada di `main` tidak pernah diedit; perbaikan = migrasi baru. Perubahan harus backward-compatible dengan versi app yang sedang jalan: tambah dulu, hapus di rilis berikutnya | CI (migrasi lama tidak berubah, nomor unik), lint (squawk) |
-| STD-DB-02 | Query hanya ditulis di `apps/api/db/queries/*.sql` lewat sqlc. Tanpa string SQL di kode Go, tanpa ORM, tanpa query builder | CI (generate tanpa diff), lint (`sqlc vet`), review |
+| STD-DB-02 | Query hanya ditulis di `apps/api/db/queries/*.sql` lewat sqlc. Tanpa string SQL di kode Go, tanpa ORM, tanpa query builder. Satu pengecualian: query DB gmaps (STD-DB-07) | CI (generate tanpa diff), lint (`sqlc vet`), review |
 | STD-DB-03 | Query data workspace hanya berjalan di dalam helper transaksi workspace (04). Helper ini menjalankan `set_config('app.workspace_id', …, true)` untuk RLS. Role DB runtime bukan owner dan tanpa `BYPASSRLS` (NFR-05) | test (isolasi lintas workspace, FR-PRIV-01) |
 | STD-DB-04 | Uang dan credit disimpan sebagai integer (`bigint`, satuan terkecil) di DB, Go (`int64`), dan API. Float dilarang | review |
 | STD-DB-05 | Waktu disimpan sebagai `timestamptz` (UTC). Konversi ke Asia/Jakarta hanya saat ditampilkan (STD-FE-05) | lint (squawk `prefer-timestamptz`) |
 | STD-DB-06 | Job River harus idempotent (unique key `UniqueOpts`, aman dijalankan ulang). Job di-enqueue dengan `InsertTx` di transaksi yang sama dengan perubahan datanya | test (job dijalankan 2× → hasil sama), review |
+| STD-DB-07 | Nama tabel dan kolom DB gmaps hanya ada di `apps/api/internal/ingest/gmaps/source.sql` (fixture test di `testdata/` boleh meniru skemanya). Kode Go hanya memakai alias hasil query. Koneksi ke DB gmaps read-only; MesinProspek tidak pernah menulis ke sana | lint (grep `business_listings` di luar file itu dan `testdata/`), test (cek kolom gagal bila kolom fixture dihapus) |
 
 ## 4. API & kontrak (API)
 
@@ -96,11 +98,11 @@ Konfigurasi lint:
 
 | ID | Aturan | Ditegakkan oleh |
 |---|---|---|
-| STD-TEST-01 | Paket logika (normalisasi, skor, opportunity, wilayah, credit) memakai table-driven test (`[]struct{…}` + `t.Run`). Kasus Unknown wajib ikut diuji | review |
+| STD-TEST-01 | Paket logika (normalisasi, estimasi, analisis lokasi, skor, opportunity, wilayah, credit) memakai table-driven test (`[]struct{…}` + `t.Run`). Kasus Unknown wajib ikut diuji | review |
 | STD-TEST-02 | Setiap bug fix menyertakan test yang gagal sebelum fix diterapkan | review |
 | STD-TEST-03 | Test integrasi (query, RLS, migrasi, job) memakai Postgres 16 + PostGIS asli, bukan mock DB | CI |
-| STD-TEST-04 | Test tidak memanggil API eksternal (GeoAPI, Claude, OpenAI-compatible). Gunakan fixture di `testdata/` + `httptest.Server`; base URL diambil dari config | CI (job test tanpa API key provider), review |
-| STD-TEST-05 | Coverage paket inti NFR-09 (normalisasi, skor, opportunity, credit, isolasi workspace) ≥ 80% | CI (gate coverage) |
+| STD-TEST-04 | Test tidak memanggil API eksternal (GeoAPI, Claude, OpenAI-compatible) maupun DB gmaps asli. Gunakan fixture di `testdata/` + `httptest.Server`; DB gmaps diganti database `gmaps_fixture` (06). Base URL dan URL DB diambil dari config | CI (job test tanpa API key provider), review |
+| STD-TEST-05 | Coverage paket inti NFR-09 (normalisasi, estimasi, analisis lokasi, skor, opportunity, credit, isolasi workspace) ≥ 80% | CI (gate coverage) |
 
 ## 7. Git & merge request (GIT)
 
