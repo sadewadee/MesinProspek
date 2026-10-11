@@ -10,10 +10,11 @@ Satu dedicated server di Indonesia. Semua domain lewat satu `caddy` di `/opt/ops
 
 | Direktori Compose | Service | URL |
 |---|---|---|
-| `/opt/msp` (production) | `web`, `api`, `worker`, `kratos`, `postgres` (+ pgBackRest, stanza `msp`) | `https://app.<domain>` · health `/healthz`, `/readyz` · halaman ops `/ops` |
+| `/opt/msp` (production) | `web`, `api`, `worker`, `kratos`, `postgres` (+ pgBackRest, stanza `msp`, repo lokal `/opt/msp/pgbackrest`) | `https://app.<domain>` · health `/healthz`, `/readyz` · halaman ops `/ops` |
 | `/opt/msp-staging` (staging) | sama dengan production | `https://staging.<domain>` |
 | `/opt/ops` | `caddy`, `gitlab` (+ container registry), `gitlab-runner` (runner `ci`), `prometheus`, `alertmanager`, `grafana`, `node-exporter`, `gmaps-db` (kiriman DB gmaps terbaru, dibaca staging dan production; file kiriman terbaru di `/opt/ops/gmaps-dump/`) | `https://gitlab.<domain>`, `https://registry.<domain>`, `https://grafana.<domain>`. `gmaps-db` tanpa URL dan tanpa port |
 | host (systemd) | `gitlab-runner` (runner `deploy`, shell, user `deploy`) | — |
+| host (cron, root) | `msp-offsite`: `/opt/ops/offsite.sh` tiap 5 menit, rclone menyalin `/opt/msp/pgbackrest` dan `/opt/ops/gitlab-backups/` ke remote `offsite` (06 §8). Log: `sudo journalctl -t msp-offsite` | — |
 
 Direktori dibuat oleh `deploy/bootstrap.sh` (06 §9). Prometheus mengambil `/metrics` production dan staging lewat network Docker (06 §2), serta metrik host dari `node-exporter` (disk, CPU, RAM). Alertmanager mengirim alert ke email dan Telegram `<grup-ops>`.
 
@@ -28,7 +29,8 @@ Monitoring ini ada di server yang sama, jadi server yang mati hanya bisa terdete
 | API OpenAI-compatible (fallback) | Narasi AI bila provider utama gagal | Keduanya gagal → kill switch AI (RB-07) |
 | SMTP `<penyedia>` | Verifikasi email, undangan, email alert | User baru tidak bisa verifikasi; alert tetap lewat Telegram |
 | Google OAuth | Login Google | Login email + password tetap jalan |
-| Object storage S3-compatible off-site `<penyedia>` (Indonesia) | pgBackRest (backup + WAL) dan backup GitLab | WAL menumpuk di disk (AL-06); job `backup` merah |
+| Server SFTP/FTPS off-site milik founder (Indonesia, D-39), remote rclone `offsite` | Salinan repo pgBackRest (backup + WAL, terenkripsi) dan backup GitLab | Backup dan arsip WAL lokal tetap jalan; salinan off-site tertinggal (AL-12). Bila server hilang selama itu, data sejak sinkron terakhir ikut hilang. Kabari founder |
+| Backblaze B2, remote rclone `b2` | Salinan kedua repo pgBackRest (terenkripsi). **Nonaktif** sampai tim legal menjawab Q-19 (B2 tidak punya region Indonesia). Menyalakan: tambah remote `b2` di `/opt/ops/rclone.conf`, lalu buka komentar baris B2 di `offsite.sh` (MR, lalu salin ke `/opt/ops`; 06 §8) | — (nonaktif) |
 | Uptime monitor eksternal `<penyedia>` | AL-01 (server/situs mati) | Server mati tidak terdeteksi otomatis; andalkan cek harian (§6) |
 
 ### 1.3 Log & perintah umum
@@ -72,7 +74,7 @@ WHERE state = 'discarded' AND finalized_at > now() - interval '24 hours' GROUP B
 | GitLab: Developer | `<engineer>`, akun bot agent AI | MFA untuk akun manusia |
 | Halaman ops `/ops` | Founder, `<staf-ops>` | Akun ops, MFA TOTP (FR-AUTH-03). Termasuk Pengaturan AI, plan, dan parameter estimasi |
 | Grafana | Founder, `<engineer>` | Login admin bawaan Grafana lewat HTTPS |
-| Panel penyedia: hosting, DNS, storage backup, uptime monitor, Anthropic, LLM fallback, SMTP, Google Cloud | Founder | MFA |
+| Panel penyedia: hosting, DNS, server backup SFTP/FTPS, uptime monitor, Anthropic, LLM fallback, SMTP, Google Cloud | Founder | MFA |
 | `gmaps-db` (muat kiriman, role `msp_source_ro`) | Founder, `<engineer>` | Lewat SSH di `/opt/ops` (RB-15). DB gmaps asli ada di founder |
 
 ## 3. Prosedur
@@ -159,14 +161,16 @@ Hitung ulang (rantai di README: estimasi → metrik wilayah → opportunity → 
 **Verifikasi:** di workspace uji yang sudah unlock prospek itu, nilai tidak tampil di profil ("Kontak tidak tersedia"), file export, maupun payload webhook. Entri tercatat di `/ops/audit`.
 
 ### RB-09 — Cek backup
-**Kapan:** harian, saat AL-06, dan sebelum deploy.
+**Kapan:** harian, saat AL-06 atau AL-12, dan sebelum deploy.
 ```bash
 cd /opt/msp
 docker compose exec -u postgres postgres pgbackrest --stanza=msp info
 docker compose exec -u postgres postgres pgbackrest --stanza=msp check
 docker compose exec postgres psql -U postgres -c "SELECT last_archived_time, last_failed_time, failed_count FROM pg_stat_archiver;"
+sudo rclone --config /opt/ops/rclone.conf lsl --max-age 15m offsite:msp/pgbackrest/archive | tail -3   # WAL terbaru di off-site
+sudo journalctl -t msp-offsite --since 1h | tail                                                    # error rclone
 ```
-**Verifikasi:** `info` berstatus `ok` dengan backup terakhir sesuai jadwal 06 (≤ 26 jam); `check` selesai tanpa error; `last_archived_time` ≤ 15 menit lalu (RPO, NFR-04) dan tidak ada `last_failed_time` yang lebih baru; job `backup` terakhir (pipeline *schedule*) hijau, artinya pgBackRest dan backup GitLab ter-upload off-site.
+**Verifikasi:** `info` berstatus `ok` dengan backup terakhir sesuai jadwal 06 (≤ 26 jam); `check` selesai tanpa error; `last_archived_time` ≤ 15 menit lalu (RPO, NFR-04) dan tidak ada `last_failed_time` yang lebih baru; perintah `rclone` menampilkan WAL off-site ≤ 15 menit (salinan off-site berjalan, AL-12 tidak aktif); job `backup` terakhir (pipeline *schedule*) hijau, artinya backup pgBackRest dan GitLab dibuat di disk lokal.
 
 ### RB-10 — Restore PITR ke DB sementara atau server baru
 **Kapan:** data rusak atau terhapus, server hilang (dari RB-11), atau uji restore bulanan.
@@ -175,42 +179,49 @@ docker compose exec postgres psql -U postgres -c "SELECT last_archived_time, las
 
 1. Tentukan waktu target sebelum kejadian (dari `/ops/audit` atau log). Untuk RB-11 tanpa target waktu, hapus opsi `--type` dan `--target*` agar DB pulih sampai WAL terakhir.
 2. Siapkan direktori:
-   - **Uji atau data rusak:** project sementara di server yang sama, dengan volume sendiri dan tanpa menyentuh production maupun staging. Cek dulu `df -h`, karena butuh ruang ± ukuran DB production, dan jalankan di jam sepi. Siapkan dengan `sudo cp -a /opt/msp /opt/msp-restore`, lalu tambahkan `COMPOSE_FILE=compose.yaml:compose.staging.yaml` ke `.env`-nya (batas resource staging).
+   - **Uji atau data rusak:** project sementara di server yang sama, dengan volume sendiri dan tanpa menyentuh production maupun staging. Cek dulu `df -h`, karena butuh ruang ± ukuran DB production + ukuran repo pgBackRest, dan jalankan di jam sepi. Siapkan dengan `sudo mkdir /opt/msp-restore && sudo cp -a /opt/msp/{.env,compose.yaml,compose.staging.yaml,kratos,postgres} /opt/msp-restore/` (repo lokal sengaja tidak ikut), lalu tambahkan `COMPOSE_FILE=compose.yaml:compose.staging.yaml` ke `.env`-nya (batas resource staging).
    - **Server baru (RB-11):** `/opt/msp` berisi file `deploy/` dari tag yang berlaku (`docker-compose.prod.yml` sebagai `compose.yaml`, `kratos/`, `postgres/`) dan `.env` production dari password manager founder.
+3. Ambil repo pgBackRest dari **salinan off-site** (06 §8). Uji bulanan dan gerbang F1 selalu lewat jalur ini, bukan repo lokal, agar jalur saat server hilang terbukti. Passphrase repo ada di `.env` (`PGBACKREST_REPO1_CIPHER_PASS`).
+   ```bash
+   cd /opt/msp-restore                         # RB-11: /opt/msp
+   sudo rclone --config /opt/ops/rclone.conf copy offsite:msp/pgbackrest ./pgbackrest
+   sudo chown -R 999:999 ./pgbackrest          # uid postgres di image
+   ```
+   Data rusak dan server masih hidup: boleh memakai repo lokal yang lebih baru beberapa menit, `sudo cp -a /opt/msp/pgbackrest .`, sebagai ganti `rclone copy`.
+4. Restore:
+   ```bash
+   cd /opt/msp-restore                         # RB-11: /opt/msp, tanpa --archive-mode=off
+   docker compose run --rm --no-deps -u postgres postgres pgbackrest --stanza=msp --archive-mode=off \
+     --type=time --target="<YYYY-MM-DD HH:MM:SS+07>" --target-action=promote restore
+   docker compose up -d --wait postgres        # RB-11: lewati; deploy yang menyalakan semua service
+   ```
+   Gagal karena file backup set terbaru tidak lengkap (server hilang saat upload backup full masih berjalan) → ulangi dengan `--set=<label sebelumnya>` dari `pgbackrest --stanza=msp info`; WAL sesudahnya tetap dipakai.
+5. Butuh sebagian data saja (mis. baris terhapus)? Ambil dari DB hasil restore bersama engineering (`pg_dump -t`), jangan restore penuh di atas production.
 
-   Lalu jalankan:
-```bash
-cd /opt/msp-restore                           # RB-11: /opt/msp, tanpa --archive-mode=off
-docker compose run --rm --no-deps -u postgres postgres pgbackrest --stanza=msp --archive-mode=off \
-  --type=time --target="<YYYY-MM-DD HH:MM:SS+07>" --target-action=promote restore
-docker compose up -d --wait postgres          # RB-11: lewati; deploy yang menyalakan semua service
-```
-3. Butuh sebagian data saja (mis. baris terhapus)? Ambil dari DB hasil restore bersama engineering (`pg_dump -t`), jangan restore penuh di atas production.
-
-**Verifikasi:** `SELECT pg_is_in_recovery(), pg_last_xact_replay_timestamp();` → `f` dan waktu mendekati target; `SELECT max(version_id) FROM goose_db_version;` dan `SELECT count(*)` beberapa tabel utama cocok dengan production. Uji bulanan: catat durasi (RTO ≤ 8 jam) dan titik pulih (RPO ≤ 15 menit) di `<log-ops>`, lalu `docker compose down -v` dan `sudo rm -rf /opt/msp-restore`.
+**Verifikasi:** `SELECT pg_is_in_recovery(), pg_last_xact_replay_timestamp();` → `f` dan waktu mendekati target; `SELECT max(version_id) FROM goose_db_version;` dan `SELECT count(*)` beberapa tabel utama cocok dengan production. Uji bulanan: catat sumber repo (off-site), durasi (RTO ≤ 8 jam), dan titik pulih (RPO ≤ 15 menit) di `<log-ops>`, lalu `docker compose down -v` dan `sudo rm -rf /opt/msp-restore`.
 
 ### RB-11 — Bangun ulang server
 **Kapan:** server rusak, hilang, atau terkompromi. Production, staging, GitLab, dan monitoring semuanya ikut mati: SEV-1, RTO ≤ 8 jam (NFR-04). Bila server terkompromi: jangan hapus server lama (bukti), jalankan langkah kebocoran data (§5), dan rotasi semua secret (RB-12) sebelum deploy.
 1. Pesan server baru di Indonesia dengan spesifikasi yang sama. Turunkan TTL DNS `<domain>` ke 300 detik bila masih sempat.
-2. Bootstrap dari clone repo (06 §9), dengan `/opt/ops/.env` dari password manager founder.
+2. Bootstrap dari clone repo (06 §9), dengan `/opt/ops/.env` dan `/opt/ops/rclone.conf` dari password manager founder. Server lama masih hidup (terkompromi)? Pakai kredensial SFTP/FTPS baru di `rclone.conf` server baru dan cabut yang lama (RB-12), agar cron `msp-offsite` di server lama tidak ikut menyinkron. Cron di server baru belum menyalin apa pun sampai langkah 5 (guard, 06 §8).
 3. Arahkan DNS semua subdomain `<domain>` ke IP baru. Ini dilakukan sebelum langkah berikutnya karena Caddy butuh DNS untuk sertifikat TLS, dan runner serta registry diakses lewat domain. `app.<domain>` belum melayani sampai langkah 6.
-4. Pulihkan GitLab dari backup off-site terbaru (`gitlab-backup restore`), dengan `gitlab-secrets.json` dan `gitlab.rb` dari password manager (06 §8). Lalu daftarkan ulang runner `ci` dan `deploy`. Tanpa backup: buat GitLab baru, push repo dari clone terbaru, lalu isi ulang variabel CI dari password manager.
-5. Restore DB dengan RB-10 di `/opt/msp`, hanya langkah `restore`, tanpa target waktu dan tanpa `--archive-mode=off`.
+4. Pulihkan GitLab dari salinan off-site: `sudo rclone --config /opt/ops/rclone.conf copy offsite:msp/gitlab-backups /opt/ops/gitlab-backups`, lalu di container `gitlab` `chown git:git` file terbaru dan `gitlab-backup restore BACKUP=<id>`, dengan `gitlab-secrets.json` dan `gitlab.rb` dari password manager (06 §8). Lalu daftarkan ulang runner `ci` dan `deploy`. Tanpa backup: buat GitLab baru, push repo dari clone terbaru, lalu isi ulang variabel CI dari password manager.
+5. Restore DB dengan RB-10 di `/opt/msp`: langkah 3 (repo dari off-site) dan `restore`, tanpa target waktu dan tanpa `--archive-mode=off`.
 6. Retry `deploy-production` di pipeline tag yang sedang berlaku (RB-01). DB production kembali dari pgBackRest beserta riwayatnya, jadi `gmaps-db` cukup diisi kiriman terbaru. File kiriman di server lama ikut hilang: minta founder menjalankan `export` lagi dengan batas = snapshot terakhir production di `/ops/imports` − 1 hari, lalu muat dengan RB-15, termasuk langkah sekali per volume. Lalu jalankan pipeline `main` untuk staging. DB staging kosong; bila staging dibutuhkan, minta kiriman riwayat penuh (batas `-infinity`, satu kiriman melayani staging dan production), lalu RB-04 dan import pertama RB-03. Riwayat penuh untuk production hanya dibutuhkan bila DB MSP hilang melebihi backup.
 7. Backup penuh: `cd /opt/msp && docker compose exec -u postgres postgres pgbackrest --stanza=msp --type=full backup`.
 
-**Verifikasi:** smoke test RB-01 lulus, RB-09 hijau, uptime monitor eksternal hijau, semua target Prometheus hijau, dan import manual RB-03 di production berhasil membaca `gmaps-db`.
+**Verifikasi:** smoke test RB-01 lulus, RB-09 hijau (termasuk WAL baru sudah tersalin off-site), uptime monitor eksternal hijau, semua target Prometheus hijau, dan import manual RB-03 di production berhasil membaca `gmaps-db`.
 
 ### RB-12 — Rotasi secret
-**Kapan:** pemegang secret keluar, secret bocor atau diduga bocor (segera), atau diminta penyedia. Provider, model, dan base URL AI bukan secret; ubah di RB-14. Yang dirotasi di sini adalah API key (`MSP_ANTHROPIC_API_KEY`, `MSP_LLM_FALLBACK_API_KEY`), password role `msp_source_ro` di `gmaps-db` (`MSP_SOURCE_DATABASE_URL`), dan secret lain di `.env`.
+**Kapan:** pemegang secret keluar, secret bocor atau diduga bocor (segera), atau diminta penyedia. Provider, model, dan base URL AI bukan secret; ubah di RB-14. Yang dirotasi di sini adalah API key (`MSP_ANTHROPIC_API_KEY`, `MSP_LLM_FALLBACK_API_KEY`), password role `msp_source_ro` di `gmaps-db` (`MSP_SOURCE_DATABASE_URL`), kredensial SFTP/FTPS off-site (`/opt/ops/rclone.conf`), dan secret lain di `.env`.
 1. Buat nilai baru di penyedia; biarkan nilai lama aktif dulu.
 2. GitLab → **Settings → CI/CD → Variables** → ubah variabel `MSP_…` terkait (Protected, Masked). Perbarui salinan di password manager founder.
 3. Jalankan ulang job deploy production untuk tag yang sedang berlaku. `.env` ditulis ulang (izin 600) dan container yang berubah dibuat ulang.
 4. Setelah verifikasi, cabut nilai lama di penyedia.
 
-Kasus khusus: password DB → `ALTER ROLE … PASSWORD …` lalu langsung langkah 2–3 di jam sepi (error singkat di antaranya). `MSP_SOURCE_DATABASE_URL` → password role lokal `msp_source_ro`, satu nilai untuk staging dan production. Di luar jam import (RB-15 langkah 4): `cd /opt/ops && docker compose exec gmaps-db psql -U postgres`, lalu `\password msp_source_ro`; langsung langkah 2 untuk scope `staging` dan `production` dan langkah 3 untuk keduanya (staging: Retry job `deploy-staging` di pipeline `main` terakhir). Import yang mulai di antaranya gagal login; verifikasi dengan import manual RB-03 di keduanya. Password superuser `gmaps-db` → `\password postgres` dengan cara yang sama, lalu perbarui `MSP_GMAPS_DB_PASSWORD` di `/opt/ops/.env` dan password manager (env ini hanya dibaca saat volume `gmaps-data` pertama kali dibuat). `MSP_ENCRYPTION_KEY` → jangan dirotasi tanpa rencana re-enkripsi dari engineering. Secret cookie Kratos → tambahkan nilai baru di depan daftar dan simpan yang lama agar user tidak logout massal. Secret `/opt/ops/.env` (Grafana, SMTP/Telegram Alertmanager) → ubah lewat SSH, `cd /opt/ops && docker compose up -d`, perbarui password manager.
+Kasus khusus: password DB → `ALTER ROLE … PASSWORD …` lalu langsung langkah 2–3 di jam sepi (error singkat di antaranya). `MSP_SOURCE_DATABASE_URL` → password role lokal `msp_source_ro`, satu nilai untuk staging dan production. Di luar jam import (RB-15 langkah 4): `cd /opt/ops && docker compose exec gmaps-db psql -U postgres`, lalu `\password msp_source_ro`; langsung langkah 2 untuk scope `staging` dan `production` dan langkah 3 untuk keduanya (staging: Retry job `deploy-staging` di pipeline `main` terakhir). Import yang mulai di antaranya gagal login; verifikasi dengan import manual RB-03 di keduanya. Password superuser `gmaps-db` → `\password postgres` dengan cara yang sama, lalu perbarui `MSP_GMAPS_DB_PASSWORD` di `/opt/ops/.env` dan password manager (env ini hanya dibaca saat volume `gmaps-data` pertama kali dibuat). `MSP_ENCRYPTION_KEY` → jangan dirotasi tanpa rencana re-enkripsi dari engineering. Kredensial SFTP/FTPS (remote `offsite`) → buat password atau kunci SSH baru di server off-site, ubah `/opt/ops/rclone.conf` lewat SSH (`sudo rclone --config /opt/ops/rclone.conf config`; izin tetap 600, pemilik root), cek RB-09 setelah run berikutnya (≤ 5 menit), perbarui password manager, lalu cabut yang lama. `PGBACKREST_REPO1_CIPHER_PASS` → tidak bisa diganti untuk repo yang sudah ada; jangan dirotasi tanpa rencana engineering (repo baru + backup full). Salinannya **wajib** ada di password manager founder, di luar server: tanpa passphrase ini semua backup, lokal maupun off-site, tidak bisa dibuka. Secret cookie Kratos → tambahkan nilai baru di depan daftar dan simpan yang lama agar user tidak logout massal. Secret `/opt/ops/.env` (Grafana, SMTP/Telegram Alertmanager) → ubah lewat SSH, `cd /opt/ops && docker compose up -d`, perbarui password manager.
 
-**Verifikasi:** `stat -c '%a %y' /opt/msp/.env` → `600` dengan waktu baru; fitur pemakai secret berfungsi (narasi AI, email, login Google, `pgbackrest check`, import RB-03); status key di Pengaturan AI "Terpasang".
+**Verifikasi:** `stat -c '%a %y' /opt/msp/.env` → `600` dengan waktu baru (kredensial SFTP/FTPS: `/opt/ops/rclone.conf`); fitur pemakai secret berfungsi (narasi AI, email, login Google, `pgbackrest check`, salinan off-site RB-09, import RB-03); status key di Pengaturan AI "Terpasang".
 
 ### RB-13 — Disk hampir penuh
 **Kapan:** AL-07, sebelum import pertama (RB-03), atau sebelum memuat kiriman pertama atau kiriman riwayat penuh (RB-15). Semua project memakai disk yang sama, termasuk `gmaps-db`.
@@ -224,7 +235,7 @@ sudo journalctl --vacuum-size=500M
 ```
 Registry GitLab: `cd /opt/ops && docker compose exec gitlab gitlab-ctl registry-garbage-collect -m` (registry read-only sebentar, jangan saat pipeline jalan). File kiriman di `/opt/ops/gmaps-dump/` selain yang terbaru boleh dihapus (RB-15). Masih penuh → DB staging boleh dikosongkan (`cd /opt/msp-staging && docker compose down -v`), lalu diisi lagi saat ruang cukup lewat pipeline `main` + RB-04 + kiriman riwayat penuh (RB-15) + RB-03. Tidak pernah untuk production.
 
-**Jangan pernah** menghapus isi data Postgres atau `pg_wal`, dan jangan `docker volume prune` tanpa filter label runner. `pg_wal` yang membesar berarti arsip WAL gagal → AL-06. Bila disk tetap > 80% setelah dibersihkan, tambah disk (keputusan founder).
+**Jangan pernah** menghapus isi data Postgres, `pg_wal`, atau repo `/opt/msp/pgbackrest` (retensinya diatur pgBackRest; file yang dihapus manual merusak repo dan, lewat `rclone sync`, salinan off-site juga), dan jangan `docker volume prune` tanpa filter label runner. `pg_wal` yang membesar berarti arsip WAL gagal → AL-06. Bila disk tetap > 80% setelah dibersihkan, tambah disk (keputusan founder).
 
 **Verifikasi:** `df -h` < 70%.
 
@@ -300,18 +311,19 @@ Aturan alert ada di `deploy/ops/` (Prometheus); AL-01 berasal dari uptime monito
 | AL-03 | **p95 di atas NFR-01:** search > 1 s atau profil > 500 ms selama 15 menit | App lambat. SEV-3, SEV-2 bila > 2× target | Ada import, rescore, atau hitung ulang parameter yang jalan → wajar sementara; pindahkan ke jam sepi bila mengganggu. CPU/RAM host jenuh → AL-09. Query macet: `SELECT pid, now()-query_start AS durasi, left(query,100) FROM pg_stat_activity WHERE state <> 'idle' ORDER BY durasi DESC LIMIT 10;`, lalu untuk yang > 5 menit dan bukan backup: `SELECT pg_cancel_backend(<pid>);`. Masih lambat → engineering (query/indeks) |
 | AL-04 | **Antrean River tertahan:** job `available` tertua > 15 menit di `export`, `webhook`, `ai`, `billing`, atau > 2 jam di `import`, `score` | Export, webhook, narasi AI, credit bulanan, atau skor tertunda. SEV-2 | Q1, `docker compose ps worker`, L1 untuk `worker`. Worker mati/macet → `docker compose restart worker` (job idempotent, STD-DB-06). Bila hanya `import`/`score` yang panjang karena import pertama (RB-03) atau hitung ulang parameter (RB-14) → tunggu |
 | AL-05 | **Banyak job gagal:** > 10 job `discarded` dalam 1 jam di antrean mana pun | Aksi user gagal (export/kirim yang gagal bisa diulang tanpa biaya). SEV-2 | Q2. `webhook` → biasanya endpoint customer menolak/timeout: kabari customer. `ai` → AL-08. `export` → disk (RB-13) atau bug (engineering). `import` → AL-10. `billing` → engineering, jangan grant manual (RB-06). Tidak ada redrive massal di F1: setelah penyebab beres, user mengulang aksinya; ops menjalankan import manual RB-03 (aman, tanpa duplikat) |
-| AL-06 | **Arsip WAL/backup gagal:** tidak ada WAL terarsip > 15 menit, `failed_count` naik, atau backup terakhir > 26 jam | RPO ≤ 15 menit (NFR-04) tidak terjamin; `pg_wal` menumpuk sampai disk penuh. SEV-2, SEV-1 bila disk > 90% | RB-09 dan L1 untuk `postgres`. Penyebab umum: storage off-site tidak terjangkau, kredensial kedaluwarsa (RB-12), kuota bucket habis, disk lokal penuh. Setelah beres: `docker compose exec -u postgres postgres pgbackrest --stanza=msp backup` |
+| AL-06 | **Arsip WAL/backup gagal:** tidak ada WAL terarsip > 15 menit, `failed_count` naik, atau backup terakhir > 26 jam | RPO ≤ 15 menit (NFR-04) tidak terjamin; `pg_wal` menumpuk sampai disk penuh. SEV-2, SEV-1 bila disk > 90% | RB-09 dan L1 untuk `postgres`. Repo ada di disk lokal, jadi penyebab umum: disk penuh (RB-13), pemilik/izin `/opt/msp/pgbackrest` bukan uid 999, `PGBACKREST_*` salah. Gangguan server off-site tidak memicu alert ini (→ AL-12). Setelah beres: `docker compose exec -u postgres postgres pgbackrest --stanza=msp backup` |
 | AL-07 | **Disk penuh:** > 80% peringatan, > 90% kritis | Postgres berhenti menulis bila disk penuh → situs down. SEV-2, SEV-1 bila > 90% | RB-13 |
 | AL-08 | **Provider AI gagal:** > 20% narasi AI memakai fallback selama 15 menit (peringatan); > 20% gagal di provider utama dan fallback selama 10 menit (kritis) | narasi AI lambat/gagal, fitur lain normal. SEV-3 / SEV-2 | Halaman status penyedia + L1 untuk `worker`. 401/403 → key salah atau dicabut (RB-12). 429 → kuota/rate limit di konsol penyedia. 5xx/timeout → di Pengaturan AI (RB-14) aktifkan fallback atau ganti provider/model utama, cek dengan **Uji koneksi**. Kritis > 30 menit → kill switch AI (RB-07); nyalakan lagi setelah pulih |
 | AL-09 | **Resource host jenuh:** CPU > 85% atau RAM > 90% selama 15 menit | Production bisa melambat (AL-03). SEV-3, SEV-2 bila p95 production ikut naik | `docker stats --no-stream`. Periksa CI dan staging dulu; keduanya boleh dihentikan untuk melindungi production: `cd /opt/msp-staging && docker compose stop` dan `cd /opt/ops && docker compose stop gitlab-runner` (job CI tertunda). Nyalakan lagi dengan `start` setelah reda. Penyebab di production (import, rescore, query) → AL-03. Sering terjadi → founder (kapasitas, atau pisahkan GitLab/CI; PRD §13) |
 | AL-10 | **Import gagal:** tidak ada import sukses dari `gmaps-db` > 26 jam (job harian gagal, macet, atau tidak jalan) | Data tidak bertambah; app tetap jalan dan estimasi menampilkan tanggal datanya. SEV-3 | Pesan error di `/ops/imports`, Q2, L1 untuk `worker`. Kolom sumber hilang/berubah → RB-03 langkah 5. Koneksi gagal → `cd /opt/ops && docker compose ps gmaps-db`, L1 untuk `gmaps-db`, disk (RB-13). Tabel `business_listings` tidak ada → buat (RB-15, sekali per volume). `permission denied` → `GRANT` di RB-15 (sekali per volume). Login ditolak → password `msp_source_ro` (RB-12). Setelah beres → import manual RB-03 |
 | AL-11 | **Data sumber berhenti bertambah:** import sukses, tetapi tidak ada snapshot baru (Indonesia) > 8 hari (kiriman mingguan + 1 hari) | Data makin menua: belum ada kiriman baru, kiriman baru belum dimuat, atau kiriman baru tidak berisi snapshot baru (scraper berhenti). SEV-3 | AL-10 juga aktif → tangani AL-10 dulu. Kiriman baru sudah diterima tetapi belum dimuat → RB-15. Belum ada kiriman baru, atau snapshot terakhir di `/ops/imports` tidak bergeser setelah kiriman dimuat → kabari founder (pemilik scraper dan DB gmaps) |
+| AL-12 | **Salinan off-site tertinggal:** sinkron rclone sukses terakhir (`msp_offsite_last_success_timestamp_seconds`, textfile `node-exporter`, 06 §8) > 15 menit (= RPO, NFR-04) untuk `part="wal"` atau > 26 jam untuk `part="backup"`, atau metrik tidak ada | Backup lokal tetap jalan, tetapi bila server hilang, data yang belum tersalin ikut hilang (RPO NFR-04 tidak terjamin). SEV-2 | RB-09 dan `sudo journalctl -t msp-offsite --since 1h`. Penyebab umum: server SFTP/FTPS tidak terjangkau atau penuh (kabari founder), kredensial berubah (RB-12), guard berhenti karena repo lokal kosong (cari penyebabnya, jangan dipaksa sinkron), cron `msp-offsite` hilang. Hanya `backup` yang tertinggal saat upload full mingguan atau backup GitLab besar, atau di instalasi baru sebelum job `backup` pertama → tunggu. Setelah beres, run berikutnya (≤ 5 menit) menyalin semua yang tertinggal |
 
 ## 5. Insiden
 | Level | Contoh | Respons |
 |---|---|---|
 | SEV-1 | Situs down, server hilang, data hilang atau rusak, dugaan kebocoran data, credit terpotong salah secara massal | Segera, kapan pun; founder dilibatkan |
-| SEV-2 | Fitur utama gagal (login, export, webhook, AI), backup/WAL gagal, monitoring mati | ≤ 4 jam |
+| SEV-2 | Fitur utama gagal (login, export, webhook, AI), backup/WAL gagal, salinan off-site tertinggal, monitoring mati | ≤ 4 jam |
 | SEV-3 | Lambat sebagian, job gagal sporadis, fallback AI aktif, import harian gagal atau data sumber berhenti bertambah, GitLab/CI mati sementara production normal | Hari kerja berikutnya |
 
 1. **Stabilkan** dengan jalan tercepat: rollback (RB-02), kill switch (RB-07), restart service, hentikan CI/staging (AL-09), bersihkan disk. Akar masalah belakangan.
@@ -342,8 +354,8 @@ Salam, Tim MesinProspek
 ## 6. Jadwal rutin
 | Kapan | Tugas |
 |---|---|
-| Harian | RB-09, termasuk job `backup`. `/ops/imports`: import harian selesai dan jeda snapshot di bawah ambang AL-11 (RB-03). Tinjau alert 24 jam terakhir di Grafana. Bila Grafana tidak terbuka, monitoring mati dan tidak ada yang memperingatkan → SEV-2 |
+| Harian | RB-09, termasuk job `backup` dan salinan off-site. `/ops/imports`: import harian selesai dan jeda snapshot di bawah ambang AL-11 (RB-03). Tinjau alert 24 jam terakhir di Grafana. Bila Grafana tidak terbuka, monitoring mati dan tidak ada yang memperingatkan → SEV-2 |
 | Mingguan | `df -h` (RB-13 bila > 70%); Q2 job gagal; tren 5xx, p95, CPU, dan RAM di Grafana |
 | Mingguan (kiriman DB gmaps) | Founder membuat dan mengirim kiriman dengan batas dari `<log-ops>`; ops memuatnya dengan RB-15 di luar sekitar 03.00 WIB, cek `/ops/imports` di staging dan production, lalu catat tanggal muat dan `batas_berikutnya` di `<log-ops>` |
-| Bulanan | Uji restore RB-10 (DB sementara di server yang sama); update paket OS lalu reboot di jam sepi (semua service ikut restart, termasuk GitLab); update image dasar (`postgres`, `caddy`, `kratos`, `gitlab`, monitoring) lewat MR, `/opt/ops` diterapkan manual; tinjau daftar akses §2 |
+| Bulanan | Uji restore RB-10 dari salinan off-site (DB sementara di server yang sama); update paket OS lalu reboot di jam sepi (semua service ikut restart, termasuk GitLab); update image dasar (`postgres`, `caddy`, `kratos`, `gitlab`, monitoring) lewat MR, `/opt/ops` diterapkan manual; tinjau daftar akses §2 |
 | Per rilis | RB-01 lengkap dengan smoke test; catat versi dan waktu deploy di `<log-ops>` |

@@ -194,6 +194,7 @@ Revisi 0.2 menerapkan arahan founder: **KISS, DRY, make it work → right → fa
 | Q-17 | Bisakah scraper mengambil N ulasan **terbaru** per tempat (urutan "Terbaru")? | **Terjawab:** bisa (D-38) |
 | Q-18 | Detail scraper untuk ulasan terbaru: berapa N, dan bagaimana snapshot ditandai sebagai urutan "Terbaru" | **Terjawab:** 20 ulasan terbaru per tempat; ditandai kolom `reviews_sort = 'newest'` |
 | Q-19 | Bolehkah salinan backup terenkripsi disimpan di luar Indonesia (Backblaze B2: region AS/Kanada/Eropa)? Salinan B2 nonaktif sampai dijawab | Tim legal |
+| Q-20 | Snapshot/versioning di server SFTP/FTPS: `rclone sync` ikut menghapus di off-site, jadi server yang disusupi bisa menghapus salinan off-site. Snapshot harian di sisi server SFTP melindungi dari ini | Terbuka (founder) |
 
 ## 9. Peta dokumen lanjutan
 

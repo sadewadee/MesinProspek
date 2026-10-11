@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Versi | 0.3 (lean) · 2026-10-11. Sumber data = DB gmaps read-only (D-31), kiriman mingguan ramping founder dimuat ke `gmaps-db` (D-35, D-37) |
-| Basis | [README](README.md) (stack F1, kosakata), [PRD](01-prd.md) NFR-03/04/05/09 + §12 + §13, D-18, D-19, D-22, D-26, D-29, D-31, D-35, D-37 ([00 §7](00-analisis-dokumen-awal.md)). Terkait: [04](04-technical-design.md) §2.1 (kapasitas), [05](05-test-strategy.md) (isi test), [08](08-engineering-standards.md) (`make`, migrasi), [09](09-runbook-operasional.md) (operasi) |
+| Basis | [README](README.md) (stack F1, kosakata), [PRD](01-prd.md) NFR-03/04/05/09 + §12 + §13, D-14, D-18, D-19, D-22, D-26, D-29, D-31, D-35, D-37, D-39 ([00 §7](00-analisis-dokumen-awal.md)). Terkait: [04](04-technical-design.md) §2.1 (kapasitas), [05](05-test-strategy.md) (isi test), [08](08-engineering-standards.md) (`make`, migrasi), [09](09-runbook-operasional.md) (operasi) |
 
 > KISS: satu server, GitLab CE + dua runner (CI dan deploy) + Docker Compose + skrip shell. Contoh YAML dan skrip bersifat ilustratif. Semua image dan tool di-pin ke versi eksak; angka versi di contoh hanya contoh.
 
@@ -68,7 +68,7 @@ Di `/opt/ops`: `caddy` 0,5 · 0,5 GB, `gitlab` 4 · 8 GB, job CI 2 · 4 GB + ser
 | `deploy-staging` | `main` otomatis; tag `v*` | Runner `deploy`: `deploy/deploy.sh` di `/opt/msp-staging`. Lalu `smoke-staging` (runner `ci`): J-2 dengan akun test yang sudah terverifikasi (`main`), atau J-2..J-6 di semua browser dengan akun yang sama (tag). J-1 hanya di job `e2e` (Mailpit) |
 | `deploy-production` | tag `vX.Y.Z`, manual, Maintainer | Runner `deploy`: `deploy/deploy.sh` di `/opt/msp`. Smoke manual per 09 RB-01 |
 | `rollback` | manual, Maintainer | Retry job `deploy-production` di pipeline tag sebelumnya (09 RB-02). Langkahnya sama dengan deploy, jadi tidak perlu job terpisah (DRY) |
-| *schedule* | harian 01:00 WIB | Job `backup` (§8): pgBackRest + GitLab |
+| *schedule* | harian 01:00 WIB | Job `backup` (§8): pgBackRest + GitLab ke disk lokal. Salinan off-site dibuat cron host `msp-offsite`, bukan pipeline |
 
 ```yaml
 # .gitlab-ci.yml (ilustratif)
@@ -203,7 +203,7 @@ services:
     build: ./postgres                                 # FROM postgis/postgis:16-3.5 + apt pgbackrest
     image: msp-postgres:16
     env_file: .env                                    # POSTGRES_PASSWORD, PGBACKREST_* (prod)
-    volumes: ["pgdata:/var/lib/postgresql/data"]
+    volumes: ["pgdata:/var/lib/postgresql/data", "./pgbackrest:/var/lib/pgbackrest"]   # repo pgBackRest lokal (§8); staging: kosong
     healthcheck: { test: ["CMD", "pg_isready", "-U", "postgres"], interval: 5s }
 networks:
   edge: { name: "edge-${MSP_ENV}", external: true }   # dibuat stack /opt/ops (§2)
@@ -272,16 +272,38 @@ Migrasi memakai goose di `apps/api/db/migrations`, di-embed di binary, dan dijal
 - **Variabel CI GitLab**, di-scope per environment (`staging` / `production`): setiap key di atas, **Protected** + **Masked** untuk secret. Juga `DEPLOY_DIR` dan deploy token registry.
 - **`MSP_SOURCE_DATABASE_URL`** (kiriman DB gmaps di `gmaps-db`, D-31, D-37) adalah secret seperti key lain: variabel CI Protected + Masked di scope `staging` dan `production`, lalu ditulis ke `.env` masing-masing. Nilainya sama di kedua environment: `postgres://msp_source_ro:<password>@gmaps-db:5432/gmaps`. Role `msp_source_ro` dibuat ops sekali di `gmaps-db` (09 RB-15); rotasi password di 09 RB-12.
 - Deploy menulis `.env` ke `$DEPLOY_DIR` dengan izin 600 (§4). Validasi nilai cukup di satu tempat, yaitu saat aplikasi start (08 STD-GO-05). Nilai yang salah membuat `msp migrate` gagal sebelum ada container yang diganti. **Rotasi**: ubah variabel, lalu jalankan ulang job deploy untuk tag yang sedang berlaku (09 RB-12).
-- `/opt/ops/.env` (domain, IP admin, password admin Grafana, SMTP/Telegram Alertmanager, password superuser `gmaps-db` `MSP_GMAPS_DB_PASSWORD`) diisi manual saat bootstrap.
-- Salinan berikut disimpan di password manager founder: secret production, `/opt/ops/.env`, `PGBACKREST_REPO1_CIPHER_PASS`, serta `gitlab-secrets.json` + `gitlab.rb` (keduanya tidak ikut backup GitLab). Tanpa salinan ini, backup tidak bisa dipakai bila server hilang.
+- `/opt/ops/.env` (domain, IP admin, password admin Grafana, SMTP/Telegram Alertmanager, password superuser `gmaps-db` `MSP_GMAPS_DB_PASSWORD`) dan `/opt/ops/rclone.conf` (kredensial SFTP/FTPS off-site, §8; root, izin 600) diisi manual saat bootstrap. Keduanya tidak pernah masuk repo.
+- Salinan berikut disimpan di password manager founder: secret production, `/opt/ops/.env`, `/opt/ops/rclone.conf`, `PGBACKREST_REPO1_CIPHER_PASS`, serta `gitlab-secrets.json` + `gitlab.rb` (keduanya tidak ikut backup GitLab). Tanpa salinan ini, backup tidak bisa dipakai bila server hilang. Khusus `PGBACKREST_REPO1_CIPHER_PASS`: tanpa passphrase ini **semua** backup pgBackRest, lokal maupun off-site, tidak bisa dibuka, jadi salinannya wajib ada di luar server.
 
 ## 8. Backup & restore
 
-- **pgBackRest**, stanza `msp`, berjalan di container `postgres` production. Repo = object storage S3-compatible off-site di Indonesia (D-14, penyedia Q-09), terenkripsi `aes-256-cbc`, `repo1-retention-full=4`. Konfigurasi lewat env `PGBACKREST_*`.
-- **WAL kontinu.** Diaktifkan sekali di production: `ALTER SYSTEM SET archive_mode = on`, `archive_command = 'pgbackrest --stanza=msp archive-push %p'`, `archive_timeout = '5min'`, lalu restart dan `pgbackrest stanza-create`. Data paling banyak hilang ≈ 5 menit → **RPO ≤ 15 menit** (NFR-04). Karena pengaturan ini tersimpan di data dir, staging tidak mengarsip, dan restore uji dengan `--archive-mode=off` (09 RB-10) tidak menulis ke repo production.
-- **GitLab off-site.** Tanpa backup ini, satu-satunya salinan repo, variabel CI, dan registry ada di server ini. `gitlab-backup create CRON=1` di-upload ke object storage yang sama (bucket terpisah) lewat `backup_upload_connection`. Salinan lokal hanya disimpan sebentar (`backup_keep_time`), dan retensi off-site diatur dengan aturan lifecycle bucket.
-- **Jadwal.** Pipeline schedule harian 01:00 WIB menjalankan job `backup` → `deploy/backup.sh` di runner `deploy`: di `/opt/msp` `pgbackrest backup` (`--type=full` hari Minggu, `diff` hari lain) → `check` → `info`, lalu di `/opt/ops` `gitlab-backup create`. Job gagal bila salah satu langkah gagal atau backup pgBackRest terakhir > 26 jam, dan GitLab mengirim email ke founder. WAL tetap terarsip walau GitLab mati.
-- **Uji restore** sekali sebelum rilis F1 (PRD §12.4), lalu tiap bulan. Restore dilakukan ke **project sementara di server yang sama** (`/opt/msp-restore`, 09 RB-10), dengan volume sendiri, hanya `postgres`, dan tidak menyentuh data staging. Durasi (RTO ≤ 8 jam) dan titik pulih dicatat. Setelah selesai, jalankan `docker compose down -v` dan hapus direktorinya. DB staging tidak di-backup; bila hilang, diisi ulang dari kiriman riwayat penuh founder (09 RB-15, RB-03).
+Off-site = **server SFTP/FTPS milik founder di Indonesia** (D-39, memenuhi D-14). pgBackRest menulis ke repo di disk lokal, lalu rclone menyalinnya ke sana. Repo sengaja lokal: arsip WAL tidak bergantung pada jaringan ke server off-site, dan FTPS tetap bisa dipakai (pgBackRest tidak mendukung FTP/FTPS).
+
+- **pgBackRest**, stanza `msp`, berjalan di container `postgres` production. `repo1` = disk lokal (`posix`) di `/var/lib/pgbackrest`, yaitu bind mount `/opt/msp/pgbackrest` (§5). Terenkripsi di server sebelum disalin ke mana pun: `repo1-cipher-type=aes-256-cbc` dengan `PGBACKREST_REPO1_CIPHER_PASS` (§7). Retensi `repo1-retention-full=4` (full mingguan + diff harian) juga berlaku untuk salinan off-site, karena `rclone sync` meniru repo lokal. Konfigurasi lewat env `PGBACKREST_*`. Ukuran repo masuk anggaran disk (04 §2.1).
+- **WAL kontinu.** Diaktifkan sekali di production: `sudo install -d -o 999 -g 999 -m 750 /opt/msp/pgbackrest` (999 = uid `postgres` di image), `ALTER SYSTEM SET archive_mode = on`, `archive_command = 'pgbackrest --stanza=msp archive-push %p'`, `archive_timeout = '60s'`, lalu restart dan `pgbackrest stanza-create`. WAL masuk repo lokal paling lambat ±1 menit. Karena pengaturan ini tersimpan di data dir, staging tidak mengarsip, dan restore dengan `--archive-mode=off` (09 RB-10) juga tidak.
+- **GitLab.** Tanpa backup ini, satu-satunya salinan repo, variabel CI, dan registry ada di server ini. `gitlab-backup create CRON=1` menulis ke `/var/opt/gitlab/backups`, yaitu bind mount `/opt/ops/gitlab-backups/`, lalu disalin ke off-site oleh skrip yang sama. Retensi = `backup_keep_time` (singkat, mis. 3 hari), sama untuk lokal dan off-site. File backup GitLab tidak dienkripsi; variabel CI di dalamnya terenkripsi dengan kunci di `gitlab-secrets.json`, yang tidak ikut backup.
+- **Salinan off-site (rclone).** Cron root `/etc/cron.d/msp-offsite` menjalankan `/opt/ops/offsite.sh` (keduanya dari `deploy/ops/`) **tiap 5 menit di host**, bukan lewat GitLab, jadi tetap jalan walau GitLab mati. Remote rclone `offsite` (backend `sftp`, atau `ftp` dengan `explicit_tls = true` untuk FTPS; untuk SFTP isi `known_hosts_file` agar host key diverifikasi) ada di `/opt/ops/rclone.conf` (§7).
+  ```bash
+  # deploy/ops/offsite.sh (ilustratif). Cron: */5 * * * * root /opt/ops/offsite.sh 2>&1 | logger -t msp-offsite
+  export RCLONE_CONFIG=/opt/ops/rclone.conf
+  R=/opt/msp/pgbackrest G=/opt/ops/gitlab-backups T=/opt/ops/textfile   # T → node-exporter --collector.textfile.directory
+  ok() { echo "msp_offsite_last_success_timestamp_seconds{part=\"$1\"} $(date +%s)" > "$T/.$1" && mv "$T/.$1" "$T/offsite_$1.prom"; }
+  # Sumber kosong (server baru, repo terhapus) tidak pernah disinkron: sync ikut menghapus di tujuan
+  [ -s $R/archive/msp/archive.info ] && [ -s $R/backup/msp/backup.info ] || exit 1
+  # 1. WAL: kecil, tiap run, tidak menunggu upload besar di langkah 2 (RPO)
+  flock -n /run/lock/msp-offsite-wal rclone sync $R/archive offsite:msp/pgbackrest/archive && ok wal
+  # 2. Backup pgBackRest + GitLab; dilewati selama run sebelumnya masih mengunggah (mis. full mingguan)
+  ls $G/*_gitlab_backup.tar >/dev/null 2>&1 || exit 1
+  flock -n /run/lock/msp-offsite-backup sh -ec "
+    rclone sync $R/backup offsite:msp/pgbackrest/backup
+    rclone sync $G offsite:msp/gitlab-backups
+    # rclone sync $R b2:<bucket>/msp/pgbackrest    # salinan kedua B2: NONAKTIF sampai Q-19 dijawab tim legal
+  " && ok backup
+  ```
+  **RPO off-site.** WAL masuk repo lokal ≤ ±1 menit dan tersalin pada run berikutnya (≤ 5 menit). Bila seluruh server hilang, data yang hilang normalnya **±5–10 menit terakhir**, masih di dalam RPO ≤ 15 menit (NFR-04). Bila server off-site tidak terjangkau, backup dan WAL tetap aman di lokal dan tersalin begitu tersambung lagi; selama itu RPO bila server hilang tidak terjamin, dan AL-12 berbunyi (09). `rclone sync` ikut menghapus di tujuan, jadi salinan off-site bukan arsip yang kebal hapus: isi repo lokal tidak pernah dihapus manual (09 RB-13).
+- **Salinan kedua Backblaze B2: nonaktif.** Backblaze tidak punya region di Indonesia (US West/East, EU Central, CA East), jadi salinan ini menunggu jawaban tim legal (Q-19). Isinya hanya repo pgBackRest yang sudah terenkripsi; backup GitLab tidak ikut. Menyalakannya cukup dengan remote `b2` dan baris B2 di `offsite.sh` (09 §1.2), tanpa perubahan lain.
+- **Jadwal.** Pipeline schedule harian 01:00 WIB menjalankan job `backup` → `deploy/backup.sh` di runner `deploy`: di `/opt/msp` `pgbackrest backup` (`--type=full` hari Minggu, `diff` hari lain) → `check` → `info`, lalu di `/opt/ops` `gitlab-backup create`. Keduanya menulis ke disk lokal; `msp-offsite` menyalinnya. Job gagal bila salah satu langkah gagal atau backup pgBackRest terakhir > 26 jam, dan GitLab mengirim email ke founder. WAL tetap terarsip dan tersalin walau GitLab mati.
+- **Uji restore** sekali sebelum rilis F1 (PRD §12 butir 5, 05 §7), lalu tiap bulan, **dari salinan off-site**: repo disalin dengan `rclone copy` dari `offsite:msp/pgbackrest`, bukan diambil dari repo lokal, sehingga jalur saat server hilang ikut terbukti. Restore dilakukan ke **project sementara di server yang sama** (`/opt/msp-restore`, 09 RB-10), dengan volume sendiri, hanya `postgres`, dan tidak menyentuh data staging. Durasi (RTO ≤ 8 jam) dan titik pulih dicatat. Setelah selesai, jalankan `docker compose down -v` dan hapus direktorinya. DB staging tidak di-backup; bila hilang, diisi ulang dari kiriman riwayat penuh founder (09 RB-15, RB-03).
 - **`gmaps-db` tidak di-backup** (pgBackRest hanya untuk `postgres` production; backup DB kita tidak berubah). Isinya hanya kiriman terbaru, yang bisa dimuat ulang dari file di `/opt/ops/gmaps-dump/` (09 RB-15); riwayat ada di DB MSP yang di-backup. Bila server hilang, file itu ikut hilang: founder menjalankan `export` lagi (09 RB-11). Kiriman riwayat penuh hanya dibutuhkan bila DB MSP hilang melebihi backup, atau untuk mengisi ulang DB staging.
 
 ## 9. Bootstrap server
@@ -290,10 +312,10 @@ Migrasi memakai goose di `apps/api/db/migrations`, di-embed di binary, dan dijal
 - **User**: satu user per admin (sudo, kunci SSH), dan user `deploy` (grup `docker`, setara root) untuk runner `deploy`. Direktori Compose (README) dimiliki `deploy`.
 - **SSH** kunci saja (`PasswordAuthentication no`, `PermitRootLogin no`). **Firewall `ufw`**: tolak semua koneksi masuk kecuali 80/443, dan 22 dari allowlist IP admin.
 - **Update**: `unattended-upgrades` untuk security update; reboot manual di jam sepi (09 §6). **Docker**: Engine + plugin compose dari repo apt resmi; rotasi log `json-file` (`max-size: 50m`, `max-file: 3`).
-- **Ops**: pasang paket `gitlab-runner` (runner `deploy`, user `deploy`), salin `deploy/ops/` ke `/opt/ops`, lalu `docker compose up -d`. Bootstrap berhenti dengan pesan bila `/opt/ops/.env` belum ada; isi file itu dari password manager.
+- **Ops**: pasang paket `gitlab-runner` (runner `deploy`, user `deploy`) dan `rclone`, salin `deploy/ops/` ke `/opt/ops` (termasuk `offsite.sh` dan direktori `textfile/` yang di-mount read-only ke `node-exporter`), pasang `msp-offsite` di `/etc/cron.d/` (§8), lalu `docker compose up -d`. Bootstrap berhenti dengan pesan bila `/opt/ops/.env` atau `/opt/ops/rclone.conf` belum ada; isi keduanya dari password manager. Di server baru cron `msp-offsite` belum menyalin apa pun sampai repo pgBackRest dipulihkan (guard di §8).
 - **Manual sekali**: daftarkan runner `ci` dan `deploy` (§2), buat pipeline schedule `backup`, daftarkan `https://app.<domain>/readyz` dan `https://gitlab.<domain>` di uptime monitor eksternal (09 AL-01), dan buat tabel serta role `msp_source_ro` di `gmaps-db`, lalu muat kiriman pertama dari founder (09 RB-15).
 
-**Bangun ulang server** (RTO ≤ 8 jam, NFR-04; langkah di 09 RB-11): server baru → bootstrap → DNS ke IP baru (Caddy butuh DNS untuk TLS; runner dan registry diakses lewat domain) → `gitlab-backup restore` + daftarkan ulang runner → restore pgBackRest ke `/opt/msp` → Retry `deploy-production` tag yang berlaku → muat kiriman DB gmaps dari founder ke `gmaps-db` (09 RB-15) → pipeline `main` untuk staging.
+**Bangun ulang server** (RTO ≤ 8 jam, NFR-04; langkah di 09 RB-11): server baru → bootstrap → DNS ke IP baru (Caddy butuh DNS untuk TLS; runner dan registry diakses lewat domain) → salin backup GitLab dari off-site (`rclone copy`) + `gitlab-backup restore` + daftarkan ulang runner → salin repo pgBackRest dari off-site ke `/opt/msp/pgbackrest` + restore → Retry `deploy-production` tag yang berlaku → muat kiriman DB gmaps dari founder ke `gmaps-db` (09 RB-15) → pipeline `main` untuk staging.
 
 ## 10. Rilis & versi
 

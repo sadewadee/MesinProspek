@@ -62,9 +62,10 @@
 │                                                                                     │
 │ Setiap container punya batas CPU/RAM (§2.1)                                         │
 └──────┬──────────────────────────────────────────────────────────────────────────────┘
-       │ pgBackRest (WAL kontinu) · backup GitLab · gmaps-db tidak di-backup (06 §8)
+       │ pgBackRest (WAL kontinu, terenkripsi) → repo lokal; backup GitLab → disk lokal
+       │ rclone tiap 5 menit (cron msp-offsite) · gmaps-db tidak di-backup (06 §8)
        ▼
- S3-compatible off-site (Indonesia)
+ SFTP/FTPS off-site milik founder (Indonesia, D-39) · salinan B2 nonaktif (Q-19)
 Masuk:     kiriman mingguan DB gmaps dari founder (.csv.gz, disalin ke server) → dimuat ke gmaps-db (09 RB-15)
 Eksternal: worker → GeoAPI (geo-sync) · worker → LLM sesuai setting AI (§11)
            worker → URL webhook customer (§10) · kratos → Google OIDC, SMTP · api → SMTP (undangan)
@@ -103,13 +104,14 @@ Server sudah ada (founder, Q-09): **56 core, 128 GB RAM, disk 1 TB**. Dataset F1
 | Isi | Perkiraan | Catatan |
 |---|---|---|
 | OS, image Docker, log | ±50 GB | Dibersihkan lewat 09 RB-13 |
-| GitLab + registry | ±100 GB | Cleanup policy registry; backup lokal hanya disimpan sebentar (06 §8) |
+| GitLab + registry | ±100 GB | Cleanup policy registry; backup GitLab di `/opt/ops/gitlab-backups/` hanya disimpan sebentar (`backup_keep_time`, sama dengan salinan off-site, 06 §8) |
 | DB production + WAL lokal | Diukur | `places` (+ baris sumber terbaru sebagai evidence), `place_snapshots` (satu baris per tempat per hari, terus bertambah), `estimates`, index, polygon desa, skor. Diukur setelah import pertama di staging, sebelum import pertama production (09 RB-03) |
+| Repo pgBackRest lokal `/opt/msp/pgbackrest` | Diukur | Backup DB MSP + WAL, terkompresi dan terenkripsi: 4 full mingguan + diff harian + WAL sejak full tertua (06 §8). Diperkirakan kecil dibanding `gmaps-db` saat kiriman pertama; diukur setelah backup full pertama. Uji restore sementara butuh ruang tambahan sebesar repo + DB production (09 RB-10). Terlalu besar → retensi diturunkan (keputusan founder) |
 | DB staging | ≈ DB production | — |
 | `gmaps-db` + satu file kiriman | ±2 × S saat kiriman pertama | S = ukuran kiriman riwayat penuh, diukur founder sebelum kiriman pertama (09 RB-15). Kiriman mingguan jauh lebih kecil; `TRUNCATE` saat memuat kiriman berikutnya dan penghapusan file lama mengembalikan ruangnya |
 | Ruang bebas | ≥ 30% | 09 RB-13 menargetkan disk < 70%; AL-07 berbunyi di 80% |
 
-Kiriman pertama dikirim bila 2 × S ≤ ±300 GB, sehingga ±250 GB tersisa untuk DB production dan staging di bawah batas 70%. Lebih besar → keputusan founder (mis. tambah disk) sebelum kiriman dikirim.
+Kiriman pertama dikirim bila 2 × S ≤ ±300 GB, sehingga ±250 GB tersisa untuk DB production, DB staging, dan repo pgBackRest di bawah batas 70%. Lebih besar → keputusan founder (mis. tambah disk) sebelum kiriman dikirim.
 
 ## 3. Modul Go
 

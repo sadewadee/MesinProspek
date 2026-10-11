@@ -46,7 +46,7 @@ Kondisi saat ini:
 | AI | **Claude**, fallback ke API **OpenAI-compatible** (D-15) |
 | Wilayah | **GeoAPI** (`geoapi.mcpke.dev`) di-sync ke PostGIS. Peta: vector tiles GeoAPI + basemap OpenStreetMap |
 | Hosting | **1 dedicated server** di Indonesia untuk semuanya (D-19, D-26): production, staging, GitLab CE + runner, monitoring. Docker Compose + Caddy (TLS otomatis). Batas CPU/RAM per container; runner 1 job sekaligus |
-| Backup | **pgBackRest** (WAL kontinu) ke object storage S3-compatible off-site di Indonesia |
+| Backup | **pgBackRest** (WAL kontinu, terenkripsi) ke repo lokal, disalin rclone ke SFTP/FTPS di Indonesia; salinan B2 nonaktif sampai tim legal mengonfirmasi (D-39) |
 | Secret | Variabel CI terproteksi GitLab → file `.env` di server (izin 600) |
 | Observability | Log JSON (`slog`), endpoint `/metrics` → Prometheus + Grafana + alert (email/Telegram) |
 
@@ -69,7 +69,7 @@ Semua dokumen memakai nama-nama ini persis.
 | Domain | `app.<domain>` (production), `staging.<domain>`, `gitlab.<domain>`, `registry.<domain>` (container registry GitLab), `grafana.<domain>` |
 | Direktori Compose di server | `/opt/msp` (production), `/opt/msp-staging` (staging), `/opt/ops` (GitLab, runner, monitoring) |
 | Menjalankan tool di server | `docker compose run --rm worker msp <subcommand>` |
-| Backup | pgBackRest stanza `msp` |
+| Backup | pgBackRest stanza `msp`, repo lokal `/opt/msp/pgbackrest`. Salinan off-site: cron host `msp-offsite` (`/opt/ops/offsite.sh`, rclone tiap 5 menit) ke remote `offsite` (SFTP/FTPS Indonesia); remote `b2` nonaktif (Q-19) |
 | Rute HTTP | API `/api/v1` · Kratos `/.ory/*` · health `/healthz` (proses hidup) dan `/readyz` (DB siap) · metrik `/metrics` di listener internal `:9090`, hanya lewat network Docker (tidak di-route Caddy) |
 | Env var | Prefix `MSP_`, mis. `MSP_DATABASE_URL`, `MSP_SOURCE_DATABASE_URL` (kiriman mingguan ramping dari founder, dimuat ke `gmaps-db`; role read-only `msp_source_ro`), `MSP_ANTHROPIC_API_KEY`, `MSP_LLM_FALLBACK_API_KEY`, `MSP_GEOAPI_BASE_URL`, `MSP_STORAGE_DIR`, `MSP_ENCRYPTION_KEY`. Env hanya untuk secret & pengaturan proses; model AI dan plan ada di DB (setting ops) |
 | Image | `<registry>/msp/api:<git-sha>`, `<registry>/msp/web:<git-sha>`. Rilis = tag Git `vX.Y.Z` |
