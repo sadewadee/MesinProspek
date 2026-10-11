@@ -73,7 +73,7 @@ Provider dan model **diatur dari dashboard ops** dan bisa diganti kapan saja (D-
 
 | Pos | Asumsi |
 |---|---|
-| 1 dedicated server di Indonesia (production, staging, GitLab, CI, monitoring) | **[isi]**, mis. Rp3–6 juta |
+| 1 dedicated server di Indonesia (production, staging, GitLab, CI, monitoring): sudah ada, 56 core, 128 GB RAM, disk 1 TB | **[isi]** biaya bulanannya |
 | Object storage off-site untuk backup | **[isi]**, mis. Rp200–500 ribu |
 | Domain, SMTP, lain-lain | **[isi]**, mis. Rp200 ribu |
 | GeoAPI | Gratis (kunci API gratis). Wajib mencantumkan atribusi sumber |
@@ -106,5 +106,5 @@ Titik impas infra ≈ biaya tetap ÷ (harga rata-rata − biaya AI rata-rata). D
 |---|---|---|
 | D-09 | Harga, kuota, dan nama plan final (diubah langsung di dashboard ops) | Setelah beta |
 | — | Model AI default (bisa diganti kapan saja di dashboard ops) | Saat narasi AI pertama aktif |
-| — | Biaya server & backup aktual (mengisi §4.2) | Saat server disewa (Q-09) |
+| — | Biaya server & backup aktual (mengisi §4.2) | Sekarang (server sudah ada; lokasi backup off-site masih Q-09) |
 | — | Biaya DB gmaps dan scraper dibebankan ke MesinProspek atau tidak (§4.2) | Sebelum beta berbayar |

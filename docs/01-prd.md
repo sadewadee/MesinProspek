@@ -7,7 +7,7 @@
 | Versi | 0.3 (lean). Posisi berubah dari sales intelligence menjadi market intelligence (D-30) |
 | Tanggal | 2026-10-11 |
 | Prinsip | **KISS**, **DRY**, **Make it work → make it right → make it fast** (D-23) |
-| Input | **DB gmaps**: dump dari founder di-restore ke server kita lalu dibaca read-only, berisi snapshot berulang per tempat (D-31, D-35) + data wilayah GeoAPI (D-25). **F1 melayani seluruh Indonesia** (D-28, D-34). MesinProspek tidak melakukan scraping; crawler website **PAUSED** (D-01) |
+| Input | **DB gmaps**: kiriman mingguan ramping dari founder (hanya Indonesia, kolom yang dipakai, baris baru) dimuat ke server kita lalu dibaca read-only, berisi snapshot berulang per tempat (D-31, D-35, D-37) + data wilayah GeoAPI (D-25). **F1 melayani seluruh Indonesia** (D-28, D-34). MesinProspek tidak melakukan scraping; crawler website **PAUSED** (D-01) |
 | Pembangun | Agent AI (maks. 8 paralel) diorkestrasi Claude. Founder menyetujui tiap gerbang fase (D-22) |
 
 > Konvensi: `FR-<AREA>-nn`, `BR-<AREA>-nn`, `NFR-nn`. **F1** = make it work (rilis jual pertama), **F2** = make it right, **F3** = make it fast. Hanya F1 yang dirinci. Fitur masuk F1 hanya jika dibutuhkan alur inti: **temukan → pahami → prioritaskan → tindak lanjuti**.
@@ -71,14 +71,14 @@ PER-01 dan PER-02 adalah pengguna utama F1 (D-30). PER-03 tetap dilayani lewat f
 | Fase | Tema | Isi |
 |---|---|---|
 | **F1 — Make it work** | Alur inti end-to-end, bisa dijual ke customer awal | Semua FR di §9 |
-| **F2 — Make it right** | Kualitas, kelengkapan, kenyamanan | Pembanding BPS (TPK hotel, penjualan F&B per provinsi); estimasi kategori lain (ritel, jasa); perbandingan bebas antar bisnis dan antar wilayah; watch/alert perubahan; upload daftar customer + pencocokan; laporan data salah + koreksi ops; role Viewer/Manager; natural-language search; satu integrasi CRM; billing self-serve; pengelompokan multi-cabang; bahasa Inggris; error tracking |
+| **F2 — Make it right** | Kualitas, kelengkapan, kenyamanan | **Insight teks ulasan** (`user_reviews`, tanpa nama/foto pengulas): tema pujian/keluhan dan sebutan harga per orang, dikumpulkan dari ulasan unik lintas snapshot mingguan, sebagai pembanding belanja per tamu; pembanding BPS (TPK hotel, penjualan F&B per provinsi); estimasi kategori lain (ritel, jasa); perbandingan bebas antar bisnis dan antar wilayah; watch/alert perubahan; upload daftar customer + pencocokan; laporan data salah + koreksi ops; role Viewer/Manager; natural-language search; satu integrasi CRM; billing self-serve; pengelompokan multi-cabang; bahasa Inggris; error tracking |
 | **F3 — Make it fast** | Skala & ketahanan | Server aplikasi kedua (HA), replika DB, object storage S3, cache, deploy tanpa downtime, optimasi untuk data > 5 juta tempat, mesin search terpisah hanya bila Postgres tidak cukup |
 
 ## 7. Data input
 
 ### 7.1 DB gmaps (D-31)
 
-DB gmaps adalah sumber dataset kita. Export JSON-LD-nya (D-24) membuang `popular_times`, harga, distribusi bintang, dan riwayat snapshot, padahal semuanya dibutuhkan estimasi. Karena itu MesinProspek membaca isi DB gmaps itu sendiri: founder menyerahkan **dump** DB gmaps secara berkala, dump di-restore ke server kita, lalu MesinProspek membacanya lewat akun **read-only**, secara inkremental berdasarkan waktu scrape (D-35). **Satu baris = satu snapshot satu tempat.** Satu tempat bisa punya ratusan snapshot (Signa Cafe: 171 snapshot, Februari–September 2026). Snapshot inilah yang membuat laju ulasan bisa diukur, bukan ditebak.
+DB gmaps adalah sumber dataset kita. Export JSON-LD-nya (D-24) membuang `popular_times`, harga, distribusi bintang, dan riwayat snapshot, padahal semuanya dibutuhkan estimasi. Karena itu MesinProspek membaca isi DB gmaps itu sendiri: founder menyerahkan **kiriman mingguan ramping** dari DB gmaps (baris Indonesia, hanya kolom yang dipakai import, hanya baris baru sejak kiriman sebelumnya; kiriman pertama berisi seluruh riwayat), kiriman dimuat ke server kita, lalu MesinProspek membacanya lewat akun **read-only**, secara inkremental berdasarkan waktu scrape (D-35, D-37). Riwayat snapshot tersimpan di database MesinProspek sendiri. **Satu baris = satu snapshot satu tempat.** Satu tempat bisa punya ratusan snapshot (Signa Cafe: 171 snapshot, Februari–September 2026). Snapshot inilah yang membuat laju ulasan bisa diukur, bukan ditebak.
 
 | Data | Dipakai untuk | Catatan dari data nyata (sampel Signa Cafe) |
 |---|---|---|
@@ -96,7 +96,7 @@ DB gmaps adalah sumber dataset kita. Export JSON-LD-nya (D-24) membuang `popular
 | Pemilik (`owner`) | Penanda "listing diklaim pemilik" | — |
 | Waktu scrape | Tanggal snapshot (`observed_at`) | — |
 | Status, foto, deskripsi | Tidak dipakai di F1 | Status tidak andal (sampel berisi "Anjing boleh masuk") |
-| Contoh ulasan (`user_reviews`) | **Tidak diimpor di F1** | Hanya ±8 ulasan pilihan Google, tidak mewakili, dan memuat nama pengulas |
+| Contoh ulasan (`user_reviews`) | **Tidak diimpor di F1**; insight teks di F2 (§6) | ±8 ulasan per snapshot, diurutkan "paling relevan" oleh Google (sampel Signa berisi ulasan 2024–2026), jadi tidak bisa dipakai untuk laju ulasan dan tidak mewakili sebaran rating. Proporsi ulasan positif sudah lengkap dari distribusi bintang (semua ulasan). Isinya berguna untuk hal lain: sebutan harga per orang ("berdua di bawah 250 rb"), ukuran rombongan, dan tema pujian/keluhan. Memuat nama dan foto pengulas yang tidak kita butuhkan |
 | Email, nama pemilik/person | Tidak ada → "Tidak diketahui" | — |
 
 Nama kolom persis dan cara membacanya ditulis sekali di 04 (DRY). Snapshot yang berbeda bisa menyimpan atribut berbeda. Contoh: harga Signa hanya ada di sebagian snapshot, dan kategorinya kadang "Restaurant", kadang "Restoran". Aturan penggabungannya ada di BR-NORM-05.
@@ -240,7 +240,7 @@ Nilai yang tidak bisa diukur dari data diatur ops dari dashboard (D-29, D-32): r
 |---|---|
 | Review rate tidak bisa diukur dari data dan sangat menentukan omzet (1% vs 2% = 2×) | Selalu rentang + tabel sensitivitas + parameter yang dipakai, tidak pernah disebut omzet pasti. Parameter memakai benchmark dan diatur dari dashboard. MesinProspek tidak punya data omzet nyata usaha dan tidak menjanjikannya |
 | `popular_times` hanya ada di ±13% tempat dan harga di ±0,8% | Pola dan omzet tampil "Belum dapat diperkirakan" bila data kurang; harga memakai median wilayah atau benchmark berlabel (Lampiran E) |
-| **Riwayat snapshot belum merata** (Q-14: ≥ 30 hari di 44–52% tempat di Bali, 0–0,3% di kota lain saat diukur) | Estimasi tampil per tempat hanya bila riwayatnya cukup (BR-EST-01); di tempat lain tampil "Belum cukup riwayat". Founder menyerahkan dump terbaru secara berkala sehingga riwayat bertambah. Ukur ulang Q-14 sebelum beta dan rekrut peserta beta di kota yang riwayatnya sudah cukup. Fitur tidak diubah untuk menutupi data yang kurang |
+| **Riwayat snapshot belum merata** (Q-14: ≥ 30 hari di 44–52% tempat di Bali, 0–0,3% di kota lain saat diukur) | Estimasi tampil per tempat hanya bila riwayatnya cukup (BR-EST-01); di tempat lain tampil "Belum cukup riwayat". Kiriman mingguan founder menambah riwayat. Bila scraper bisa mengambil ulasan **terbaru** (bukan "paling relevan"), laju ulasan bisa diukur dari satu snapshot (Q-17). Ukur ulang Q-14 sebelum beta dan rekrut peserta beta di kota yang riwayatnya sudah cukup. Fitur tidak diubah untuk menutupi data yang kurang |
 | Skema DB gmaps berubah dan merusak import | Pemetaan kolom ditulis di satu tempat (04); import memeriksa kolom saat mulai dan gagal dengan alert yang jelas |
 | Data basi (contoh: catatan lama tentang Pulau Kawe ternyata keliru) | Estimasi selalu dihitung dari snapshot terbaru dan menampilkan tanggal data; dihitung ulang setelah setiap import |
 | Populasi adalah perkiraan model, bukan sensus | Label jelas di UI dan laporan |
