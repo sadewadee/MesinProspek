@@ -152,7 +152,7 @@ Nilai yang tidak bisa diukur dari data diatur ops dari dashboard (D-29, D-32): r
 | FR-EST-05 | Penanda kualitas data estimasi: ulasan bintang 5 ≥ 85% → "Ulasan kemungkinan diminta aktif; omzet sebenarnya cenderung di sisi bawah rentang"; laju ulasan terkini berbeda > 30% dari laju setahun → "Laju ulasan berubah" | Penanda tampil di profil dan analisis lokasi |
 | FR-EST-06 | Estimasi dihitung ulang setelah setiap import dan setiap perubahan parameter. Setiap hasil menyimpan versi `est-X.Y.Z`, parameter yang dipakai, dan tanggal snapshot | Input + parameter + versi sama → hasil sama |
 | **LOC — analisis lokasi** | | |
-| FR-LOC-01 | Analisis lokasi (Lampiran F). Input: titik di peta atau alamat, radius, kelompok target, harga per orang rencana (opsional), dan bisnis pembanding (opsional, mis. usaha milik user). Output: tetangga dengan data cukup, pola keramaian tetangga vs pembanding, jam inti + saran jam buka, posisi harga, sumber pengunjung siang, dan tingkat keyakinan + saran cek lapangan. Analisis bisa disimpan dan dibuka ulang | Fixture Warung Kita menghasilkan saran jam buka 16.00–22.00 dan keyakinan "Rendah" (§12) |
+| FR-LOC-01 | Analisis lokasi (Lampiran F). Input: titik di peta atau alamat, radius, kelompok target, harga per orang rencana (opsional), dan bisnis pembanding (opsional: bisnis mana pun di data, mis. konsep yang ingin ditiru; tidak harus milik user). Analisis tetap lengkap tanpa pembanding. Output: tetangga dengan data cukup, pola keramaian tetangga vs pembanding, jam inti + saran jam buka, posisi harga, sumber pengunjung siang, dan tingkat keyakinan + saran cek lapangan. Analisis bisa disimpan dan dibuka ulang | Fixture Warung Kita menghasilkan saran jam buka 16.00–22.00 dan keyakinan "Rendah" (§12) |
 | **INTL** | | |
 | FR-INTL-01 | Setiap nilai yang tampil punya claim type dan sumber (BR-TRUST) | Evidence bisa dibuka dari profil |
 | FR-INTL-02 | Deteksi opportunity sesuai katalog Lampiran B | Tiap opportunity punya alasan yang bisa dibaca |
@@ -238,6 +238,7 @@ Nilai yang tidak bisa diukur dari data diatur ops dari dashboard (D-29, D-32): r
 |---|---|
 | Review rate tidak bisa diukur dari data dan sangat menentukan omzet (1% vs 2% = 2×) | Selalu rentang + tabel sensitivitas + parameter yang dipakai, tidak pernah disebut omzet pasti. Parameter memakai benchmark dan diatur dari dashboard. MesinProspek tidak punya data omzet nyata usaha dan tidak menjanjikannya |
 | `popular_times` hanya ada di ±13% tempat dan harga di ±0,8% | Pola dan omzet tampil "Belum dapat diperkirakan" bila data kurang; harga memakai median wilayah atau benchmark berlabel (Lampiran E) |
+| **Cakupan data belum diukur.** Estimasi butuh ≥ 2 snapshot berjarak ≥ 30 hari; analisis lokasi butuh `popular_times` (±13%); omzet butuh harga (±0,8%, sisanya median wilayah atau benchmark). Bila cakupan rendah di kota target, sebagian besar layar tampil "Belum dapat diperkirakan" | Ukur cakupan per kota dan kelompok **sebelum build** (Q-14). Bila rendah, scraper menjadwalkan scrape ulang tempat di kota target; fitur tidak diubah untuk menutupinya |
 | Skema DB gmaps berubah dan merusak import | Pemetaan kolom ditulis di satu tempat (04); import memeriksa kolom saat mulai dan gagal dengan alert yang jelas |
 | Data basi (contoh: catatan lama tentang Pulau Kawe ternyata keliru) | Estimasi selalu dihitung dari snapshot terbaru dan menampilkan tanggal data; dihitung ulang setelah setiap import |
 | Populasi adalah perkiraan model, bukan sensus | Label jelas di UI dan laporan |
@@ -327,6 +328,7 @@ Rantai: **snapshot → laju ulasan → kunjungan → omzet**. Pola keramaian mem
 | Sumber harga, urut prioritas | (1) harga tempat itu sendiri, (2) median titik tengah harga bisnis sekelompok di kab/kota yang sama (≥ 10 bisnis), (3) benchmark ops per kelompok, (4) tidak diketahui → omzet tidak dihitung, kunjungan tetap tampil. Sumber yang dipakai selalu ditampilkan |
 | Omzet/tahun (rendah, tengah, tinggi) | kunjungan (rendah, tengah, tinggi) × belanja per tamu |
 | Sensitivitas | Tabel review rate (bawah, tengah, atas) → tamu per hari dan omzet per tahun |
+| Catatan metode (selalu tampil) | Kunjungan dihitung dari ulasan Google Maps, sehingga pesanan lewat aplikasi pesan-antar umumnya tidak tercakup |
 
 ### E.3 Hotel
 
@@ -370,7 +372,7 @@ Mengubah parameter memicu hitung ulang (FR-EST-06) dan tercatat di audit.
 
 | Bagian | Aturan |
 |---|---|
-| Input | Titik (klik peta, alamat, atau bisnis yang sudah ada). Radius default 500 m (100–2.000 m). Kelompok target (`makan` / `kafe` / `hotel`). Harga per orang rencana (opsional). Bisnis pembanding (opsional) |
+| Input | Titik (klik peta, alamat, atau bisnis yang sudah ada). Radius default 500 m (100–2.000 m). Kelompok target (`makan` / `kafe` / `hotel`). Harga per orang rencana (opsional). Bisnis pembanding (opsional): bisnis mana pun di data, tidak harus milik user. Semua bagian di bawah tetap dihitung tanpa pembanding |
 | Tetangga | Bisnis dalam radius, dikelompokkan: **sejenis** (kelompok sama), **F&B lain** (kelompok makan/kafe lainnya), dan **non-F&B**. Tetangga "data cukup" = ulasan > 0 dan punya `popular_times`. Tetangga lain tetap dihitung, tetapi tidak dipakai untuk pola. Setiap tetangga menampilkan tanggal datanya |
 | Pola tetangga | Rata-rata nilai per jam tetangga sejenis yang datanya cukup. F&B lain ditampilkan terpisah sebagai konteks (mis. kafe yang ramai larut malam) |
 | Jam inti & saran jam buka | Jam inti pola tetangga (Lampiran E §E.4). Saran jam buka = 1 jam sebelum jam inti pertama sampai 1 jam setelah awal jam inti terakhir |
