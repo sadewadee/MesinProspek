@@ -165,6 +165,7 @@ Revisi 0.2 menerapkan arahan founder: **KISS, DRY, make it work → right → fa
 | D-31 | Input = **DB gmaps dibaca langsung** (read-only, inkremental per waktu scrape). Export JSON-LD tidak dipakai karena membuang `popular_times`, harga, distribusi bintang, dan riwayat snapshot | Accepted |
 | D-32 | Estimasi di F1 (PRD Lampiran E): laju ulasan dari snapshot → kunjungan → omzet untuk F&B, plus okupasi & omzet kamar hotel. Selalu rentang + asumsi + tanggal. Parameter yang tidak terukur diatur dari dashboard ops | Accepted |
 | D-33 | Analisis lokasi di F1 (PRD Lampiran F): pola keramaian tetangga, jam inti, posisi harga, keyakinan. Divalidasi dengan dua sample case founder (Warung Kita, Signa Cafe) sebagai golden test | Accepted |
+| D-34 | **F1 diluncurkan di Bali.** Estimasi dan metrik kawasan hanya di "wilayah siap" yang ditandai ops (awalnya semua kab/kota Bali), karena riwayat snapshot di luar Bali ±0% (Q-14). Scraper founder mengambil semua bisnis di area yang di-scrape; metrik kawasan dilabeli "bisnis yang terdaftar di Google Maps". Okupasi hotel tetap diestimasi (rentang, berlabel Perkiraan) | Accepted |
 
 ## 8. Pertanyaan terbuka
 
@@ -181,7 +182,7 @@ Revisi 0.2 menerapkan arahan founder: **KISS, DRY, make it work → right → fa
 | Q-09 | Spesifikasi satu server & lokasi backup off-site | Terbuka |
 | Q-11 | Validasi hukum PDP | Tim legal |
 | Q-12 | Akses jaringan dari server MesinProspek ke DB gmaps (lokasi DB, cara koneksi, akun read-only), plus index (`created_at`, `id`) di tabel sumber untuk import inkremental | Terbuka |
-| Q-14 | Cakupan data Indonesia per kota & kelompok: % tempat dengan riwayat ≥ 30 hari, dengan `popular_times`, dengan harga | Terbuka (query disiapkan untuk founder) |
+| Q-14 | Cakupan data Indonesia per kota & kelompok: % tempat dengan riwayat ≥ 30 hari, dengan `popular_times`, dengan harga | **Terjawab:** Bali cukup, kota lain riwayat ±0% (PRD §7.1, D-34) |
 | Q-13 | Skema lengkap tabel sumber di DB gmaps (nama kolom ID tempat, telepon, website, sosial, koordinat) | **Terjawab:** sampel record lengkap dari founder (PRD §7.1, pemetaan kolom di 04) |
 
 ## 9. Peta dokumen lanjutan

@@ -136,7 +136,7 @@ VERIFIED dan LIKELY_VALID memakai hue yang sama. Keduanya dibedakan lewat **bobo
 | Token | Alias ke | Ikon |
 |---|---|---|
 | `color.freshness.fresh` / `aging` / `stale` | success / warning / danger | `clock` / `clock-alert` / `history` |
-| `color.confidence.high` / `medium` / `low` *(F2)* | success / warning / danger | meter 3 bar (terisi 3/2/1) |
+| `color.confidence.high` / `medium` / `low` | success / warning / danger | meter 3 bar (terisi 3/2/1) |
 
 > Karena freshness, confidence, dan verifikasi berbagi hue, komponen **wajib** menampilkan label teks ("Tinggi", "Usang", dst.). Dua badge berwarna sama dalam satu baris dibedakan oleh label dan ikonnya.
 
@@ -183,7 +183,7 @@ Aturan chart tambahan: satu sumbu Y (tidak ada dual-axis); legend selalu ada unt
 | `text.h1` | display | 30 / 36 | 600 | Judul halaman |
 | `text.h2` | display | 24 / 32 | 600 | Judul seksi |
 | `text.h3` | display | 18 / 28 | 600 | Judul kartu/panel |
-| `text.body-lg` | sans | 16 / 24 | 400 | Teks panjang (AI brief) |
+| `text.body-lg` | sans | 16 / 24 | 400 | Teks panjang (narasi AI) |
 | `text.body` | sans | 14 / 20 | 400 | **Default UI** |
 | `text.body-sm` | sans | 13 / 18 | 400 | Sel tabel compact |
 | `text.caption` | sans | 12 / 16 | 400 | Sumber, timestamp |
@@ -224,7 +224,7 @@ Komponen dibangun di `packages/ui` di atas Radix primitives. Komponen hanya bole
 | **Button** | label, ikon opsional | `accent.*`, `fg.on-accent`, `radius.md`, `size.control.*` | primary / secondary / ghost / danger; loading; disabled. Tombol berbayar menampilkan biaya ("Unlock · 1 credit"). | Fokus `border.focus`. Aksi berbayar wajib lewat dialog konfirmasi. |
 | **Badge** | ikon + label | `color.{score,verification,claim,freshness,confidence,status}.*`, `radius.sm`, `text.label` | Varian `solid` / `subtle`. Badge claim memakai `border-style.claim.*`. | Label teks wajib. Tooltip berisi angka (confidence) dan tanggal. |
 | **ScoreBadge** | angka skor + band + (opsional) badge coverage | `color.score.*.solid/on-solid`, `text.numeric` | UNSCORED menampilkan label "Belum dinilai" tanpa angka (tidak pernah "—" atau "0", BR-TRUST-03). `coverage` < 0,6 menampilkan badge "Data terbatas" (`status.warning`). | `aria-label` lengkap, misalnya "Skor prioritas 92, HOT". |
-| **ConfidenceMeter** *(F2)* | 3 bar + label | `color.confidence.*` | Tinggi 3 bar, Sedang 2, Rendah 1. Angka di tooltip. | Bukan warna saja: jumlah bar + label. |
+| **ConfidenceMeter** | 3 bar + label | `color.confidence.*` | Tinggi 3 bar, Sedang 2, Rendah 1. Angka di tooltip. | Bukan warna saja: jumlah bar + label. |
 | **FactorBar** (penjelasan skor) | nama faktor, bar kontribusi, bobot, nilai, badge claim | `color.accent.default` (bar), `color.claim.*`, `text.numeric` | Faktor Unknown: bar kosong bergaris putus + "Tidak dihitung". | Tersedia sebagai tabel untuk screen reader. |
 | **MaskedValue + Unlock** | nilai ter-mask, tombol unlock | `fg.muted`, `text.mono` | Ter-mask → dialog biaya → terbuka (copy, WhatsApp, telepon). | Nilai ter-mask dibacakan "disembunyikan". |
 | **EvidenceDrawer** | judul claim, daftar sumber, metadata | `bg.surface-raised`, `shadow.lg`, `size.drawer`, `color.claim.*` | Loading, kosong (claim UNKNOWN), error + retry. | Focus trap. Esc menutup. Fokus kembali ke pemicu. |

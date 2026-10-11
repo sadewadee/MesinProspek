@@ -48,7 +48,7 @@ Di `/opt/ops`: `caddy` 0,25 · 0,25 GB, `gitlab` 4 · 8 GB, job CI 1 · 2 GB + s
 
 1. Agent membuat branch `wp/<nn>-<slug>` dari `main` (07), lalu membuka MR. Judul MR mengikuti Conventional Commits dengan WP sebagai scope (`feat(WP-14): …`, `fix(WP-21): …`, `!` untuk breaking). Deskripsi MR menyebut ID PRD (08 STD-GIT-02/04).
 2. `check` hijau → orchestrator me-review → **squash merge** ke `main`. Judul MR menjadi pesan commit dan bahan changelog.
-3. `main` → `build` → deploy `staging` otomatis. Founder membuat tag `vX.Y.Z` → E2E J-2..J-6 di staging → founder menjalankan deploy production.
+3. `main` → `build` → deploy `staging` otomatis. Founder membuat tag `vX.Y.Z` → E2E J-2..J-7 di staging → founder menjalankan deploy production.
 
 | Aktor | Role GitLab | Boleh |
 |---|---|---|
@@ -153,7 +153,7 @@ smoke-staging:
     - if: $CI_COMMIT_BRANCH == "main" && $CI_PIPELINE_SOURCE == "push"
       variables: { E2E_ARGS: "--project=chromium --grep @smoke" }   # J-2; J-1 butuh Mailpit (hanya di stack test)
     - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
-      variables: { E2E_ARGS: "--grep-invert @ci-only" }              # J-2..J-6, semua browser
+      variables: { E2E_ARGS: "--grep-invert @ci-only" }              # J-2..J-7, semua browser
   environment: { name: staging, action: verify }                     # variabel staging: URL + akun test
   script:
     - corepack enable && pnpm install --frozen-lockfile

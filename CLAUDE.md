@@ -39,7 +39,7 @@ Logika yang sama (mis. klasifikasi URL, normalisasi telepon/harga, laju ulasan, 
 
 ## Batasan tetap
 
-- Kita **tidak scraping**; crawler website **PAUSED**. Input = **DB gmaps dibaca langsung, read-only** (global, snapshot berulang per tempat, D-31) + data wilayah GeoAPI. **F1 melayani Indonesia saja**; negara disimpan per record agar negara lain bisa diaktifkan kelak tanpa ubah desain.
+- Kita **tidak scraping**; crawler website **PAUSED**. Input = **DB gmaps dibaca langsung, read-only** (global, snapshot berulang per tempat, D-31) + data wilayah GeoAPI. **F1 melayani Indonesia saja dan diluncurkan di Bali** (wilayah siap, D-34); negara dan wilayah siap disimpan sebagai data agar wilayah lain bisa diaktifkan kelak tanpa ubah desain.
 - **Unknown lebih baik daripada mengarang.** Field yang tidak ada tampil "Tidak diketahui". Jangan mengisi nilai tebakan tanpa label "Perkiraan".
 - **Hanya janjikan yang bisa kita sediakan.** Fitur hanya dibangun dari data yang kita punya (DB gmaps, GeoAPI, benchmark publik). Data internal usaha (omzet nyata, transaksi, kapasitas) tidak tersedia: jangan dijadikan fitur, metrik, atau syarat.
 - **Ukur, jangan tebak.** Estimasi mengikuti PRD Lampiran E/F: yang bisa diukur dari snapshot diukur; asumsi hanya untuk yang tidak terukur, diatur dari dashboard ops, dan selalu ditampilkan sebagai rentang + asumsi + tanggal data.

@@ -159,9 +159,10 @@ CREATE TABLE estimates (                 -- satu baris per tempat kelompok makan
   visitors_low int, visitors_mid int, visitors_high int,             -- kunjungan/tahun, belum dibulatkan (E.2, E.3)
   spend_per_visit bigint, price_source text,   -- own | area_median | benchmark | unknown (E.2)
   revenue_low bigint, revenue_mid bigint, revenue_high bigint,       -- Rupiah/tahun; hotel = omzet kamar
-  room_nights int, occupancy numeric(5,4),     -- hotel, nilai tengah (E.3)
+  room_nights_low int, room_nights_mid int, room_nights_high int,  -- hotel (E.3)
+  occupancy_low numeric(5,4), occupancy_mid numeric(5,4), occupancy_high numeric(5,4),  -- hotel, Perkiraan (E.3)
   flags  text[] NOT NULL DEFAULT '{}',   -- five_star_heavy, velocity_changed, price_unknown, hotel_params_missing, occupancy_inconsistent
-  reason text,                           -- diisi bila tidak ada estimasi sama sekali, mis. history_lt_30d (BR-EST-01)
+  reason text,                           -- bila tidak ada estimasi: region_not_ready (BR-EST-04), history_lt_30d, review_count_unknown, group_lainnya (BR-EST-01)
   computed_at timestamptz NOT NULL
 );
 ```
@@ -415,6 +416,7 @@ Golden test PRD §12 memanggil fungsi ini langsung. Signa Cafe diuji lewat `Esti
 | `est.hotel` | Per kelas akomodasi (`hotel_1`…`hotel_5`, `hotel`, `resort`, `villa`, `penginapan`): `{"stay_nights","rooms","adr"}`; `null` = belum diisi |
 | `est.flags` | `{"five_star_share","velocity_change"}` (FR-EST-05) |
 | `est.pattern` | `{"core_hour_ratio","flat_ratio"}`: ambang jam inti dan pola datar (E.4) |
+| `est.ready_regions` | Daftar kode kab/kota wilayah siap (BR-EST-04). Seed: semua kab/kota Bali. `est.compute` dan metrik kawasan hanya memproses tempat/area di daftar ini; tempat lain mendapat `reason = region_not_ready` |
 
 `PUT /ops/settings/{key}` memvalidasi nilai lewat `estimate.Params.Validate()` (pecahan 0–1, `low ≤ mid ≤ high`, Rupiah bilangan bulat ≥ 0, `min ≤ max`), mencatat audit, lalu meng-enqueue `est.compute` di transaksi yang sama (FR-EST-06).
 
