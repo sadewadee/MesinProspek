@@ -175,7 +175,7 @@ Revisi 0.2 menerapkan arahan founder: **KISS, DRY, make it work → right → fa
 | Q-03 | Kadens pembaruan dataset | **Terjawab:** scrape berulang; import inkremental harian (D-31) |
 | Q-04 / Q-10 | Populasi & batas wilayah | **Terjawab:** GeoAPI |
 | Q-05 | Aturan pakai/tampil/export data | Tim legal |
-| Q-06 | Data acuan revenue | **Terjawab:** benchmark awal di dashboard ops (D-32); kalibrasi dengan omzet nyata peserta beta di F2 |
+| Q-06 | Data acuan revenue | **Terjawab:** benchmark di dashboard ops (D-32). Omzet nyata usaha tidak tersedia dan tidak dijanjikan |
 | Q-07 | Calon customer beta & Offering mereka | **Terjawab:** peserta sudah ada |
 | Q-08 | GitHub tetap jadi mirror atau ditinggalkan? | **Terjawab:** GitLab repo utama; mirror GitHub opsional, tanpa CI |
 | Q-09 | Spesifikasi satu server & lokasi backup off-site | Terbuka |

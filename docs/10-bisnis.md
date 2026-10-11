@@ -96,10 +96,9 @@ Titik impas infra ≈ biaya tetap ÷ (harga rata-rata − biaya AI rata-rata). D
 |---|---|
 | Peserta | **Sudah ada** (Q-07). Mulai di Indonesia (D-28). Pastikan peserta mencakup segmen utama D-30 (pemilik F&B/multi-outlet, investor/franchisor), bukan hanya penjual B2B: **[isi jumlah per segmen]** |
 | Penawaran | Gratis 30 hari, plan Growth, plus sesi onboarding 30 menit. Diskon 50% selama 3 bulan pertama bila lanjut berbayar |
-| Umpan balik | Tombol "Relevan / Tidak relevan" pada opportunity dan kesimpulan analisis lokasi (FR-INTL-05), wawancara singkat mingguan, catatan dari ops, dan **perbandingan estimasi dengan omzet nyata**: pemilik usaha peserta secara sukarela membandingkan rentang estimasi usahanya dengan omzet sebenarnya. Catat apakah omzet nyata termasuk pesan-antar online, karena estimasi dihitung dari kunjungan. Cara mengumpulkan dan menyimpan data omzet ini mengikuti arahan tim legal |
-| Metrik sukses beta | ≥ 70% peserta mendapat hasil pertama ≤ 5 menit · **Kredibilitas estimasi:** dari ≥ **[isi, mis. 10]** usaha yang omzet nyatanya dibandingkan, ≥ 70% berada di dalam rentang rendah–tinggi, dan ≥ 70% pemiliknya menilai estimasinya masuk akal · ≥ 60% kesimpulan analisis lokasi dan opportunity dinilai "Relevan" · workspace penjual B2B: ≥ 50 prospek ditindaklanjuti per minggu · **≥ 50% peserta lanjut berbayar** |
-| Kalibrasi | Selama beta, omzet nyata hanya dikumpulkan dan dibandingkan. Kalibrasi review rate dari data itu adalah pekerjaan F2 (PRD §6, §13) |
-| Keputusan setelah beta | Kunci harga dan nama plan (D-09); putuskan apakah estimasi cukup kredibel untuk dijual ke investor/franchisor; tentukan prioritas F2 dari permintaan nyata (kalibrasi, pembanding BPS, kategori lain); sesuaikan bobot skor dan katalog opportunity untuk PER-03 |
+| Umpan balik | Tombol "Relevan / Tidak relevan" pada opportunity dan kesimpulan analisis lokasi (FR-INTL-05), wawancara singkat mingguan, dan catatan dari ops. MesinProspek tidak meminta atau menyimpan omzet nyata peserta |
+| Metrik sukses beta | ≥ 70% peserta mendapat hasil pertama ≤ 5 menit · **Kredibilitas estimasi:** ≥ 70% peserta menilai estimasi dan analisis lokasi "masuk akal" (wawancara + tombol feedback) · ≥ 60% kesimpulan analisis lokasi dan opportunity dinilai "Relevan" · workspace penjual B2B: ≥ 50 prospek ditindaklanjuti per minggu · **≥ 50% peserta lanjut berbayar** |
+| Keputusan setelah beta | Kunci harga dan nama plan (D-09); putuskan apakah estimasi cukup kredibel untuk dijual ke investor/franchisor; tentukan prioritas F2 dari permintaan nyata (pembanding BPS, kategori lain, pantau kompetitor); sesuaikan bobot skor dan katalog opportunity untuk PER-03 |
 
 ## 6. Yang perlu diputuskan founder
 

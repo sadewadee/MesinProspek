@@ -62,15 +62,16 @@ PER-01 dan PER-02 adalah pengguna utama F1 (D-30). PER-03 tetap dilayani lewat f
 2. **Evidence untuk setiap klaim.** Nilai bisa ditelusuri ke snapshot sumber.
 3. **Ukur, jangan tebak.** Yang bisa diukur dari data diukur, misalnya laju ulasan dari snapshot. Asumsi hanya dipakai untuk yang tidak bisa diukur (review rate, faktor belanja, kapasitas hotel), dan semuanya diatur dari dashboard ops.
 4. **Estimasi selalu rentang + asumsi + tanggal.** Tidak ada angka omzet tunggal tanpa rentang, parameter yang dipakai, dan tanggal data.
-5. **Satu record kanonik, banyak tampilan** (DRY). Search, profil, analisis lokasi, export, dan webhook membaca model yang sama.
-6. **Fitur kecil yang bekerja** lebih baik daripada fitur lengkap yang setengah jadi.
+5. **Hanya janjikan yang bisa kita sediakan.** Semua fitur dibangun dari data yang kita punya (DB gmaps, GeoAPI, benchmark publik). Data internal usaha (omzet nyata, jumlah transaksi, kapasitas) tidak tersedia dan tidak dijanjikan.
+6. **Satu record kanonik, banyak tampilan** (DRY). Search, profil, analisis lokasi, export, dan webhook membaca model yang sama.
+7. **Fitur kecil yang bekerja** lebih baik daripada fitur lengkap yang setengah jadi.
 
 ## 6. Fase rilis
 
 | Fase | Tema | Isi |
 |---|---|---|
 | **F1 — Make it work** | Alur inti end-to-end, bisa dijual ke customer awal | Semua FR di §9 |
-| **F2 — Make it right** | Kualitas, kelengkapan, kenyamanan | Kalibrasi review rate dari omzet nyata peserta beta; pembanding BPS (TPK hotel, penjualan F&B per provinsi); estimasi kategori lain (ritel, jasa); perbandingan bebas antar bisnis dan antar wilayah; watch/alert perubahan; upload daftar customer + pencocokan; laporan data salah + koreksi ops; role Viewer/Manager; natural-language search; satu integrasi CRM; billing self-serve; pengelompokan multi-cabang; bahasa Inggris; error tracking |
+| **F2 — Make it right** | Kualitas, kelengkapan, kenyamanan | Pembanding BPS (TPK hotel, penjualan F&B per provinsi); estimasi kategori lain (ritel, jasa); perbandingan bebas antar bisnis dan antar wilayah; watch/alert perubahan; upload daftar customer + pencocokan; laporan data salah + koreksi ops; role Viewer/Manager; natural-language search; satu integrasi CRM; billing self-serve; pengelompokan multi-cabang; bahasa Inggris; error tracking |
 | **F3 — Make it fast** | Skala & ketahanan | Server aplikasi kedua (HA), replika DB, object storage S3, cache, deploy tanpa downtime, optimasi untuk data > 5 juta tempat, mesin search terpisah hanya bila Postgres tidak cukup |
 
 ## 7. Data input
@@ -235,13 +236,13 @@ Nilai yang tidak bisa diukur dari data diatur ops dari dashboard (D-29, D-32): r
 
 | Risiko | Mitigasi |
 |---|---|
-| Review rate tidak bisa diukur dari data dan sangat menentukan omzet (1% vs 2% = 2×) | Selalu rentang + tabel sensitivitas, parameter di dashboard, kalibrasi dengan omzet nyata peserta beta (F2) |
+| Review rate tidak bisa diukur dari data dan sangat menentukan omzet (1% vs 2% = 2×) | Selalu rentang + tabel sensitivitas + parameter yang dipakai, tidak pernah disebut omzet pasti. Parameter memakai benchmark dan diatur dari dashboard. MesinProspek tidak punya data omzet nyata usaha dan tidak menjanjikannya |
 | `popular_times` hanya ada di ±13% tempat dan harga di ±0,8% | Pola dan omzet tampil "Belum dapat diperkirakan" bila data kurang; harga memakai median wilayah atau benchmark berlabel (Lampiran E) |
 | Skema DB gmaps berubah dan merusak import | Pemetaan kolom ditulis di satu tempat (04); import memeriksa kolom saat mulai dan gagal dengan alert yang jelas |
 | Data basi (contoh: catatan lama tentang Pulau Kawe ternyata keliru) | Estimasi selalu dihitung dari snapshot terbaru dan menampilkan tanggal data; dihitung ulang setelah setiap import |
 | Populasi adalah perkiraan model, bukan sensus | Label jelas di UI dan laporan |
 | Satu server untuk production, staging, GitLab, CI, dan monitoring (D-19) | Batas CPU/RAM per container, runner CI 1 job sekaligus, uptime monitor eksternal, backup DB & GitLab off-site, rebuild dari skrip bootstrap (RTO 8 jam). Pisahkan GitLab/CI ke server lain bila contention terukur (F3) |
-| Opportunity atau kesimpulan dirasa tidak relevan | Tombol feedback (FR-INTL-05), kalibrasi parameter |
+| Opportunity atau kesimpulan dirasa tidak relevan | Tombol feedback (FR-INTL-05), penyesuaian parameter |
 
 ---
 
