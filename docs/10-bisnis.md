@@ -94,7 +94,7 @@ Titik impas infra ≈ biaya tetap ÷ (harga rata-rata − biaya AI rata-rata). D
 
 | Langkah | Isi |
 |---|---|
-| Peserta | **Sudah ada** (Q-07). Seluruh Indonesia (D-34); rekrut peserta di kota yang riwayat snapshot-nya sudah cukup (saat ini Bali, Q-14). Pastikan peserta mencakup segmen utama D-30 (pemilik F&B/multi-outlet, investor/franchisor), bukan hanya penjual B2B: **[isi jumlah per segmen]** |
+| Peserta | **Sudah ada** (Q-07). Seluruh Indonesia (D-34); rekrut peserta di kota yang data ulasannya sudah cukup: saat ini Bali (riwayat snapshot), dan seluruh Indonesia setelah scraper mengambil ulasan terbaru (D-38). Pastikan peserta mencakup segmen utama D-30 (pemilik F&B/multi-outlet, investor/franchisor), bukan hanya penjual B2B: **[isi jumlah per segmen]** |
 | Penawaran | Gratis 30 hari, plan Growth, plus sesi onboarding 30 menit. Diskon 50% selama 3 bulan pertama bila lanjut berbayar |
 | Umpan balik | Tombol "Relevan / Tidak relevan" pada opportunity dan kesimpulan analisis lokasi (FR-INTL-05), wawancara singkat mingguan, dan catatan dari ops. MesinProspek tidak meminta atau menyimpan omzet nyata peserta |
 | Metrik sukses beta | ≥ 70% peserta mendapat hasil pertama ≤ 5 menit · **Kredibilitas estimasi:** ≥ 70% peserta menilai estimasi dan analisis lokasi "masuk akal" (wawancara + tombol feedback) · ≥ 60% kesimpulan analisis lokasi dan opportunity dinilai "Relevan" · workspace penjual B2B: ≥ 50 prospek ditindaklanjuti per minggu · **≥ 50% peserta lanjut berbayar** |

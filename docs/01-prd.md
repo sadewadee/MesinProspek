@@ -96,7 +96,7 @@ DB gmaps adalah sumber dataset kita. Export JSON-LD-nya (D-24) membuang `popular
 | Pemilik (`owner`) | Penanda "listing diklaim pemilik" | — |
 | Waktu scrape | Tanggal snapshot (`observed_at`) | — |
 | Status, foto, deskripsi | Tidak dipakai di F1 | Status tidak andal (sampel berisi "Anjing boleh masuk") |
-| Contoh ulasan (`user_reviews`) | **Tidak diimpor di F1**; insight teks di F2 (§6) | ±8 ulasan per snapshot, diurutkan "paling relevan" oleh Google (sampel Signa berisi ulasan 2024–2026), jadi tidak bisa dipakai untuk laju ulasan dan tidak mewakili sebaran rating. Proporsi ulasan positif sudah lengkap dari distribusi bintang (semua ulasan). Isinya berguna untuk hal lain: sebutan harga per orang ("berdua di bawah 250 rb"), ukuran rombongan, dan tema pujian/keluhan. Memuat nama dan foto pengulas yang tidak kita butuhkan |
+| Contoh ulasan (`user_reviews`) | F1: hanya **tanggal ulasan terbaru** dari snapshot yang di-scrape dengan urutan "Terbaru", untuk laju ulasan (E.1 metode B, D-38). Teks, nama, dan foto tidak diimpor; insight teks di F2 (§6) | Snapshot lama berisi ±8 ulasan urutan "paling relevan" (sampel Signa berisi ulasan 2024–2026), jadi tidak bisa dipakai untuk laju ulasan dan tidak mewakili sebaran rating. Scraper akan mengambil ulasan terbaru dan menandai urutannya (Q-18). Proporsi ulasan positif sudah lengkap dari distribusi bintang (semua ulasan). Isinya berguna untuk hal lain: sebutan harga per orang ("berdua di bawah 250 rb"), ukuran rombongan, dan tema pujian/keluhan. Memuat nama dan foto pengulas yang tidak kita butuhkan |
 | Email, nama pemilik/person | Tidak ada → "Tidak diketahui" | — |
 
 Nama kolom persis dan cara membacanya ditulis sekali di 04 (DRY). Snapshot yang berbeda bisa menyimpan atribut berbeda. Contoh: harga Signa hanya ada di sebagian snapshot, dan kategorinya kadang "Restaurant", kadang "Restoran". Aturan penggabungannya ada di BR-NORM-05.
@@ -147,7 +147,7 @@ Nilai yang tidak bisa diukur dari data diatur ops dari dashboard (D-29, D-32): r
 | FR-DATA-03 | Sync area GeoAPI (4 level, populasi, batas sederhana, atribusi) lewat `msp tool geo-sync` untuk negara aktif | Semua area level 1–4 Indonesia tersimpan |
 | FR-DATA-04 | Penetapan wilayah: koordinat → desa/kelurahan (+ kecamatan, kab/kota, provinsi) dengan point-in-polygon di database | ≥ 98% bisnis ber-koordinat mendapat kelurahan |
 | **EST — estimasi** | | |
-| FR-EST-01 | Laju ulasan dari snapshot (Lampiran E §E.1), plus grafik riwayat jumlah ulasan | Riwayat < 30 hari → "Belum cukup riwayat"; tidak pernah ditebak dari umur usaha |
+| FR-EST-01 | Laju ulasan (Lampiran E §E.1): metode A dari riwayat snapshot, metode B dari tanggal ulasan terbaru. Metode yang dipakai dan jendela waktunya selalu tampil, plus grafik riwayat jumlah ulasan | Data kedua metode kurang → "Belum cukup data ulasan"; tidak pernah ditebak dari umur usaha |
 | FR-EST-02 | Perkiraan kunjungan dan omzet untuk kelompok `makan` dan `kafe` (Lampiran E §E.2): rentang rendah–tengah–tinggi, tabel sensitivitas review rate, sumber harga, parameter, dan tanggal data | Fixture Signa Cafe menghasilkan angka §12 |
 | FR-EST-03 | Perkiraan hotel (Lampiran E §E.3): kunjungan menginap, room-night, okupasi tahunan, dan omzet kamar | Parameter belum diisi ops → "Belum dapat diperkirakan"; okupasi > 100% → penanda "asumsi tidak konsisten", okupasi tidak ditampilkan |
 | FR-EST-04 | Pola keramaian (Lampiran E §E.4): grafik rata-rata 7 hari dan per hari, blok waktu, jam puncak, jam inti, keramaian rata-rata, perkiraan tamu per jam bila kunjungan diketahui | Label "relatif terhadap jam tersibuk, bukan jumlah orang" selalu tampil |
@@ -199,7 +199,7 @@ Nilai yang tidak bisa diukur dari data diatur ops dari dashboard (D-29, D-32): r
 | BR-NORM-04 | Harga per orang → rentang Rupiah `min`–`max`. Contoh: "Rp 25–50K" → 25.000–50.000, "Rp 100–225 rb" → 100.000–225.000, "Rp 1–25.000" → 1–25.000. Rentang terbuka "Rp 250,000+" → min 250.000 tanpa max. Simbol "$"/"$$" atau format tak dikenal → "Tidak diketahui" |
 | BR-NORM-05 | Penggabungan snapshot: nilai terkini tiap field = nilai **tidak kosong terbaru** di antara snapshot, dengan tanggal snapshot-nya sendiri. Riwayat disimpan satu baris per tempat per hari (snapshot terakhir hari itu) untuk jumlah ulasan, rating, distribusi bintang, dan harga |
 | BR-NORM-06 | Jam buka dan `popular_times` memakai **zona waktu lokal tempat** (kolom zona waktu sumber) dan ditampilkan dengan labelnya (WIB/WITA/WIT). Jam buka → jadwal per hari (Senin–Minggu). `popular_times` → matriks 7 × 24 nilai 0–100; hari dengan semua nilai 0 dianggap tutup. Data di luar 0–100 → ditolak per field |
-| BR-EST-01 | Estimasi hanya dihitung bila data minimumnya ada (Lampiran E). Bila tidak, tampil "Belum dapat diperkirakan" beserta alasannya (mis. "riwayat ulasan < 30 hari", "harga tidak diketahui"). Tidak ada fallback ke tebakan umur usaha |
+| BR-EST-01 | Estimasi hanya dihitung bila data minimumnya ada (Lampiran E). Bila tidak, tampil "Belum dapat diperkirakan" beserta alasannya (mis. "riwayat < 30 hari dan ulasan terbaru < 10", "harga tidak diketahui"). Tidak ada fallback ke tebakan umur usaha |
 | BR-EST-02 | Kunjungan dan omzet selalu ditampilkan sebagai rentang rendah–tengah–tinggi, dibulatkan (kunjungan ke ratusan, omzet ke Rp0,1 miliar bila ≥ Rp1 miliar, selain itu ke Rp10 juta) |
 | BR-EST-03 | `popular_times` antar tempat hanya dibandingkan **bentuknya** (pola dan proporsi), bukan angka mentahnya |
 | BR-SCORE-01 | Rumus di Lampiran A. Faktor yang nilainya tidak diketahui dikeluarkan dan bobotnya dibagi ulang. `coverage` = bobot faktor yang diketahui / total bobot |
@@ -240,7 +240,8 @@ Nilai yang tidak bisa diukur dari data diatur ops dari dashboard (D-29, D-32): r
 |---|---|
 | Review rate tidak bisa diukur dari data dan sangat menentukan omzet (1% vs 2% = 2×) | Selalu rentang + tabel sensitivitas + parameter yang dipakai, tidak pernah disebut omzet pasti. Parameter memakai benchmark dan diatur dari dashboard. MesinProspek tidak punya data omzet nyata usaha dan tidak menjanjikannya |
 | `popular_times` hanya ada di ±13% tempat dan harga di ±0,8% | Pola dan omzet tampil "Belum dapat diperkirakan" bila data kurang; harga memakai median wilayah atau benchmark berlabel (Lampiran E) |
-| **Riwayat snapshot belum merata** (Q-14: ≥ 30 hari di 44–52% tempat di Bali, 0–0,3% di kota lain saat diukur) | Estimasi tampil per tempat hanya bila riwayatnya cukup (BR-EST-01); di tempat lain tampil "Belum cukup riwayat". Kiriman mingguan founder menambah riwayat. Bila scraper bisa mengambil ulasan **terbaru** (bukan "paling relevan"), laju ulasan bisa diukur dari satu snapshot (Q-17). Ukur ulang Q-14 sebelum beta dan rekrut peserta beta di kota yang riwayatnya sudah cukup. Fitur tidak diubah untuk menutupi data yang kurang |
+| **Riwayat snapshot belum merata** (Q-14: ≥ 30 hari di 44–52% tempat di Bali, 0–0,3% di kota lain saat diukur) | Metode B (tanggal ulasan terbaru, D-38) mengukur laju dari satu snapshot, sehingga estimasi tersedia di seluruh Indonesia setelah scraper mengambil ulasan terbaru (Q-18). Sebelum itu, di luar Bali tampil "Belum cukup data ulasan". Ukur ulang cakupan sebelum beta. Fitur tidak diubah untuk menutupi data yang kurang |
+| Metode B memakai jendela pendek untuk tempat ramai (mis. 20 ulasan dalam 3 minggu), sehingga terpengaruh musim atau promo | Metode A didahulukan bila riwayat ≥ 30 hari. Jendela metode B selalu ditampilkan; jendela < 30 hari diberi penanda "jendela pendek". Bila kedua metode tersedia, selisihnya ditampilkan sebagai cek silang |
 | Skema DB gmaps berubah dan merusak import | Pemetaan kolom ditulis di satu tempat (04); import memeriksa kolom saat mulai dan gagal dengan alert yang jelas |
 | Data basi (contoh: catatan lama tentang Pulau Kawe ternyata keliru) | Estimasi selalu dihitung dari snapshot terbaru dan menampilkan tanggal data; dihitung ulang setelah setiap import |
 | Populasi adalah perkiraan model, bukan sensus | Label jelas di UI dan laporan |
@@ -317,8 +318,20 @@ Rantai: **snapshot → laju ulasan → kunjungan → omzet**. Pola keramaian mem
 
 ### E.1 Laju ulasan
 
-- Pakai snapshot terbaru dan snapshot tertua dalam 365 hari sebelumnya. Syarat: rentang ≥ 30 hari. Kurang dari itu → "Belum cukup riwayat".
+Dua metode. **A didahulukan**; B dipakai bila A tidak memenuhi syarat. Bila keduanya tidak memenuhi syarat → "Belum cukup data ulasan".
+
+**Metode A (riwayat snapshot):**
+- Pakai snapshot terbaru dan snapshot tertua dalam 365 hari sebelumnya. Syarat: rentang ≥ 30 hari.
 - `laju = max(0, ulasan_terbaru − ulasan_terlama) ÷ hari × 365`.
+
+**Metode B (tanggal ulasan terbaru, D-38):**
+- Sumber: tanggal N ulasan terbaru dari snapshot terbaru yang di-scrape dengan urutan "Terbaru" (Q-18). Tanggal setelah waktu scrape diabaikan. Syarat: N ≥ 10.
+- Bila ulasan ke-N lebih tua dari 365 hari: `laju = jumlah ulasan dalam 365 hari terakhir` (hitungan tepat).
+- Selain itu: `laju = (N − 1) ÷ (waktu scrape − tanggal ulasan ke-N, dalam hari) × 365`.
+- Jendela (tanggal ulasan ke-N sampai waktu scrape) selalu ditampilkan. Jendela < 30 hari → penanda "jendela pendek".
+- Ketelitian bergantung pada N: simpangan relatif sekitar 1/√(N − 2), yaitu ±40% untuk N = 8 dan ±24% untuk N = 20. Karena itu scraper sebaiknya mengambil ≥ 20 ulasan.
+
+Bila metode A dipakai dan metode B juga tersedia, laju B ditampilkan sebagai cek silang.
 - **Laju terkini** dihitung dengan cara yang sama untuk 90 hari terakhir (syarat rentang ≥ 30 hari). Laju ini hanya pembanding dan dasar penanda FR-EST-05; estimasi memakai laju setahun.
 
 ### E.2 Kunjungan & omzet: kelompok `makan` dan `kafe`
@@ -367,6 +380,8 @@ Lama menginap, jumlah kamar, dan ADR diambil dari benchmark ops per **kelas akom
 | Hotel: lama menginap, jumlah kamar, ADR per kelas akomodasi | Kosong (diisi ops) |
 | Penanda bintang 5 | ≥ 85% |
 | Penanda laju berubah | Selisih > 30% |
+| Metode B: minimum ulasan terbaru (N) | 10 |
+| Metode B: batas jendela pendek | 30 hari |
 | Ambang jam inti | 60% dari puncak |
 | Ambang pola datar | 80% jam buka |
 

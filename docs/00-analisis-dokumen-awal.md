@@ -169,6 +169,7 @@ Revisi 0.2 menerapkan arahan founder: **KISS, DRY, make it work → right → fa
 | D-35 | Akses DB gmaps **lewat import dump**: founder menyerahkan dump DB gmaps secara berkala, ops me-restore ke server kita, MesinProspek membacanya read-only. Tanpa koneksi jaringan ke server founder (menjawab Q-12) | Accepted |
 | D-36 | Workspace baru mendapat grant awal satu kali **1.000 credit** (AI credit 0), diatur dari dashboard ops | Accepted |
 | D-37 | Dump penuh (±500 GB) tidak muat di disk 1 TB. Founder mengirim **export mingguan ramping**: baris Indonesia, hanya kolom yang dibaca import (tanpa `user_reviews`, `images`), hanya baris baru sejak kiriman sebelumnya − 1 hari; kiriman pertama = seluruh riwayat. `gmaps-db` hanya menampung kiriman terakhir; riwayat disimpan di DB MesinProspek. Memperbarui cara kirim di D-35 | Accepted |
+| D-38 | Laju ulasan punya **metode B**: dari tanggal N ulasan terbaru di satu snapshot (scraper mengambil ulasan urutan "Terbaru"). Metode A (riwayat snapshot ≥ 30 hari) tetap didahulukan. Hanya tanggal ulasan yang diimpor; teks, nama, dan foto tidak (PRD Lampiran E §E.1) | Accepted |
 
 ## 8. Pertanyaan terbuka
 
@@ -189,7 +190,8 @@ Revisi 0.2 menerapkan arahan founder: **KISS, DRY, make it work → right → fa
 | Q-14 | Cakupan data Indonesia per kota & kelompok: % tempat dengan riwayat ≥ 30 hari, dengan `popular_times`, dengan harga | **Terjawab** (diukur ulang sebelum beta): riwayat cukup di Bali, kota lain ±0% saat diukur (PRD §7.1) |
 | Q-15 | Denpasar dan Gianyar tidak muncul di 30 kota F&B teratas (nama kota dwibahasa atau data memang sedikit?) | Ditunda: founder mengaudit ulang |
 | Q-16 | Kadens pengiriman data DB gmaps | **Terjawab:** mingguan (ambang AL-11 = 8 hari) |
-| Q-17 | Bisakah scraper mengambil N ulasan **terbaru** per tempat (urutan "Terbaru")? Bila ya, laju ulasan bisa diukur dari satu snapshot, sehingga estimasi tersedia di luar Bali tanpa menunggu 30 hari riwayat | Terbuka (founder) |
+| Q-17 | Bisakah scraper mengambil N ulasan **terbaru** per tempat (urutan "Terbaru")? | **Terjawab:** bisa (D-38) |
+| Q-18 | Detail scraper untuk ulasan terbaru: berapa N (disarankan ≥ 20), dan bagaimana snapshot ditandai sebagai urutan "Terbaru" (mis. kolom `reviews_sort`), agar snapshot lama berurutan "paling relevan" tidak terbaca sebagai terbaru | Terbuka (founder) |
 
 ## 9. Peta dokumen lanjutan
 
