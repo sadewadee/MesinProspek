@@ -7,7 +7,7 @@
 | Basis | `01-prd.md` v0.3 (**sumber kebenaran**; bila bertentangan, PRD yang berlaku) · `02-design-system/` tokens `0.2.0` |
 | Cakupan | Hanya **F1**. F2/F3: PRD §6 |
 
-> Konvensi: `SCR-nn` layar, `FLOW-nn` alur, `WF-nn` wireframe. Aturan bisnis dan rumus **tidak disalin**, cukup dirujuk ke ID PRD (DRY). Nama token persis seperti di `02`; endpoint dan tabel di `04`. Data = snapshot DB gmaps (PRD §7.1): **tidak ada email maupun data orang**, dan contoh ulasan (`user_reviews`) tidak diimpor. Kontak = telepon, website, akun sosial, dan tautan Google Maps.
+> Konvensi: `SCR-nn` layar, `FLOW-nn` alur, `WF-nn` wireframe. Aturan bisnis dan rumus **tidak disalin**, cukup dirujuk ke ID PRD (DRY). Nama token persis seperti di `02`; endpoint dan tabel di `04`. Data = snapshot DB gmaps (PRD §7.1): **tidak ada email maupun data orang**. Dari contoh ulasan (`user_reviews`) hanya tanggal ulasan terbaru yang diimpor (laju ulasan metode B, D-38); teks, nama, dan foto tidak. Kontak = telepon, website, akun sosial, dan tautan Google Maps.
 
 ---
 
@@ -148,7 +148,7 @@
 | KOSONG | Objek belum pernah dibuat | 1 kalimat manfaat + 1 CTA (`EmptyState`) |
 | NOL HASIL | Filter tanpa hasil | Daftar chip filter aktif + "Hapus filter" per chip + "Reset semua" |
 | TIDAK DIKETAHUI | Field tidak ada di sumber | "Tidak diketahui" + ikon + tooltip alasan. Tidak pernah kosong, "0", atau "—" (BR-TRUST-03) |
-| BELUM DAPAT DIPERKIRAKAN | Data minimum estimasi tidak ada (BR-EST-01) | "Belum dapat diperkirakan" + alasan **tertulis di samping**, bukan hanya tooltip (mis. "riwayat ulasan < 30 hari", "harga tidak diketahui", "parameter hotel belum diisi ops", "kategori belum didukung estimasi"). Bagian lain yang datanya ada tetap tampil |
+| BELUM DAPAT DIPERKIRAKAN | Data minimum estimasi tidak ada (BR-EST-01) | "Belum dapat diperkirakan" + alasan **tertulis di samping**, bukan hanya tooltip (mis. "belum cukup data ulasan", "harga tidak diketahui", "parameter hotel belum diisi ops", "kategori belum didukung estimasi"). Bagian lain yang datanya ada tetap tampil |
 | DATA TERBATAS | Skor: BR-SCORE-02 · Area: Lampiran C | Badge "Data terbatas" + tooltip (§5) |
 | MENGHITUNG | ICP baru/diubah sedang dinilai | Banner progres. Bisnis yang belum dinilai tampil "Belum dinilai" |
 | ERROR | Request gagal | Error per bagian (bukan seluruh halaman) + "Coba lagi" + kode referensi (§7) |
@@ -194,10 +194,10 @@
 |---|---|
 | Pertanyaan | "Seberapa ramai dan besar usaha ini, seberapa yakin angkanya, dan apa langkah saya berikutnya?" |
 | Header | Nama · kategori (Turunan; kategori tambahan dari daftar kategori) · alamat · kelurahan › kecamatan · freshness · "Listing diklaim pemilik" bila ada (Teramati) · "Lihat di Google Maps" · **Analisis lokasi di sini** (nonaktif + tooltip bila koordinat tidak diketahui) · bila ICP aktif: `ScoreBadge` besar "untuk ICP X" + "Data terbatas" bila berlaku |
-| Perkiraan kunjungan & omzet (`makan`, `kafe`; FR-EST-02, Lampiran E §E.2) | Badge Perkiraan · "Data per <snapshot terbaru>" · `est-X.Y.Z`. Tabel 3 kolom **Rendah · Tengah · Tinggi** (tengah ditebalkan): kunjungan/tahun, tamu per hari buka, omzet/tahun, dibulatkan per BR-EST-02; baris kunjungan dan omzet diberi chart "Rentang estimasi" (02 §3.3). Baris **Dasar** (selalu terlihat): laju ulasan + 2 snapshot pembentuknya, **sumber harga** (harga tempat ini · median N bisnis sekelompok di kab/kota · asumsi harga ops · tidak diketahui), harga per orang, faktor belanja dan review rate (disebut **asumsi**), hari buka per minggu ("jam buka tidak diketahui → dianggap 7 hari"). **Catatan metode** (selalu tampil, §E.2): pesanan aplikasi pesan-antar umumnya tidak tercakup. Expand **Tabel sensitivitas**: review rate bawah/tengah/atas → tamu per hari, omzet/tahun. Penanda FR-EST-05 di bawah angka (copy §7). "Lihat evidence" membuka rumus langkah demi langkah |
+| Perkiraan kunjungan & omzet (`makan`, `kafe`; FR-EST-02, Lampiran E §E.2) | Badge Perkiraan · "Data per <snapshot terbaru>" · `est-X.Y.Z`. Tabel 3 kolom **Rendah · Tengah · Tinggi** (tengah ditebalkan): kunjungan/tahun, tamu per hari buka, omzet/tahun, dibulatkan per BR-EST-02; baris kunjungan dan omzet diberi chart "Rentang estimasi" (02 §3.3). Baris **Dasar** (selalu terlihat): laju ulasan + **sumber laju** (FR-EST-01, copy §7): riwayat snapshot (2 snapshot pembentuknya) atau N ulasan terbaru, selalu dengan jendela tanggalnya; penanda "jendela pendek" bila berlaku; baris cek silang bila kedua metode tersedia. Lalu **sumber harga** (harga tempat ini · median N bisnis sekelompok di kab/kota · asumsi harga ops · tidak diketahui), harga per orang, faktor belanja dan review rate (disebut **asumsi**), hari buka per minggu ("jam buka tidak diketahui → dianggap 7 hari"). **Catatan metode** (selalu tampil, §E.2): pesanan aplikasi pesan-antar umumnya tidak tercakup. Expand **Tabel sensitivitas**: review rate bawah/tengah/atas → tamu per hari, omzet/tahun. Penanda FR-EST-05 di bawah angka (copy §7). "Lihat evidence" membuka rumus langkah demi langkah |
 | Varian hotel (FR-EST-03, Lampiran E §E.3) | Kunjungan menginap/tahun dan omzet kamar/tahun ("tidak termasuk F&B dan acara") sebagai rentang Rendah · Tengah · Tinggi (review rate hotel atas/tengah/bawah); room-night/tahun dan okupasi tahunan dari nilai tengah (04 §4.1). Dasar: laju ulasan, kelas akomodasi, dan asumsi ops (review rate hotel, lama menginap, jumlah kamar, ADR; Perkiraan). Okupasi > 100% → baris okupasi diganti badge **"Asumsi tidak konsisten"** + 1 kalimat penjelasan, nilai okupasi tidak ditampilkan; nilai lain tetap tampil. Asumsi kelas belum diisi ops → nilai yang bergantung padanya BELUM DAPAT DIPERKIRAKAN (copy §7) |
 | Pola keramaian (FR-EST-04, Lampiran E §E.4) | Label tetap (bukan tooltip): **"Relatif terhadap jam tersibuk tempat ini, bukan jumlah orang."** · "Data per <tanggal>" · zona waktu lokal. Tab **Rata-rata 7 hari** · Sen … Min. Chart "Pola keramaian satu tempat" (02 §3.3 Chart F1); jam puncak diberi label teks. Ringkasan: jam puncak (juga per hari), jam inti, **"Ramai sepanjang hari"** bila pola datar, keramaian rata-rata ("rata-rata 76% dari jam tersibuknya"), bentuk per blok waktu (Pagi/Siang/Sore/Malam/Larut, %). **Lihat sebagai tabel** (NFR-06): jam · nilai · perkiraan tamu per jam (tengah, hanya bila kunjungan diketahui). Hari dengan semua nilai 0 → "Tutup". Tanpa `popular_times` → BELUM DAPAT DIPERKIRAKAN ("data pola keramaian tidak tersedia untuk tempat ini") |
-| Riwayat ulasan (FR-EST-01) | Chart "Riwayat ulasan" (02 §3.3): jumlah ulasan per hari snapshot · laju setahun dan laju 90 hari terakhir. "Lihat data" → tabel tanggal, jumlah ulasan, rating. Riwayat < 30 hari → "Belum cukup riwayat (data sejak <tanggal>)" |
+| Riwayat ulasan (FR-EST-01) | Chart "Riwayat ulasan" (02 §3.3): jumlah ulasan per hari snapshot · laju setahun dan laju 90 hari terakhir. "Lihat data" → tabel tanggal, jumlah ulasan, rating. Laju ditulis dengan sumbernya, sama seperti di panel perkiraan. Riwayat < 30 hari → catatan "Riwayat snapshot sejak <tanggal>"; laju dari ulasan terbaru bila ada, laju 90 hari "Tidak diketahui". Kedua metode tidak tersedia → copy `review_data_insufficient` (§7) |
 | Harga, jam buka & atribut | Harga per orang (Teramati + tanggal snapshot-nya, BR-NORM-05) · jam buka per hari + zona · atribut tempat (Populer untuk, Tipe pengunjung, opsi layanan; Teramati) |
 | Kenapa bisnis ini? (hanya bila ICP aktif) | `FactorBar` 6 faktor Lampiran A: nilai, bobot, kontribusi, claim type. Faktor tidak diketahui: "Tidak dihitung" (BR-SCORE-01). Footer: coverage, `priority-X.Y.Z`. Expand ICP Fit → kriteria Cocok / Sebagian / Tidak / Tidak diketahui + Wajib/Preferensi |
 | Opportunity (hanya bila ICP aktif) | Kartu per opportunity relevan (Lampiran B): judul, alasan + pembanding, badge Perkiraan, relevansi primer/sekunder, "Lihat evidence", **Relevan / Tidak relevan** (FR-INTL-05). Gap yang tidak relevan dengan Offering hanya tampil di Kehadiran digital |
@@ -279,8 +279,8 @@
 |---|---|
 | Pertanyaan | "Apakah data sehat, estimasi masuk akal, dan sistem terkendali?" |
 | Import | **Status sumber DB gmaps**: snapshot terakhir yang terbaca (waktu scrape, Indonesia), jeda sejak itu, import sukses terakhir; ambang peringatan mengikuti alert 09 AL-10/AL-11. **Riwayat job** `import`: pemicu (harian / manual), mulai–selesai, rentang waktu scrape yang dibaca, status, snapshot baru, tempat baru, berubah, dilewati (negara lain), ditolak per alasan, lalu status rantai hitung ulang. Job gagal → pesan utuh (mis. kolom sumber yang hilang) + "Tidak ada data yang ditulis". Laporan tampil di layar saja (FR-DATA-01) |
-| Kesehatan data | Jumlah bisnis (total dan per kelompok estimasi) · % terisi per field: telepon, website, sosial, jam buka, rating, koordinat, **harga**, **`popular_times`**, distribusi bintang · **% bisnis dengan ≥ 2 snapshot berjarak ≥ 30 hari** · % terpetakan kelurahan (target ≥ 98%) · distribusi band · versi model aktif (`est-`, `loc-`, `geo-`, `priority-`) |
-| Parameter estimasi (PRD Lampiran E §E.5; kunci `est.*` di 04) | Judul tab dan label menyebut nilai ini **asumsi**, bukan benchmark. Form per grup, setiap field menampilkan default PRD sebagai petunjuk: **Review rate** `makan`, `kafe`, `hotel` (bawah / tengah / atas) · **faktor belanja** · **asumsi harga per orang** per kelompok (Rp min–max) · **hotel per kelas akomodasi** (bintang 1–5, hotel umum, resor, vila, penginapan): lama menginap, jumlah kamar, ADR · **ambang**: penanda bintang 5, laju berubah, jam inti, pola datar Field kosong = estimasi yang bergantung padanya "Belum dapat diperkirakan". Validasi: persen 0 < x ≤ 100, bawah ≤ tengah ≤ atas, angka ≥ 0. Simpan (alasan wajib) → konfirmasi "Estimasi semua bisnis akan dihitung ulang" → status hitung ulang (FR-EST-06); tercatat di audit (nilai lama → baru) |
+| Kesehatan data | Jumlah bisnis (total dan per kelompok estimasi) · % terisi per field: telepon, website, sosial, jam buka, rating, koordinat, **harga**, **`popular_times`**, distribusi bintang · **% bisnis dengan laju ulasan per metode (A: riwayat snapshot ≥ 30 hari; B: ulasan terbaru)** · % terpetakan kelurahan (target ≥ 98%) · distribusi band · versi model aktif (`est-`, `loc-`, `geo-`, `priority-`) |
+| Parameter estimasi (PRD Lampiran E §E.5; kunci `est.*` di 04) | Judul tab dan label menyebut nilai ini **asumsi**, bukan benchmark. Form per grup, setiap field menampilkan default PRD sebagai petunjuk: **Review rate** `makan`, `kafe`, `hotel` (bawah / tengah / atas) · **faktor belanja** · **asumsi harga per orang** per kelompok (Rp min–max) · **hotel per kelas akomodasi** (bintang 1–5, hotel umum, resor, vila, penginapan): lama menginap, jumlah kamar, ADR · **laju ulasan metode B**: minimum ulasan terbaru (N) dan batas jendela pendek (hari) · **ambang**: penanda bintang 5, laju berubah, jam inti, pola datar. Field kosong = estimasi yang bergantung padanya "Belum dapat diperkirakan". Validasi: persen 0 < x ≤ 100, bawah ≤ tengah ≤ atas, angka ≥ 0, N bilangan bulat ≥ 2, jendela pendek bilangan bulat ≥ 1 hari. Simpan (alasan wajib) → konfirmasi "Estimasi semua bisnis akan dihitung ulang" → status hitung ulang (FR-EST-06); tercatat di audit (nilai lama → baru) |
 | Flag | Toggle AI / export / webhook + alasan wajib → banner FITUR DIMATIKAN di app customer |
 | Pengaturan AI | Form (FR-ACT-05, D-29): provider utama (Claude / OpenAI-compatible) + model utama · fallback aktif/nonaktif + base URL (HTTPS) + model · status API key per provider "Terpasang" / "Belum diset" (hanya status; key adalah secret server, tidak bisa dilihat atau diubah di UI). **Uji koneksi**: prompt uji tanpa data bisnis ke provider utama & fallback memakai nilai di form → OK/gagal + latensi + pesan error, tanpa AI credit. Simpan → berlaku untuk narasi baru ≤ 60 s tanpa redeploy; tercatat di audit (nilai lama → baru). Kill switch tetap di Flag |
 | Suppression | Cari / tambah / hapus nilai (telepon, URL) + alasan (FR-PRIV-02). Efek: hilang dari tampilan, export, dan webhook |
@@ -387,9 +387,10 @@ Urut omzet memakai nilai tengah; bisnis yang omzetnya "Belum dapat diperkirakan"
 | Kunjungan/tahun          13.800      18.400      27.600             |        Teramati · 24 Sep 2026    [i] |
 | Tamu per hari buka       37,8        50,4        75,7               | Jam    Setiap hari 08.00–23.00 WITA  |
 | Omzet/tahun              Rp1,8 M     Rp2,4 M     Rp3,6 M            |        Teramati                  [i] |
-| Dasar: laju ulasan 276/tahun (1.336 → 1.507 ulasan, 10 Feb–24 Sep)  | Populer untuk: Sarapan, Makan siang, |
-|   · harga tempat ini · asumsi: faktor belanja 0,8, review rate      |   Makan malam · Pengunjung: Turis    |
-|   2% / 1,5% / 1% · buka 7 hari/minggu                               |--------------------------------------|
+| Dasar: laju ulasan 276/tahun · dari riwayat snapshot                | Populer untuk: Sarapan, Makan siang, |
+|   (10 Feb–24 Sep 2026; 1.336 → 1.507 ulasan) · harga tempat ini     |   Makan malam · Pengunjung: Turis    |
+|   · asumsi: faktor belanja 0,8, review rate 2% / 1,5% / 1%          |                                      |
+|   · buka 7 hari/minggu                                              |--------------------------------------|
 | Pesanan aplikasi pesan-antar umumnya tidak tercakup.                | KONTAK              Belum di-unlock  |
 | [!] Proporsi bintang 5 sangat tinggi (87,5%); bisa jadi lebih       | Telepon [lock] <ter-mask>            |
 |     banyak tamu menulis ulasan dari biasanya, sehingga omzet        |                   [Unlock · 1 credit]|
@@ -410,8 +411,8 @@ Urut omzet memakai nilai tengah; bisnis yang omzetnya "Belum dapat diperkirakan"
 |---------------------------------------------------------------------| Kesimpulan · Batasan                 |
 | RIWAYAT ULASAN                                       [Lihat data]   | [Buat narasi · 1 AI credit]          |
 | 1.336  ___.....-----'''''  1.507        10 Feb 2026 → 24 Sep 2026   |--------------------------------------|
-| Laju setahun 276/tahun · 90 hari terakhir 342/tahun                 | KERJA TIM                            |
-|                                                                     | List: Kompetitor Bali · Tag: kafe    |
+| Laju setahun 276/tahun · dari riwayat snapshot                      | KERJA TIM                            |
+| 90 hari terakhir 342/tahun                                          | List: Kompetitor Bali · Tag: kafe    |
 +---------------------------------------------------------------------+--------------------------------------+
 ```
 
@@ -504,7 +505,7 @@ Nada: lugas, sopan, tanpa menyalahkan user. Istilah produk mengikuti PRD: *credi
 | Rentang perkiraan | 13.800–27.600 · Rp1,8–3,6 M | Tengah ditulis terpisah dan ditebalkan |
 | Perkiraan tunggal | ±13.500 | Untuk populasi |
 | Densitas | 3,1 per 1.000 penduduk | Lampiran C |
-| Laju ulasan | 276 ulasan/tahun | Dari snapshot (Lampiran E §E.1) |
+| Laju ulasan | 276 ulasan/tahun · dari riwayat snapshot (10 Feb–24 Sep 2026) | Selalu dengan sumber dan jendelanya (Lampiran E §E.1). Copy sumber di tabel teks estimasi di bawah |
 | Tanggal · tanggal + jam | 10 Okt 2026 · 10 Okt 2026, 14.30 WIB | Waktu sistem `Asia/Jakarta` (NFR-07) |
 | Jam buka & jam lokal | 08.00–23.00 WITA · puncak 20.00 WITA | Zona waktu lokal tempat + label WIB/WITA/WIT (BR-NORM-06). Label zona boleh ditulis sekali per panel |
 | Jam pola (blok 1 jam) | jam 17–21 · jam 12–14 dan 17–20 | "jam 21" = 21.00–21.59. Saran jam buka ditulis sebagai jam operasional (16.00–22.00) |
@@ -542,7 +543,11 @@ Nada: lugas, sopan, tanpa menyalahkan user. Istilah produk mengikuti PRD: *credi
 | `price_unknown` | Baris omzet | "Omzet belum dapat diperkirakan — harga per orang tidak diketahui, dan belum ada median wilayah atau asumsi harga untuk kelompok ini. Perkiraan kunjungan tetap ditampilkan." |
 | `hotel_params_missing` | Panel hotel | "Belum dapat diperkirakan — asumsi hotel kelas <kelas> belum diisi tim MesinProspek." |
 | `occupancy_inconsistent` | Baris okupasi | "Okupasi tidak ditampilkan: hasil hitungnya melebihi 100%, jadi asumsi jumlah kamar atau lama menginap kemungkinan tidak cocok untuk tempat ini." |
-| `history_lt_30d` | Panel perkiraan, riwayat ulasan | "Belum dapat diperkirakan — riwayat ulasan kurang dari 30 hari (snapshot pertama 2 Okt 2026)." |
+| Sumber laju: riwayat snapshot (`velocity_method` `snapshots`) | Baris Dasar, riwayat ulasan | "Laju ulasan 276/tahun · dari riwayat snapshot (10 Feb–24 Sep 2026)." |
+| Sumber laju: ulasan terbaru (`velocity_method` `newest_reviews`) | Baris Dasar, riwayat ulasan | "Laju ulasan 289/tahun · dari 20 ulasan terbaru (31 Agu–24 Sep 2026)." |
+| `short_window` | Di samping sumber laju atau baris cek silang | "Jendela pendek: 20 ulasan terbaru hanya mencakup 24 hari, jadi laju bisa terpengaruh musim atau promo." |
+| Cek silang (`velocity_crosscheck`) | Di bawah sumber laju, bila kedua metode tersedia | "Cek silang: dari 20 ulasan terbaru (15 Agu–24 Sep 2026) 173/tahun, 5% lebih rendah dari riwayat snapshot." |
+| `review_data_insufficient` | Panel perkiraan, riwayat ulasan | "Belum dapat diperkirakan — belum cukup data ulasan: riwayat snapshot kurang dari 30 hari (sejak 2 Okt 2026) dan ulasan terbaru kurang dari 10." Tanpa tanggal ulasan terbaru, akhir kalimatnya menjadi "…dan tanggal ulasan terbaru belum tersedia." |
 | Jumlah ulasan tidak diketahui | Panel perkiraan | "Belum dapat diperkirakan — jumlah ulasan tidak diketahui." |
 | Kelompok `lainnya` | Panel perkiraan | "Belum dapat diperkirakan — estimasi belum mendukung kategori ini." |
 | Tanpa `popular_times` | Panel pola keramaian | "Belum dapat diperkirakan — data pola keramaian tidak tersedia untuk tempat ini." |

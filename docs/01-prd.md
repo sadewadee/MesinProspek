@@ -178,7 +178,7 @@ Nilai yang tidak bisa diukur dari data diatur ops dari dashboard (D-29, D-32): r
 | **BILL** | | |
 | FR-BILL-01 | Satu ledger dengan dua meter: `credit` dan `ai_credit` (grant, debit, refund), idempotent. **Plan** (nama, harga tampilan, seat, credit & AI credit bulanan) dikelola dari halaman ops (D-29); credit bulanan diberikan otomatis tiap awal siklus sesuai plan workspace; ops juga bisa memberi credit manual. Workspace baru mendapat **grant awal satu kali** (default 1.000 credit dan 0 AI credit, diatur dari halaman ops, D-36), supaya analisis lokasi bisa langsung dicoba. Pembayaran tetap manual di F1. Saldo terlihat di workspace | Saldo = jumlah ledger per meter |
 | **OPS** | | |
-| FR-OPS-01 | Halaman ops: daftar workspace + grant credit, pengaturan plan, AI, **parameter estimasi**, dan **grant awal workspace baru**; status import dari DB gmaps (snapshot terakhir, jeda, laporan); kesehatan data (jumlah bisnis, % terisi per field termasuk harga dan `popular_times`, % bisnis dengan ≥ 2 snapshot ≥ 30 hari, % terpetakan wilayah); feature flag (AI, export, webhook); suppression list | Hanya akun ops |
+| FR-OPS-01 | Halaman ops: daftar workspace + grant credit, pengaturan plan, AI, **parameter estimasi**, dan **grant awal workspace baru**; status import dari DB gmaps (snapshot terakhir, jeda, laporan); kesehatan data (jumlah bisnis, % terisi per field termasuk harga dan `popular_times`, % bisnis dengan laju ulasan per metode A/B, % terpetakan wilayah); feature flag (AI, export, webhook); suppression list | Hanya akun ops |
 | FR-OPS-02 | Audit log append-only untuk login, undang anggota, unlock, export, webhook, grant credit, plan, pengaturan AI, parameter estimasi, flag, suppression | Tidak ada update/delete |
 | **PRIV** | | |
 | FR-PRIV-01 | Isolasi data per workspace di database (row-level security), termasuk analisis lokasi yang disimpan | Test lintas workspace lulus |
@@ -332,7 +332,7 @@ Dua metode. **A didahulukan**; B dipakai bila A tidak memenuhi syarat. Bila kedu
 - Ketelitian bergantung pada N: simpangan relatif sekitar 1/√(N − 2), yaitu ±40% untuk N = 8 dan ±24% untuk N = 20. Karena itu scraper sebaiknya mengambil ≥ 20 ulasan.
 
 Bila metode A dipakai dan metode B juga tersedia, laju B ditampilkan sebagai cek silang.
-- **Laju terkini** dihitung dengan cara yang sama untuk 90 hari terakhir (syarat rentang ≥ 30 hari). Laju ini hanya pembanding dan dasar penanda FR-EST-05; estimasi memakai laju setahun.
+- **Laju terkini** (hanya metode A) dihitung dengan cara yang sama untuk 90 hari terakhir (syarat rentang ≥ 30 hari). Laju ini hanya pembanding dan dasar penanda FR-EST-05 "laju berubah"; estimasi memakai laju setahun. Bila hanya metode B yang tersedia, laju terkini tidak dihitung, karena jendela metode B sendiri sudah merupakan laju terkini.
 
 ### E.2 Kunjungan & omzet: kelompok `makan` dan `kafe`
 

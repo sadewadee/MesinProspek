@@ -151,6 +151,7 @@ CREATE TABLE places (                    -- satu baris per tempat: nilai terkini
   price_raw text, price_min bigint, price_max bigint, price_mid bigint,  -- BR-NORM-04; max NULL = rentang terbuka
   popular_times smallint[] CHECK (cardinality(popular_times) = 168),     -- 7×24, indeks = hari×24 + jam (Senin = 0)
   rating numeric(2,1), review_count int, stars int[],    -- stars = jumlah ulasan bintang 1..5
+  newest_review_dates timestamptz[],                     -- E.1 metode B; waktu scrape-nya = field_observed (D-38)
   about jsonb, is_claimed boolean,                       -- atribut "about" sumber; listing diklaim pemilik
   review_pctl smallint,                                  -- percent_rank kategori × kab/kota
   desa_id bigint, kec_id bigint, kab_id bigint, prov_id bigint,  -- NULL = di luar semua polygon/tanpa koordinat
@@ -169,16 +170,18 @@ CREATE TABLE estimates (                 -- satu baris per tempat kelompok makan
   place_id      uuid PRIMARY KEY REFERENCES places ON DELETE CASCADE,
   model_version text NOT NULL,           -- est-X.Y.Z
   params        jsonb NOT NULL,          -- parameter est.* yang dipakai baris ini (FR-EST-06)
-  inputs        jsonb NOT NULL,          -- titik snapshot laju, harga, hari buka yang dipakai (evidence)
+  inputs        jsonb NOT NULL,          -- titik snapshot laju; metode B: jendela {from, to} + N; harga, hari buka (evidence)
   data_as_of    date,                    -- snapshot terbaru yang dipakai (BR-TRUST-02)
   velocity_year numeric(10,1), velocity_recent numeric(10,1),        -- ulasan/tahun (E.1)
+  velocity_method text,                  -- snapshots (metode A) | newest_reviews (metode B); NULL = keduanya tidak memenuhi
+  velocity_crosscheck numeric(10,1),     -- laju metode B bila metode A dipakai dan B juga tersedia (E.1)
   visitors_low int, visitors_mid int, visitors_high int,             -- kunjungan/tahun, belum dibulatkan (E.2, E.3)
   spend_per_visit bigint, price_source text,   -- own | area_median | benchmark | unknown (E.2)
   revenue_low bigint, revenue_mid bigint, revenue_high bigint,       -- Rupiah/tahun; hotel = omzet kamar
   room_nights_low int, room_nights_mid int, room_nights_high int,  -- hotel (E.3)
   occupancy_low numeric(5,4), occupancy_mid numeric(5,4), occupancy_high numeric(5,4),  -- hotel, Perkiraan (E.3)
-  flags  text[] NOT NULL DEFAULT '{}',   -- five_star_heavy, velocity_changed, price_unknown, hotel_params_missing, occupancy_inconsistent
-  reason text,                           -- bila tidak ada estimasi: history_lt_30d, review_count_unknown, group_lainnya (BR-EST-01)
+  flags  text[] NOT NULL DEFAULT '{}',   -- five_star_heavy, velocity_changed, short_window, price_unknown, hotel_params_missing, occupancy_inconsistent
+  reason text,                           -- bila tidak ada estimasi: review_data_insufficient (metode A dan B sama-sama tidak tersedia; jumlah ulasan yang tidak diketahui hanya menggugurkan metode A), group_lainnya (BR-EST-01)
   computed_at timestamptz NOT NULL
 );
 ```
@@ -313,14 +316,20 @@ Satu baris sumber = satu snapshot satu tempat (PRD §7.1). **Semua nama tabel da
 ```sql
 -- apps/api/internal/ingest/gmaps/source.sql — SATU-SATUNYA tempat nama tabel & kolom DB gmaps (08 STD-DB-07).
 -- Tiap pernyataan diawali "-- name: <nama>" dan diakhiri baris kosong (diambil dengan sed, 09 RB-15).
--- Kolom yang tidak dipilih tidak pernah dikirim maupun di-import (mis. user_reviews, images, thumbnail, link,
--- description, status). export dan create_table: kolom & urutan sama, diperiksa COPY … HEADER MATCH saat dimuat.
+-- Kolom yang tidak dipilih tidak pernah dikirim maupun di-import (mis. images, thumbnail, link, description,
+-- status). Dari user_reviews hanya TANGGAL yang dikirim (newest_review_dates, D-38); teks, nama, foto tidak pernah.
+-- export dan create_table: kolom & urutan sama, diperiksa COPY … HEADER MATCH saat dimuat.
 
 -- name: export  (founder, mingguan, di DB gmaps asli; psql -v since=<batas>, 09 RB-15)
 COPY (SELECT id, cid, place_id, title, category, categories, address, address_country,
              latitude, longitude, timezone, phone, website, social_links, menu,
              review_count, review_rating, reviews_per_rating, price_range,
-             open_hours, popular_times, about, owner, created_at
+             open_hours, popular_times, about, owner,
+             CASE WHEN reviews_sort = 'newest' AND jsonb_typeof(user_reviews) = 'array'
+                  THEN ARRAY(SELECT (r->>'published_at')::timestamptz FROM jsonb_array_elements(user_reviews) r)
+             END AS newest_review_dates,  -- E.1 metode B (D-38): 20 ulasan urutan "Terbaru" (Q-18); reviews_sort lain
+                                          -- atau NULL = urutan relevansi → NULL. Kunci tanggal = published_at (ISO 8601, sampel founder); 'when' tidak dipakai karena hanya tanggal tanpa format baku
+             created_at
       FROM business_listings
       WHERE address_country = 'ID'              -- F1: Indonesia saja (D-28)
         AND created_at >= :'since')             -- -infinity = riwayat penuh; lainnya = batas dari ops
@@ -332,7 +341,8 @@ CREATE TABLE business_listings (
   address text, address_country text, latitude double precision, longitude double precision,
   timezone text, phone text, website text, social_links jsonb, menu jsonb,
   review_count int, review_rating numeric, reviews_per_rating jsonb, price_range text,
-  open_hours jsonb, popular_times jsonb, about jsonb, owner jsonb, created_at timestamptz);
+  open_hours jsonb, popular_times jsonb, about jsonb, owner jsonb, newest_review_dates timestamptz[],
+  created_at timestamptz);
 CREATE INDEX ON business_listings (created_at, id);   -- keyset read_batch; tetap ada setelah TRUNCATE
 
 -- name: read_batch  (import; alias = field SourceRow)
@@ -343,6 +353,7 @@ SELECT id, cid, place_id AS google_place_id, title AS name,
        review_count, review_rating AS rating, reviews_per_rating AS stars, price_range AS price,
        open_hours, popular_times, about,
        coalesce(jsonb_typeof(owner) = 'object', false) AS is_claimed,   -- isi owner tidak di-import
+       newest_review_dates,                                              -- NULL = snapshot bukan urutan "Terbaru"
        created_at AS observed_at
 FROM business_listings
 WHERE (created_at, id) > ($1, $2)       -- keyset: cursor run ini (lihat langkah 2)
@@ -352,7 +363,7 @@ LIMIT $3;                               -- 5.000
 
 - **Kiriman (D-37).** Founder menjalankan `export` tiap minggu dengan batas `since` = `max(created_at)` kiriman sebelumnya − 1 hari (dicetak saat kiriman dimuat, 09 RB-15). Kiriman pertama memakai `-infinity`, yaitu seluruh riwayat Indonesia. Hasilnya CSV ber-header yang di-gzip (`gmaps-ID-<YYYYMMDD>.csv.gz`). `COPY` CSV membawa `jsonb`, `text[]`, teks multibaris, serta beda NULL dan string kosong dengan utuh, tanpa bergantung pada versi Postgres founder. Ops memuatnya ke `gmaps-db` dengan `TRUNCATE` + `COPY … (FORMAT csv, HEADER MATCH)` dalam **satu transaksi**. Query import melihat kiriman lama atau kiriman baru secara utuh, tidak pernah kosong atau setengah: query yang datang selama pemuatan menunggu commit. Pemuatan yang gagal tidak mengubah apa pun, dan `HEADER MATCH` menolak file yang kolomnya berbeda dari `create_table`. Tipe kolom `create_table` disalin dari DDL tabel founder (Q-13); tipe di contoh di atas ilustratif.
 - **`gmaps-db` hanya ruang singgah.** Isinya kiriman terbaru saja; riwayat snapshot tinggal di DB MSP (`places` + `place_snapshots`, di-backup pgBackRest). Akibatnya: (1) kiriman baru dimuat setelah import staging dan production selesai membaca kiriman sekarang, karena baris yang belum terbaca dan lebih tua dari batas kiriman baru akan hilang dari riwayat kita (09 RB-15); (2) membaca ulang seluruh riwayat (`--reset`, DB staging kosong, atau DB MSP hilang melebihi backup) butuh **kiriman riwayat penuh** (`since` = `-infinity`); (3) baris dengan `address_country` kosong tidak ikut kiriman, sehingga aturan bbox di langkah 4 di F1 hanya berlaku di fixture. Bila jumlah baris itu ternyata berarti, filter `export` diperluas (keputusan founder).
-- **Koneksi:** `MSP_SOURCE_DATABASE_URL` menunjuk database `gmaps` di service `gmaps-db` (`gmaps-db:5432/gmaps`, network Docker `gmaps`, §2) dengan role **`msp_source_ro`** yang hanya punya `SELECT` pada `business_listings` (NFR-05). Pool maks. 2 koneksi, sesi `default_transaction_read_only=on` dan `statement_timeout`. Di test/CI, URL ini menunjuk database `gmaps_fixture` di service `postgres` yang sama, berisi tabel `business_listings` tiruan dengan skema lengkap founder (05 §6, 06).
+- **Koneksi:** `MSP_SOURCE_DATABASE_URL` menunjuk database `gmaps` di service `gmaps-db` (`gmaps-db:5432/gmaps`, network Docker `gmaps`, §2) dengan role **`msp_source_ro`** yang hanya punya `SELECT` pada `business_listings` (NFR-05). Pool maks. 2 koneksi, sesi `default_transaction_read_only=on` dan `statement_timeout`. Di test/CI, URL ini menunjuk database `gmaps_fixture` di service `postgres` yang sama, berisi tabel `business_listings` tiruan dengan skema lengkap founder ditambah kolom hasil `export` `newest_review_dates`, sehingga `read_batch` bisa membacanya langsung (05 §6, 06).
 - **Satu import per environment.** Sebelum mulai, import mengambil `pg_try_advisory_lock` dengan kunci tetap `import` dan memegangnya di satu koneksi khusus sampai selesai, termasuk selama import pertama yang panjang. Production dan staging punya DB sendiri, jadi kuncinya per environment. Bila kunci sedang dipegang: `msp tool import` keluar dengan pesan "import sedang berjalan", dan job harian dilewati. Import yang sedang berjalan sudah membaca sampai batas atasnya, dan sisanya terbaca di run berikutnya.
 
 **Langkah:**
@@ -374,6 +385,7 @@ LIMIT $3;                               -- 5.000
 | `rating`, `review_count`, `stars` | Rating 0–5, ulasan ≥ 0, rating tanpa ulasan → NULL; `stars` kunci "1"–"5" → `int[5]` | `rating`, `review_count`, `stars` |
 | `lat`, `lng`, `timezone` | Koordinat valid dan di dalam bbox negara; zona IANA valid | `geom`, `timezone` |
 | `about`, `is_claimed`, `menu_url`, `google_place_id` | Disimpan apa adanya. Di F1 hanya ditampilkan di profil (`about`, `is_claimed` juga sebagai fakta Narasi AI). Tautan Google Maps tidak dibaca dari sumber, tetapi dibentuk dari `cid` di `intel.ProspectView` (`https://maps.google.com/?cid=<cid>`) | kolom sama |
+| `newest_review_dates` | Disimpan apa adanya (tanggal saja, D-38). NULL atau kosong = tidak ada, jadi `places` menyimpan nilai tidak kosong terbaru dan waktu scrape-nya di `field_observed` (BR-NORM-05). Tanpa tabel riwayat karena metode B hanya memakai snapshot terbaru. Penyaringan dan syarat metode B ada di `estimate.Velocity` (§5.4) | `newest_review_dates` |
 | `observed_at` (`created_at`) | Waktu snapshot | `field_observed`, `place_snapshots.day` (tanggal lokal) |
 
 6. **Gabung snapshot (BR-NORM-05).** `ingest.Merge(cur, snap) (next, changed)` adalah fungsi murni. Baris diproses urut `created_at`. Untuk tiap field, nilai tidak kosong dari snapshot dengan waktu ≥ `field_observed[field]` menggantikan nilai sekarang. Pembanding ≥ membuat baca ulang idempoten. `is_claimed` mengikuti snapshot terbaru. `observed_at` = snapshot terbaru, `first_observed_at` = tertua, `raw` = `SourceRow` terbaru. Bila koordinat berubah, `desa_id`…`prov_id` dikosongkan supaya dihitung ulang oleh `geo.assign`.
@@ -435,13 +447,15 @@ Rumus = PRD Lampiran E. Semua rumus ada di paket `estimate` sebagai fungsi murni
 ```go
 // internal/estimate — satu-satunya tempat rumus PRD Lampiran E dan F
 const Version, LocVersion = "est-1.0.0", "loc-1.0.0" // naik setiap kali hasil bisa berubah
-func Velocity(series []DayCount) Velocity                                      // E.1: laju setahun & terkini + titik yang dipakai
+func Velocity(series []DayCount, newest []time.Time, scrapedAt time.Time, p Params) Velocity // E.1: metode A/B, cek silang
 func Estimate(in Input, p Params) Result                                        // E.2/E.3 + penanda FR-EST-05 + alasan BR-EST-01
 func Pattern(pt []int16, hours Hours, p Params, guestsPerOpenDay *float64) PatternSummary // E.4
 func AnalyzeLocation(in LocInput, nb []Neighbour, cmp *Neighbour, p Params) LocResult      // Lampiran F
 func PriceMid(min int64, max *int64) int64                                      // E.2: rentang terbuka → min
 func RoundVisitors(v int) int; func RoundRupiah(v int64) int64                  // BR-EST-02, hanya di proyeksi
 ```
+
+**`Velocity` (E.1, D-38).** Metode A (`series`) dihitung lebih dulu. Metode B (`newest` = `places.newest_review_dates`, `scrapedAt` = waktu scrape-nya) dipakai bila A tidak memenuhi syarat. Bila keduanya ada, hasil B menjadi `velocity_crosscheck`. Rumus dan syarat B mengikuti E.1 dan tidak disalin di sini. N = jumlah tanggal yang tersisa setelah tanggal sesudah `scrapedAt` dibuang, dibandingkan dengan `velocity_b_min_n`. Jendela B < `short_window_days` → flag `short_window`, baik B dipakai sebagai laju maupun sebagai cek silang. Hasil fungsi ini: laju setahun, `velocity_method`, `velocity_crosscheck`, jendela B (`from`, `to`) + N (disimpan di `inputs`), dan flag. Bila A dan B tidak memenuhi syarat → reason `review_data_insufficient`. Laju terkini (`velocity_recent`, 90 hari) tetap dihitung dari deret snapshot; tanpa riwayat yang cukup nilainya NULL, sehingga `velocity_changed` tidak dievaluasi.
 
 Golden test PRD §12 memanggil fungsi ini langsung. Signa Cafe diuji lewat `Estimate` (dua snapshot, harga hasil `ingest.ParsePrice`, parameter default) dan `Pattern` (pola 7 hari asli → pola datar). Warung Kita diuji lewat `AnalyzeLocation` (pola KR dan Joglo). Kasus ujinya ditulis di 05.
 
@@ -455,14 +469,15 @@ Golden test PRD §12 memanggil fungsi ini langsung. Signa Cafe diuji lewat `Esti
 | `est.hotel` | Per kelas akomodasi (`hotel_1`…`hotel_5`, `hotel`, `resort`, `villa`, `penginapan`): `{"stay_nights","rooms","adr"}`; `null` = belum diisi |
 | `est.flags` | `{"five_star_share","velocity_change"}` (FR-EST-05) |
 | `est.pattern` | `{"core_hour_ratio","flat_ratio"}`: ambang jam inti dan pola datar (E.4) |
+| `est.velocity` | `{"velocity_b_min_n","short_window_days"}`: minimum ulasan terbaru metode B dan batas jendela pendek dalam hari (E.1) |
 
-`PUT /ops/settings/{key}` memvalidasi nilai lewat `estimate.Params.Validate()` (pecahan 0–1, `low ≤ mid ≤ high`, Rupiah bilangan bulat ≥ 0, `min ≤ max`), mencatat audit, lalu meng-enqueue `est.compute` di transaksi yang sama (FR-EST-06).
+`PUT /ops/settings/{key}` memvalidasi nilai lewat `estimate.Params.Validate()` (pecahan 0–1, `low ≤ mid ≤ high`, Rupiah bilangan bulat ≥ 0, `min ≤ max`, `est.velocity` bilangan bulat dengan N ≥ 2 dan hari ≥ 1), mencatat audit, lalu meng-enqueue `est.compute` di transaksi yang sama (FR-EST-06).
 
 **Job `est.compute`:**
 
 1. Baca `est.*` sekali → `Params`.
 2. SQL: median `price_mid` per (kab/kota, kelompok) yang memenuhi ambang E.2 → sumber harga ke-2.
-3. Stream tempat kelompok `makan`/`kafe`/`hotel` (keyset `id`) beserta deret (hari, jumlah ulasan) 365 hari terakhir dari `place_snapshots` (`array_agg`) → `estimate.Estimate` → upsert batch 2.000, commit per batch.
+3. Stream tempat kelompok `makan`/`kafe`/`hotel` (keyset `id`) beserta deret (hari, jumlah ulasan) 365 hari terakhir dari `place_snapshots` (`array_agg`), `newest_review_dates`, dan waktu scrape-nya (`field_observed`) → `estimate.Estimate` → upsert batch 2.000, commit per batch.
 4. Hapus baris dengan `computed_at` < mulai job (tempat yang keluar dari kelompok), set metrik cakupan, lalu enqueue `geo.metrics`.
 
 Kelompok `lainnya` tidak punya baris; API menampilkan "Belum dapat diperkirakan" dengan alasan kelompok belum didukung. Pola keramaian tidak bergantung pada kelompok: `estimate.Pattern` dihitung saat profil dibaca dari `places.popular_times` (168 nilai, murah) dengan parameter saat ini.
@@ -563,7 +578,7 @@ LIMIT @lim;   -- lim = limit + 1 untuk mendeteksi halaman berikutnya
 
 ### 7.2 Profil & peta
 
-- **Profil (FR-PROF-01):** satu query (place + estimasi + gap + wilayah + metrik + skor + unlock + suppression) ditambah satu query riwayat ulasan (`place_snapshots`: hari, jumlah ulasan, rating) → `intel.ProspectView`. Estimasi tampil sebagai rentang + parameter (`estimates.params`) + sumber harga + "Data per `data_as_of`"; tabel sensitivitas dibentuk dari kolom `estimates`. Pola keramaian (blok waktu, jam puncak, jam inti, pola datar, keramaian rata-rata, tamu per jam bila `visitors_mid` ada) dihitung saat dibaca dengan `estimate.Pattern`, beserta label zona waktu (WIB/WITA/WIT dari `timezone`) dan label "relatif terhadap jam tersibuk". `about` dan `is_claimed` ikut ditampilkan. Target p95 ≤ 500 ms (NFR-01).
+- **Profil (FR-PROF-01):** satu query (place + estimasi + gap + wilayah + metrik + skor + unlock + suppression) ditambah satu query riwayat ulasan (`place_snapshots`: hari, jumlah ulasan, rating) → `intel.ProspectView`. Estimasi tampil sebagai rentang + parameter (`estimates.params`) + sumber harga + sumber laju (`velocity_method`, jendela dari `inputs`, `velocity_crosscheck`) + "Data per `data_as_of`"; tabel sensitivitas dibentuk dari kolom `estimates`. Pola keramaian (blok waktu, jam puncak, jam inti, pola datar, keramaian rata-rata, tamu per jam bila `visitors_mid` ada) dihitung saat dibaca dengan `estimate.Pattern`, beserta label zona waktu (WIB/WITA/WIT dari `timezone`) dan label "relatif terhadap jam tersibuk". `about` dan `is_claimed` ikut ditampilkan. Target p95 ≤ 500 ms (NFR-01).
 - **Peta & peringkat wilayah (FR-GEO-01):** browser memuat TileJSON GeoAPI (`/v1/tiles/areas.json`, layer `areas`, `area_labels`) langsung dengan MapLibre. Warna diambil dari `GET /areas/ranking?parent_id=&level=&group=` lewat `feature-state` (kunci = ID area). Peringkat membaca `area_metrics` untuk kelompok yang dipilih, ditambah `icp_area_scores.hot_warm_count` bila ada ICP aktif. Atribusi TileJSON tampil di peta, dan tabel peringkat selalu tersedia sebagai padanan.
 
 ### 7.3 Analisis lokasi (FR-LOC-01)
@@ -640,7 +655,7 @@ Role: **M** = Member (Admin juga boleh), **A** = Admin, **O** = ops (`is_ops` + 
 | GET | `/ops/imports` (snapshot terbaru, jeda, run berjalan, riwayat + laporan), `/ops/data-health`, `/ops/audit` | OPS-01/02 | O |
 | GET · PUT · POST · DELETE | `/ops/flags`, `/ops/flags/{key}`, `/ops/suppressions`, `/ops/suppressions/{id}` | OPS-01, PRIV-02 | O |
 
-`/ops/data-health` dihitung saat diminta dengan satu agregat atas `places` ⟕ `estimates`: jumlah bisnis, % terisi per field (termasuk harga dan `popular_times`), % bisnis dengan ≥ 2 snapshot berjarak ≥ 30 hari (`observed_at − first_observed_at`), % terpetakan wilayah, dan cakupan estimasi per kelompok (FR-OPS-01).
+`/ops/data-health` dihitung saat diminta dengan satu agregat atas `places` ⟕ `estimates`: jumlah bisnis, % terisi per field (termasuk harga dan `popular_times`), % bisnis dengan laju ulasan per `estimates.velocity_method` (`snapshots` / `newest_reviews` / tidak ada), % terpetakan wilayah, dan cakupan estimasi per kelompok (FR-OPS-01).
 
 ## 9. Auth (Kratos)
 
@@ -802,7 +817,7 @@ Dua gauge timestamp import dibaca dari tabel `imports` saat scrape (satu query k
 3. **Identitas:** Kratos, email wajib terverifikasi, ops wajib AAL2 (TOTP). Role diperiksa per request dari `x-msp-role`.
 4. **Secret:** variabel CI terproteksi → `.env` per environment (izin 600), termasuk `MSP_SOURCE_DATABASE_URL`. Tidak ada secret di repo, log, atau tabel `settings`. Secret webhook dienkripsi AES-GCM.
 5. **Outbound:** guard SSRF di dial time untuk webhook, tanpa redirect. Host GeoAPI berasal dari env, host LLM dari setting ops (wajib `https`, hanya akun ops AAL2, diaudit). Semuanya tidak pernah dari input user workspace. Membaca DB gmaps bukan koneksi keluar: `gmaps-db` ada di network internal (§2).
-6. **Data kontak & pribadi:** telepon di-mask sampai di-unlock, dan suppression diterapkan di satu fungsi `intel.ProspectView` (search, profil, evidence, export, webhook). Telepon tidak dikirim ke LLM dan di-redact dari log. Kolom sumber yang memuat data orang (`user_reviews`, isi `owner`) tidak di-import (§5.1). Kiriman founder hanya berisi kolom `export` di `source.sql`, jadi `user_reviews`, `images`, dan kolom lain yang tidak dipakai tidak pernah sampai ke server kita (D-37). `owner` ikut terkirim karena `is_claimed` diturunkan darinya; isinya tidak di-import.
+6. **Data kontak & pribadi:** telepon di-mask sampai di-unlock, dan suppression diterapkan di satu fungsi `intel.ProspectView` (search, profil, evidence, export, webhook). Telepon tidak dikirim ke LLM dan di-redact dari log. Data orang di kolom sumber tidak di-import (§5.1): dari `user_reviews` hanya tanggal ulasan yang diambil (`newest_review_dates`, D-38), dan isi `owner` tidak di-import. Kiriman founder hanya berisi kolom `export` di `source.sql`, jadi teks, nama, dan foto `user_reviews`, `images`, serta kolom lain yang tidak dipakai tidak pernah sampai ke server kita (D-37). `owner` ikut terkirim karena `is_claimed` diturunkan darinya; isinya tidak di-import.
 7. **Audit:** `audit_log` append-only (`REVOKE UPDATE, DELETE`) untuk login, undangan, unlock, export, webhook, grant, flag, suppression, plan, setting AI, dan parameter estimasi.
 8. **Dependensi & input:** `govulncheck` + `npm audit` di CI (06). Batas ukuran body/limit/export/radius, validasi OpenAPI di setiap request, dan query hanya lewat sqlc (berparameter) atau `source.sql` (berparameter).
 
