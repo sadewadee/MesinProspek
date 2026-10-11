@@ -191,7 +191,7 @@ Revisi 0.2 menerapkan arahan founder: **KISS, DRY, make it work → right → fa
 | Q-15 | Denpasar dan Gianyar tidak muncul di 30 kota F&B teratas (nama kota dwibahasa atau data memang sedikit?) | Ditunda: founder mengaudit ulang |
 | Q-16 | Kadens pengiriman data DB gmaps | **Terjawab:** mingguan (ambang AL-11 = 8 hari) |
 | Q-17 | Bisakah scraper mengambil N ulasan **terbaru** per tempat (urutan "Terbaru")? | **Terjawab:** bisa (D-38) |
-| Q-18 | Detail scraper untuk ulasan terbaru: berapa N (disarankan ≥ 20), dan bagaimana snapshot ditandai sebagai urutan "Terbaru" (mis. kolom `reviews_sort`), agar snapshot lama berurutan "paling relevan" tidak terbaca sebagai terbaru | Terbuka (founder) |
+| Q-18 | Detail scraper untuk ulasan terbaru: berapa N, dan bagaimana snapshot ditandai sebagai urutan "Terbaru" | **Terjawab:** 20 ulasan terbaru per tempat; ditandai kolom `reviews_sort = 'newest'` |
 
 ## 9. Peta dokumen lanjutan
 

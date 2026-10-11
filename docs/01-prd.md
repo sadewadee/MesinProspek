@@ -96,7 +96,7 @@ DB gmaps adalah sumber dataset kita. Export JSON-LD-nya (D-24) membuang `popular
 | Pemilik (`owner`) | Penanda "listing diklaim pemilik" | — |
 | Waktu scrape | Tanggal snapshot (`observed_at`) | — |
 | Status, foto, deskripsi | Tidak dipakai di F1 | Status tidak andal (sampel berisi "Anjing boleh masuk") |
-| Contoh ulasan (`user_reviews`) | F1: hanya **tanggal ulasan terbaru** dari snapshot yang di-scrape dengan urutan "Terbaru", untuk laju ulasan (E.1 metode B, D-38). Teks, nama, dan foto tidak diimpor; insight teks di F2 (§6) | Snapshot lama berisi ±8 ulasan urutan "paling relevan" (sampel Signa berisi ulasan 2024–2026), jadi tidak bisa dipakai untuk laju ulasan dan tidak mewakili sebaran rating. Scraper akan mengambil ulasan terbaru dan menandai urutannya (Q-18). Proporsi ulasan positif sudah lengkap dari distribusi bintang (semua ulasan). Isinya berguna untuk hal lain: sebutan harga per orang ("berdua di bawah 250 rb"), ukuran rombongan, dan tema pujian/keluhan. Memuat nama dan foto pengulas yang tidak kita butuhkan |
+| Contoh ulasan (`user_reviews`) | F1: hanya **tanggal ulasan terbaru** dari snapshot yang di-scrape dengan urutan "Terbaru", untuk laju ulasan (E.1 metode B, D-38). Teks, nama, dan foto tidak diimpor; insight teks di F2 (§6) | Snapshot lama berisi ±8 ulasan urutan "paling relevan" (sampel Signa berisi ulasan 2024–2026), jadi tidak bisa dipakai untuk laju ulasan dan tidak mewakili sebaran rating. Scraper mengambil **20 ulasan terbaru** per tempat dan menandai snapshot itu dengan `reviews_sort = 'newest'` (Q-18); snapshot tanpa penanda ini tidak dipakai untuk metode B. Proporsi ulasan positif sudah lengkap dari distribusi bintang (semua ulasan). Isinya berguna untuk hal lain: sebutan harga per orang ("berdua di bawah 250 rb"), ukuran rombongan, dan tema pujian/keluhan. Memuat nama dan foto pengulas yang tidak kita butuhkan |
 | Email, nama pemilik/person | Tidak ada → "Tidak diketahui" | — |
 
 Nama kolom persis dan cara membacanya ditulis sekali di 04 (DRY). Snapshot yang berbeda bisa menyimpan atribut berbeda. Contoh: harga Signa hanya ada di sebagian snapshot, dan kategorinya kadang "Restaurant", kadang "Restoran". Aturan penggabungannya ada di BR-NORM-05.
@@ -240,7 +240,7 @@ Nilai yang tidak bisa diukur dari data diatur ops dari dashboard (D-29, D-32): r
 |---|---|
 | Review rate tidak bisa diukur dari data dan sangat menentukan omzet (1% vs 2% = 2×) | Selalu rentang + tabel sensitivitas + parameter yang dipakai, tidak pernah disebut omzet pasti. Parameter memakai benchmark dan diatur dari dashboard. MesinProspek tidak punya data omzet nyata usaha dan tidak menjanjikannya |
 | `popular_times` hanya ada di ±13% tempat dan harga di ±0,8% | Pola dan omzet tampil "Belum dapat diperkirakan" bila data kurang; harga memakai median wilayah atau benchmark berlabel (Lampiran E) |
-| **Riwayat snapshot belum merata** (Q-14: ≥ 30 hari di 44–52% tempat di Bali, 0–0,3% di kota lain saat diukur) | Metode B (tanggal ulasan terbaru, D-38) mengukur laju dari satu snapshot, sehingga estimasi tersedia di seluruh Indonesia setelah scraper mengambil ulasan terbaru (Q-18). Sebelum itu, di luar Bali tampil "Belum cukup data ulasan". Ukur ulang cakupan sebelum beta. Fitur tidak diubah untuk menutupi data yang kurang |
+| **Riwayat snapshot belum merata** (Q-14: ≥ 30 hari di 44–52% tempat di Bali, 0–0,3% di kota lain saat diukur) | Metode B (tanggal ulasan terbaru, D-38) mengukur laju dari satu snapshot, sehingga estimasi tersedia di seluruh Indonesia setelah scraper mulai mengambil 20 ulasan terbaru (Q-18). Sebelum itu, di luar Bali tampil "Belum cukup data ulasan". Ukur ulang cakupan sebelum beta. Fitur tidak diubah untuk menutupi data yang kurang |
 | Metode B memakai jendela pendek untuk tempat ramai (mis. 20 ulasan dalam 3 minggu), sehingga terpengaruh musim atau promo | Metode A didahulukan bila riwayat ≥ 30 hari. Jendela metode B selalu ditampilkan; jendela < 30 hari diberi penanda "jendela pendek". Bila kedua metode tersedia, selisihnya ditampilkan sebagai cek silang |
 | Skema DB gmaps berubah dan merusak import | Pemetaan kolom ditulis di satu tempat (04); import memeriksa kolom saat mulai dan gagal dengan alert yang jelas |
 | Data basi (contoh: catatan lama tentang Pulau Kawe ternyata keliru) | Estimasi selalu dihitung dari snapshot terbaru dan menampilkan tanggal data; dihitung ulang setelah setiap import |
@@ -325,7 +325,7 @@ Dua metode. **A didahulukan**; B dipakai bila A tidak memenuhi syarat. Bila kedu
 - `laju = max(0, ulasan_terbaru − ulasan_terlama) ÷ hari × 365`.
 
 **Metode B (tanggal ulasan terbaru, D-38):**
-- Sumber: tanggal N ulasan terbaru dari snapshot terbaru yang di-scrape dengan urutan "Terbaru" (Q-18). Tanggal setelah waktu scrape diabaikan. Syarat: N ≥ 10.
+- Sumber: tanggal N ulasan terbaru (scraper mengambil 20) dari snapshot terbaru bertanda `reviews_sort = 'newest'` (Q-18). Tanggal setelah waktu scrape diabaikan. Syarat: N ≥ 10.
 - Bila ulasan ke-N lebih tua dari 365 hari: `laju = jumlah ulasan dalam 365 hari terakhir` (hitungan tepat).
 - Selain itu: `laju = (N − 1) ÷ (waktu scrape − tanggal ulasan ke-N, dalam hari) × 365`.
 - Jendela (tanggal ulasan ke-N sampai waktu scrape) selalu ditampilkan. Jendela < 30 hari → penanda "jendela pendek".
