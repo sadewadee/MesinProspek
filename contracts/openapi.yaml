@@ -41,7 +41,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Health"
         "503":
-          description: Not ready.
+          description: Not ready (code `NOT_READY`). The cause is logged, not returned.
           content:
             application/problem+json:
               schema:
@@ -99,3 +99,4 @@ components:
         - UNAUTHENTICATED
         - VALIDATION_FAILED
         - RATE_LIMITED
+        - NOT_READY

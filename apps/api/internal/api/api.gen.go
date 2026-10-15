@@ -32,6 +32,7 @@ func (e HealthStatus) Valid() bool {
 const (
 	ProblemCodeINTERNAL         ProblemCode = "INTERNAL"
 	ProblemCodeNOTFOUND         ProblemCode = "NOT_FOUND"
+	ProblemCodeNOTREADY         ProblemCode = "NOT_READY"
 	ProblemCodeRATELIMITED      ProblemCode = "RATE_LIMITED"
 	ProblemCodeUNAUTHENTICATED  ProblemCode = "UNAUTHENTICATED"
 	ProblemCodeVALIDATIONFAILED ProblemCode = "VALIDATION_FAILED"
@@ -43,6 +44,8 @@ func (e ProblemCode) Valid() bool {
 	case ProblemCodeINTERNAL:
 		return true
 	case ProblemCodeNOTFOUND:
+		return true
+	case ProblemCodeNOTREADY:
 		return true
 	case ProblemCodeRATELIMITED:
 		return true

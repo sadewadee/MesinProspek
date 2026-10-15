@@ -52,6 +52,9 @@ func parse(command string, getenv func(string) string) (Config, error) {
 	if command == "migrate" && cfg.MigrateDatabaseURL == "" {
 		return Config{}, fmt.Errorf("config: MSP_MIGRATE_DATABASE_URL is required for msp migrate")
 	}
+	if command == "api" && cfg.DatabaseURL == "" {
+		return Config{}, fmt.Errorf("config: MSP_DATABASE_URL is required for msp api")
+	}
 
 	return cfg, nil
 }

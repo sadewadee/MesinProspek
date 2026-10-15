@@ -79,7 +79,7 @@ export interface components {
          * @description Stable machine-readable error code (docs/04 §8). New codes are added only when used.
          * @enum {string}
          */
-        ProblemCode: "INTERNAL" | "NOT_FOUND" | "UNAUTHENTICATED" | "VALIDATION_FAILED" | "RATE_LIMITED";
+        ProblemCode: "INTERNAL" | "NOT_FOUND" | "UNAUTHENTICATED" | "VALIDATION_FAILED" | "RATE_LIMITED" | "NOT_READY";
     };
     responses: {
         /** @description Error in RFC 9457 problem details format. */
@@ -138,7 +138,7 @@ export interface operations {
                     "application/json": components["schemas"]["Health"];
                 };
             };
-            /** @description Not ready. */
+            /** @description Not ready (code `NOT_READY`). The cause is logged, not returned. */
             503: {
                 headers: {
                     [name: string]: unknown;

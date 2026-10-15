@@ -1,0 +1,5 @@
+# Build context of apps/api/Dockerfile (docs/06 §4): sources only, no local builds or secrets.
+bin
+coverage.out
+**/.env
+**/.env.*

@@ -73,16 +73,7 @@ func TestMigrateAndWorkspaceRLS(t *testing.T) {
 
 	// One connection, so every query below reuses the connection that ran
 	// the previous InWorkspace transaction.
-	poolConfig, err := pgxpool.ParseConfig(withRole(t, dbURL, "msp_app"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	poolConfig.MaxConns = 1
-	pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(pool.Close)
+	pool := newPool(t, withRole(t, dbURL, "msp_app")+"&pool_max_conns=1")
 	d := db.New(pool)
 
 	t.Run("runtime role is msp_app without superuser or BYPASSRLS", func(t *testing.T) {
@@ -174,6 +165,67 @@ func TestMigrateAndWorkspaceRLS(t *testing.T) {
 	})
 }
 
+func TestReadyCheck(t *testing.T) {
+	ctx := t.Context()
+	dbURL := newDatabase(t)
+	ready, err := db.NewReadyCheck(newPool(t, withRole(t, dbURL, "msp_app")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner := connect(t, withRole(t, dbURL, "msp_owner"))
+
+	t.Run("not ready before migrate, without creating the version table", func(t *testing.T) {
+		if err := ready(ctx); err == nil {
+			t.Fatal("ready() = nil, want an error before msp migrate")
+		}
+		var exists bool
+		if err := owner.QueryRow(ctx, `SELECT EXISTS (SELECT FROM pg_tables WHERE tablename = 'goose_db_version')`).Scan(&exists); err != nil || exists {
+			t.Fatalf("goose_db_version exists = %t, %v; want the check to leave it to msp migrate", exists, err)
+		}
+	})
+
+	if _, err := db.Migrate(ctx, withRole(t, dbURL, "msp_owner")); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("ready after migrate", func(t *testing.T) {
+		if err := ready(ctx); err != nil {
+			t.Fatalf("ready() = %v, want nil", err)
+		}
+	})
+
+	t.Run("ready when the database is ahead of the binary", func(t *testing.T) {
+		if _, err := owner.Exec(ctx, `INSERT INTO goose_db_version (version_id, is_applied) VALUES (99999999999999, true)`); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			_, _ = owner.Exec(context.Background(), `DELETE FROM goose_db_version WHERE version_id = 99999999999999`)
+		})
+		if err := ready(ctx); err != nil {
+			t.Fatalf("ready() = %v, want nil after a rollback of the app", err)
+		}
+	})
+
+	t.Run("not ready when a migration is missing", func(t *testing.T) {
+		if _, err := owner.Exec(ctx, `DELETE FROM goose_db_version WHERE version_id > 0`); err != nil {
+			t.Fatal(err)
+		}
+		if err := ready(ctx); err == nil || !strings.Contains(err.Error(), "database at migration 0, binary needs 1") {
+			t.Fatalf("ready() = %v, want the missing migration", err)
+		}
+	})
+
+	t.Run("not ready when the database is unreachable", func(t *testing.T) {
+		down, err := db.NewReadyCheck(newPool(t, "postgres://msp_app@127.0.0.1:1/msp?connect_timeout=2"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := down(ctx); err == nil {
+			t.Fatal("ready() = nil, want an error for an unreachable database")
+		}
+	})
+}
+
 // newDatabase creates an empty database the way ops prepares one (roles from
 // db/roles.sql, database owned by msp_owner, PostGIS created by a superuser)
 // and returns its superuser URL. The database is dropped when the test ends.
@@ -245,6 +297,16 @@ func withRole(t *testing.T, rawURL, role string) string {
 	query.Set("role", role)
 	u.RawQuery = query.Encode()
 	return u.String()
+}
+
+func newPool(t *testing.T, rawURL string) *pgxpool.Pool {
+	t.Helper()
+	pool, err := pgxpool.New(t.Context(), rawURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close)
+	return pool
 }
 
 func connect(t *testing.T, rawURL string) *pgx.Conn {

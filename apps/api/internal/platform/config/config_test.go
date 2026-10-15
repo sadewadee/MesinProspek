@@ -16,8 +16,8 @@ func TestParse(t *testing.T) {
 		{
 			name:    "defaults",
 			command: "api",
-			env:     map[string]string{},
-			want:    Config{Env: "local", LogLevel: slog.LevelInfo, HTTPAddr: ":8080"},
+			env:     map[string]string{"MSP_DATABASE_URL": "postgres://msp_app@db/msp"},
+			want:    Config{Env: "local", LogLevel: slog.LevelInfo, HTTPAddr: ":8080", DatabaseURL: "postgres://msp_app@db/msp"},
 		},
 		{
 			name:    "explicit values",
@@ -46,9 +46,21 @@ func TestParse(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:    "api does not need database urls yet",
+			name:    "api needs the database url",
 			command: "api",
-			env:     map[string]string{"MSP_MIGRATE_DATABASE_URL": ""},
+			env:     map[string]string{"MSP_MIGRATE_DATABASE_URL": "postgres://msp_owner@db/msp"},
+			wantErr: true,
+		},
+		{
+			name:    "api database url of only spaces is missing",
+			command: "api",
+			env:     map[string]string{"MSP_DATABASE_URL": "   "},
+			wantErr: true,
+		},
+		{
+			name:    "worker does not need the database url yet",
+			command: "worker",
+			env:     map[string]string{},
 			want:    Config{Env: "local", LogLevel: slog.LevelInfo, HTTPAddr: ":8080"},
 		},
 		{

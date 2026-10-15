@@ -1,0 +1,15 @@
+# Local Caddy (deploy/docker-compose.local.yml): the routes of the (app) snippet in ops/Caddyfile, on plain
+# HTTP at http://localhost:8000. Upstreams are Compose service names. The metrics listener :9090 is not routed.
+{
+	auto_https off
+	admin off
+}
+
+:80 {
+	@api path /api/* /healthz /readyz
+	reverse_proxy @api api:8080
+	handle_path /.ory/* {
+		reverse_proxy kratos:4433 # public API only; admin 4434 is not routed
+	}
+	reverse_proxy web:3000
+}

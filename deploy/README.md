@@ -1,6 +1,6 @@
 # deploy/
 
-File untuk satu server (D-19, D-26). Desainnya ada di [06](../docs/06-ci-cd.md) §2, §5, §7–§9; prosedur operasi ada di [09](../docs/09-runbook-operasional.md).
+File untuk satu server (D-19, D-26) dan stack lokal. Desainnya ada di [06](../docs/06-ci-cd.md) §2, §5, §7–§9; prosedur operasi ada di [09](../docs/09-runbook-operasional.md).
 
 | File | Isi |
 |---|---|
@@ -10,6 +10,7 @@ File untuk satu server (D-19, D-26). Desainnya ada di [06](../docs/06-ci-cd.md) 
 | `deploy.sh` | Deploy satu environment: `deploy.sh <staging\|production> <image-tag>`. Dijalankan runner `deploy` dari job `deploy-staging`/`deploy-production` di `.gitlab-ci.yml`; rollback = job yang sama di pipeline rilis sebelumnya (09 RB-01, RB-02) |
 | `.env.example` | Satu-satunya daftar key `.env` stack aplikasi (06 §7). Cara tiap key diisi (wajib, opsional, default) ada di kepala file |
 | `postgres/` | Image Postgres + pgBackRest dan init pertama DB `msp`. `roles.sql` adalah symlink ke `apps/api/db/roles.sql`, jadi salin dengan `cp -rL` |
+| `docker-compose.local.yml`, `Caddyfile.local`, `.env.local.example` | Stack `local` di laptop (06 §2): service production dibangun dari source + `caddy` dan `mailpit`. Jalankan dari root repo: `docker compose -f deploy/docker-compose.local.yml up --build`, lalu buka `http://localhost:8000` (Mailpit `http://localhost:8025`). Nilai dummy dari `.env.local.example`; timpa di `.env.local` (tidak di-commit) |
 | `admin-keys/<user>.pub` | Kunci SSH publik tiap admin. Nama file = nama user Linux |
 
 ## Bootstrap (founder)

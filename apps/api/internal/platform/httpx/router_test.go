@@ -1,18 +1,26 @@
 package httpx
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"msp/internal/api"
 )
 
-func ready(context.Context) error    { return nil }
-func notReady(context.Context) error { return errors.New("database not configured") }
+func ready(context.Context) error { return nil }
+func notReady(context.Context) error {
+	return errors.New("db: not ready: dial 10.0.0.7:5432 as msp_app")
+}
+
+func discard() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
 
 func TestRouter(t *testing.T) {
 	tests := []struct {
@@ -32,7 +40,7 @@ func TestRouter(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			rec := httptest.NewRecorder()
-			NewRouter(tt.ready).ServeHTTP(rec, httptest.NewRequest(tt.method, tt.path, nil))
+			NewRouter(tt.ready, discard()).ServeHTTP(rec, httptest.NewRequest(tt.method, tt.path, nil))
 			if rec.Code != tt.wantStatus {
 				t.Fatalf("status = %d, want %d", rec.Code, tt.wantStatus)
 			}
@@ -49,7 +57,7 @@ func TestHealthBody(t *testing.T) {
 	for _, path := range []string{"/healthz", "/readyz"} {
 		t.Run(path, func(t *testing.T) {
 			var got api.Health
-			get(t, NewRouter(ready), path, &got)
+			get(t, NewRouter(ready, discard()), path, &got)
 			if got.Status != api.HealthStatusOk {
 				t.Fatalf("status = %q, want %q", got.Status, api.HealthStatusOk)
 			}
@@ -58,20 +66,24 @@ func TestHealthBody(t *testing.T) {
 }
 
 func TestReadyzProblem(t *testing.T) {
+	var logs bytes.Buffer
 	var got api.Problem
-	get(t, NewRouter(notReady), "/readyz", &got)
+	get(t, NewRouter(notReady, slog.New(slog.NewTextHandler(&logs, nil))), "/readyz", &got)
 
 	if got.Type != "about:blank" || got.Title != "Service Unavailable" || got.Status != http.StatusServiceUnavailable {
 		t.Errorf("type/title/status = %q/%q/%d", got.Type, got.Title, got.Status)
 	}
-	if got.Code != api.ProblemCodeINTERNAL {
-		t.Errorf("code = %q, want %q", got.Code, api.ProblemCodeINTERNAL)
+	if got.Code != api.ProblemCodeNOTREADY {
+		t.Errorf("code = %q, want %q", got.Code, api.ProblemCodeNOTREADY)
 	}
-	if got.Detail == nil || *got.Detail != "database not configured" {
-		t.Errorf("detail = %v, want %q", got.Detail, "database not configured")
+	if got.Detail == nil || strings.Contains(*got.Detail, "10.0.0.7") {
+		t.Errorf("detail = %v, want a fixed text without internal details", got.Detail)
 	}
 	if got.RequestId == "" {
 		t.Error("request_id is empty")
+	}
+	if !strings.Contains(logs.String(), "10.0.0.7") || !strings.Contains(logs.String(), got.RequestId) {
+		t.Errorf("log = %q, want the cause and request_id %s", logs.String(), got.RequestId)
 	}
 }
 

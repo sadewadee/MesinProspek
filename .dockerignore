@@ -1,0 +1,15 @@
+# Build context of apps/web/Dockerfile is the repo root (pnpm workspace; build job in .gitlab-ci.yml).
+# Keep it small and free of local builds and secrets.
+.git
+.claude
+.cache
+.pnpm-store
+**/node_modules
+**/.next
+**/*.tsbuildinfo
+apps/api
+docs
+deploy
+scripts
+**/.env
+**/.env.*

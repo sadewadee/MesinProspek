@@ -14,6 +14,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"msp/internal/platform/config"
 	"msp/internal/platform/db"
 	"msp/internal/platform/httpx"
@@ -63,7 +65,14 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		}
 		logger.Info("migrations applied", "count", len(applied), "versions", applied)
 		return 0
-	case "worker", "tool":
+	case "worker":
+		// TODO(WP-11): the first job WP registers the River queues of docs/04 §2.
+		// Until then the worker idles, so the Compose stacks run it like any
+		// long-lived service instead of restarting it.
+		logger.Info("worker has no queues yet; waiting for shutdown")
+		<-ctx.Done()
+		return 0
+	case "tool":
 		logger.Error("command not implemented yet", "command", args[0])
 		return 2
 	default:
@@ -73,9 +82,21 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 }
 
 func serveAPI(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
+	// The pool connects lazily: the api starts while the database is down and
+	// /readyz answers 503 until it is up and migrated.
+	pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
+	if err != nil {
+		return fmt.Errorf("database: %w", err)
+	}
+	defer pool.Close()
+	ready, err := db.NewReadyCheck(pool)
+	if err != nil {
+		return err
+	}
+
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           httpx.NewRouter(dbNotConfigured),
+		Handler:           httpx.NewRouter(ready, logger),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
@@ -101,9 +122,4 @@ func serveAPI(ctx context.Context, cfg config.Config, logger *slog.Logger) error
 	}
 	logger.Info("api stopped")
 	return nil
-}
-
-// dbNotConfigured keeps /readyz at 503 until `msp api` has a database to ping.
-func dbNotConfigured(context.Context) error {
-	return errors.New("database not configured")
 }
