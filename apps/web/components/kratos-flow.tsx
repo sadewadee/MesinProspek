@@ -75,12 +75,15 @@ function Node({ node }: { node: UiNode }) {
     case "input":
       if (a.type === "hidden") return <input type="hidden" name={a.name} value={String(a.value ?? "")} />;
       if (a.type === "submit" || a.type === "button") {
+        // Only the primary submit (name "method") needs the form's fields; the others (resend code,
+        // back, unlink TOTP, link Google) skip browser validation. Kratos validates on the server.
         return (
           <button
             type="submit"
             name={a.name}
             value={String(a.value ?? "")}
             disabled={a.disabled}
+            formNoValidate={a.name !== "method"}
             className={a.name === "method" ? primaryButton : secondaryButton}
           >
             {label}

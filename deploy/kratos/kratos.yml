@@ -58,9 +58,11 @@ selfservice:
       after:
         password:
           hooks:
-            # Session right away, then the verification screen: until the email is verified the API
-            # answers 403 EMAIL_NOT_VERIFIED (docs/04 §9) and the app shows only that screen (docs/03 SCR-01).
-            - hook: session
+            # No session before the email is verified: the verification screen comes next, and the user
+            # signs in afterwards (login requires a verified address). A session for an unverified
+            # address would let whoever registered someone else's email keep it, and enrol TOTP on it,
+            # after the owner recovers the account. The API's 403 EMAIL_NOT_VERIFIED (docs/04 §9) stays
+            # as a backstop.
             - hook: show_verification_ui
         oidc:
           hooks:
@@ -75,10 +77,19 @@ selfservice:
       enabled: true
       use: code
       ui_url: /recovery
+      after:
+        hooks:
+          # Recovering an account signs every other session out.
+          - hook: revoke_active_sessions
     settings:
       ui_url: /account
       privileged_session_max_age: 15m
       required_aal: highest_available
+      after:
+        password:
+          hooks:
+            # A new password signs every other session out.
+            - hook: revoke_active_sessions
     logout:
       after:
         default_browser_return_url: /login
