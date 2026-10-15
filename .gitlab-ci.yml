@@ -3,8 +3,8 @@
 # (deploy/ops/runner-ci.template.toml); tag `deploy` = shell executor on the host as user deploy, protected
 # refs only. Each runs one job at a time. Only the founder merges changes to this file, deploy/ or scripts/ci/ (06 §3).
 #
-# MR:    check, govulncheck, mr-check
-# main:  check, govulncheck -> build, trivy -> deploy-staging (+ smoke-staging J-2)
+# MR:    check, mr-check
+# main:  check -> build, trivy -> deploy-staging (+ smoke-staging J-2)
 # v*:    deploy-staging (+ smoke-staging J-2..J-7) -> deploy-production (manual, founder). Rollback: run
 #        deploy-production again in the previous release's pipeline (09 RB-02).
 # TODO(WP-08): job `e2e` (Compose stack + Playwright Chromium on every MR, 05 §2) with deploy/docker-compose.e2e.yml.
@@ -69,16 +69,7 @@ check:
     - test -z "$(git status --porcelain)" || { git status --short; exit 1; }
     - make lint
     - make test                                        # unit + integration on the postgres service
-
-govulncheck:
-  extends: [.mr-main, .go]
-  stage: check
-  cache: { policy: pull }
-  # TODO: blocking again (06 §4) once go.mod has pgx >= v5.9.2 and x/text >= v0.41.0 (separate fix MR):
-  # GO-2026-5004, GO-2026-5970, GO-2026-6629 are reachable today.
-  allow_failure: true
-  script:
-    - cd apps/api && go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+    - (cd apps/api && go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...)   # known reachable vulnerabilities (06 §4)
 
 mr-check:
   extends: .go                                         # only for the image: already on the runner, has git

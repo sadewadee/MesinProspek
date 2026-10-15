@@ -4,7 +4,7 @@ Market intelligence untuk bisnis lokal Indonesia. Dokumentasi produk dan enginee
 
 ## Menjalankan
 
-Butuh Go 1.24+, Node 22+, dan pnpm 10.
+Butuh Go sesuai `apps/api/go.mod` (tool di `Makefile` mengunduh toolchain yang lebih baru sendiri lewat `GOTOOLCHAIN=auto`), Node sesuai `.nvmrc`, dan pnpm sesuai `packageManager` di `package.json`.
 
 ```sh
 pnpm install
