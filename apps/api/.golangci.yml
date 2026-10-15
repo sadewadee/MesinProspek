@@ -1,0 +1,33 @@
+# Lint config per docs/08 §0 (STD-GO-01, STD-GO-04..06).
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - errorlint
+    - forbidigo
+    - gochecknoglobals
+    - gochecknoinits
+    - nolintlint
+  settings:
+    forbidigo:
+      forbid:
+        - pattern: ^(fmt\.Print(|f|ln)|print|println)$
+          msg: log through log/slog (STD-GO-06)
+        - pattern: ^log\.
+          msg: log through log/slog (STD-GO-06)
+        - pattern: ^os\.Getenv$
+          msg: read env only in internal/platform/config (STD-GO-05)
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+  exclusions:
+    rules:
+      - path: internal/platform/config/
+        linters: [forbidigo]
+        text: os\.Getenv
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
