@@ -1,0 +1,60 @@
+# Alert rules from docs/09-runbook-operasional.md §4 that need only node-exporter, the off-site textfile
+# metric or app metrics with a fixed definition (docs/04 §14). Thresholds and first steps: 09 §4.
+# Label `id` = AL-xx in 09, `sev` = level in 09 §5. App alerts cover production only.
+# TODO(WP-25): AL-03, AL-04, AL-05, AL-06, AL-08 (need route/queue label values or Postgres metrics).
+groups:
+  - name: host
+    rules:
+      - alert: DiskFull
+        expr: 1 - node_filesystem_avail_bytes{fstype=~"ext4|xfs|btrfs"} / node_filesystem_size_bytes{fstype=~"ext4|xfs|btrfs"} > 0.80
+        for: 5m
+        labels: { id: AL-07, sev: SEV-2 }
+        annotations: { summary: "Disk {{ $labels.mountpoint }} terisi {{ $value | humanizePercentage }} (> 80%). RB-13." }
+      - alert: DiskFull
+        expr: 1 - node_filesystem_avail_bytes{fstype=~"ext4|xfs|btrfs"} / node_filesystem_size_bytes{fstype=~"ext4|xfs|btrfs"} > 0.90
+        for: 5m
+        labels: { id: AL-07, sev: SEV-1 }
+        annotations: { summary: "Disk {{ $labels.mountpoint }} terisi {{ $value | humanizePercentage }} (> 90%). RB-13 segera." }
+      - alert: HostCpuSaturated
+        expr: 1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) > 0.85
+        for: 15m
+        labels: { id: AL-09, sev: SEV-3 }
+        annotations: { summary: "CPU host {{ $value | humanizePercentage }} selama 15 menit. Hentikan CI/staging dulu (AL-09)." }
+      - alert: HostMemorySaturated
+        expr: 1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes > 0.90
+        for: 15m
+        labels: { id: AL-09, sev: SEV-3 }
+        annotations: { summary: "RAM host {{ $value | humanizePercentage }} selama 15 menit. Hentikan CI/staging dulu (AL-09)." }
+
+  - name: backup
+    rules:
+      - alert: OffsiteCopyBehind
+        expr: >-
+          time() - msp_offsite_last_success_timestamp_seconds{part="wal"} > 15 * 60
+          or absent(msp_offsite_last_success_timestamp_seconds{part="wal"})
+        labels: { id: AL-12, sev: SEV-2, part: wal }
+        annotations: { summary: "WAL belum tersalin off-site > 15 menit (RPO). RB-09, journalctl -t msp-offsite." }
+      - alert: OffsiteCopyBehind
+        expr: >-
+          time() - msp_offsite_last_success_timestamp_seconds{part="backup"} > 26 * 3600
+          or absent(msp_offsite_last_success_timestamp_seconds{part="backup"})
+        labels: { id: AL-12, sev: SEV-2, part: backup }
+        annotations: { summary: "Backup pgBackRest/GitLab belum tersalin off-site > 26 jam. RB-09, journalctl -t msp-offsite." }
+
+  - name: app
+    rules:
+      - alert: ApiErrorRateHigh
+        expr: >-
+          sum(rate(msp_http_request_duration_seconds_count{env="production",status=~"5.."}[5m]))
+          / sum(rate(msp_http_request_duration_seconds_count{env="production"}[5m])) > 0.05
+        for: 10m
+        labels: { id: AL-02, sev: SEV-2 }
+        annotations: { summary: "{{ $value | humanizePercentage }} respons API production 5xx selama 10 menit. L2." }
+      - alert: ImportStale
+        expr: time() - msp_import_last_success_timestamp_seconds{env="production"} > 26 * 3600
+        labels: { id: AL-10, sev: SEV-3 }
+        annotations: { summary: "Tidak ada import sukses dari gmaps-db > 26 jam ({{ $labels.country }}). /ops/imports." }
+      - alert: SourceDataStale
+        expr: time() - msp_source_newest_snapshot_timestamp_seconds{env="production"} > 8 * 86400
+        labels: { id: AL-11, sev: SEV-3 }
+        annotations: { summary: "Tidak ada snapshot sumber baru > 8 hari ({{ $labels.country }}). Cek kiriman mingguan (RB-15)." }

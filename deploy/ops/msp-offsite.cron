@@ -1,0 +1,5 @@
+# /etc/cron.d/msp-offsite: off-site copy every 5 minutes on the host (docs/06-ci-cd.md §8).
+# Installed by deploy/bootstrap.sh. Log: sudo journalctl -t msp-offsite
+SHELL=/bin/sh
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+*/5 * * * * root /opt/ops/offsite.sh 2>&1 | logger -t msp-offsite

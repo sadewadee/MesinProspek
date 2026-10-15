@@ -1,0 +1,71 @@
+# App stack for staging and production (docs/06-ci-cd.md §5). deploy/deploy.sh copies this file to
+# $DEPLOY_DIR/compose.yaml (/opt/msp or /opt/msp-staging) next to .env, kratos/ and postgres/.
+# The project name is the directory name, so containers are msp-api-1 or msp-staging-api-1 (Caddyfile).
+# Limits = production column of 06 §2; staging overrides them in docker-compose.staging.yml.
+
+x-app: &app                                         # api and worker: same image
+  image: ${MSP_IMAGE_REPO:?set MSP_IMAGE_REPO in .env}/api:${MSP_IMAGE_TAG:?set MSP_IMAGE_TAG in .env}
+  env_file: .env
+  restart: unless-stopped
+  depends_on: { postgres: { condition: service_healthy } }
+  volumes: ["storage:/var/lib/msp/storage"]          # MSP_STORAGE_DIR: export files (docs/04 §13)
+
+services:
+  web:                                              # no env_file: web holds no secrets
+    image: ${MSP_IMAGE_REPO:?}/web:${MSP_IMAGE_TAG:?}
+    restart: unless-stopped
+    networks: [default, edge]
+    healthcheck: { test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/"], interval: 5s }
+    deploy: { resources: { limits: { cpus: "1", memory: 2G } } }
+
+  api:
+    <<: *app
+    command: ["msp", "api"]                         # :8080 via Caddy; metrics :9090 only for Prometheus (edge network)
+    networks: [default, edge]
+    healthcheck: { test: ["CMD", "wget", "-qO-", "http://localhost:8080/readyz"], interval: 5s }
+    deploy: { resources: { limits: { cpus: "2", memory: 3G } } }
+
+  worker:
+    <<: *app
+    command: ["msp", "worker"]
+    networks: [default, gmaps]                      # gmaps -> gmaps-db:5432 (read-only role msp_source_ro)
+    stop_grace_period: 60s                          # running River jobs can finish
+    deploy: { resources: { limits: { cpus: "4", memory: 6G } } }
+
+  kratos:
+    image: oryd/kratos:v1.3.1                       # TODO(WP-08): confirm the version pin
+    # TODO(WP-08): kratos.yml and identity schema in deploy/kratos/ (deploy.sh copies it), DSN for the
+    # kratos database in .env, and serve flags (e.g. courier).
+    command: ["serve", "-c", "/etc/kratos/kratos.yml"]
+    env_file: .env
+    restart: unless-stopped
+    depends_on: { postgres: { condition: service_healthy } }
+    volumes: ["./kratos:/etc/kratos:ro"]
+    networks: [default, edge]                       # public API :4433 via Caddy /.ory/*; admin :4434 stays internal
+    deploy: { resources: { limits: { cpus: "0.5", memory: 512M } } }
+
+  postgres:
+    build: ./postgres                               # postgis/postgis + pgBackRest (06 §8)
+    image: msp-postgres:16
+    env_file: .env                                  # POSTGRES_PASSWORD, PGBACKREST_* (production), DB URLs for first init
+    restart: unless-stopped
+    shm_size: 1g
+    stop_grace_period: 60s                          # clean shutdown instead of SIGKILL and crash recovery
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./pgbackrest:/var/lib/pgbackrest            # local pgBackRest repo (06 §8); empty in staging
+      # First init only (empty volume): roles, database msp, extensions, role passwords (docs/04 §4.4)
+      - ./postgres/roles.sql:/docker-entrypoint-initdb.d/10-roles.sql:ro      # = apps/api/db/roles.sql
+      - ./postgres/init-msp.sh:/docker-entrypoint-initdb.d/20-msp.sh:ro
+    # TCP check: during first init the temporary server listens on the socket only, so `msp migrate`
+    # must not start yet.
+    healthcheck: { test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "postgres"], interval: 5s }
+    deploy: { resources: { limits: { cpus: "12", memory: 32G } } }
+
+networks:
+  edge: { name: "edge-${MSP_ENV:?set MSP_ENV in .env}", external: true }   # created by the /opt/ops stack (06 §2)
+  gmaps: { name: gmaps, external: true }                                    # created by the /opt/ops stack, holds gmaps-db
+
+volumes:
+  pgdata: {}
+  storage: {}

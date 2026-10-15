@@ -1,0 +1,8 @@
+# Staging resource limits (docs/06-ci-cd.md §2; total 4 CPU / 12 GB, docs/04 §2.1). deploy.sh copies this
+# file to $DEPLOY_DIR/compose.staging.yaml; the staging .env sets COMPOSE_FILE=compose.yaml:compose.staging.yaml.
+services:
+  postgres: { deploy: { resources: { limits: { cpus: "1.5", memory: 6G } } } }
+  worker: { deploy: { resources: { limits: { cpus: "1", memory: 3G } } } }
+  api: { deploy: { resources: { limits: { cpus: "0.5", memory: 1G } } } }
+  web: { deploy: { resources: { limits: { cpus: "0.5", memory: 1536M } } } }
+  kratos: { deploy: { resources: { limits: { cpus: "0.5", memory: 512M } } } }

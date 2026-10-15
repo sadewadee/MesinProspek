@@ -1,0 +1,21 @@
+# Prometheus in /opt/ops (docs/06-ci-cd.md §2, docs/04-technical-design.md §14). App metrics are
+# scraped over the edge-* Docker networks; Caddy never routes /metrics. Alert rules: alerts.yml.
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+
+rule_files: [alerts.yml]
+
+alerting:
+  alertmanagers:
+    - static_configs: [{ targets: ["alertmanager:9093"] }]
+
+scrape_configs:
+  - job_name: node                       # host disk, CPU, RAM + textfile metrics (offsite.sh)
+    static_configs: [{ targets: ["node-exporter:9100"] }]
+  - job_name: msp-api                    # MSP_METRICS_ADDR :9090 (README § Kosakata teknis bersama)
+    static_configs:
+      - targets: ["msp-api-1:9090"]
+        labels: { env: production }
+      - targets: ["msp-staging-api-1:9090"]
+        labels: { env: staging }

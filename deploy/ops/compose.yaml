@@ -1,0 +1,161 @@
+# /opt/ops stack (docs/06-ci-cd.md §2, §5): one Caddy for all domains, GitLab + registry, runner `ci`,
+# monitoring and gmaps-db. deploy/bootstrap.sh copies this directory to /opt/ops; values come from
+# /opt/ops/.env (keys in .env.example). Updated manually over SSH, never by the pipeline (06 §2).
+# Limits: totals per group in docs/04-technical-design.md §2.1, split per service as in 06 §2.
+# This stack creates the networks edge-production, edge-staging and gmaps that the app stacks join.
+
+services:
+  caddy:
+    image: caddy:2.11.4
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]          # the only published ports (06 §2)
+    environment:
+      MSP_DOMAIN: ${MSP_DOMAIN:?set MSP_DOMAIN in /opt/ops/.env}
+      MSP_ADMIN_IPS: ${MSP_ADMIN_IPS:?set MSP_ADMIN_IPS in /opt/ops/.env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks: [default, edge-production, edge-staging]
+    deploy: { resources: { limits: { cpus: "0.5", memory: 512M } } }
+
+  gitlab:
+    image: gitlab/gitlab-ce:19.4.1-ce.0     # keep the runner image and RUNNER_VERSION in bootstrap.sh on the same minor
+    restart: unless-stopped
+    shm_size: 256m
+    environment:
+      MSP_DOMAIN: ${MSP_DOMAIN:?}
+      MSP_SMTP_HOST: ${MSP_SMTP_HOST:?}
+      MSP_SMTP_PORT: ${MSP_SMTP_PORT:?}
+      MSP_SMTP_USER: ${MSP_SMTP_USER:?}
+      MSP_SMTP_PASSWORD: ${MSP_SMTP_PASSWORD:?}
+      MSP_SMTP_FROM: ${MSP_SMTP_FROM:?}
+      # Whole GitLab config lives here (no secrets: they come from ENV). gitlab.rb on disk stays default.
+      GITLAB_OMNIBUS_CONFIG: |
+        external_url "https://gitlab.#{ENV['MSP_DOMAIN']}"
+        registry_external_url "https://registry.#{ENV['MSP_DOMAIN']}"
+        letsencrypt['enable'] = false
+        # TLS ends at Caddy (06 §5): plain HTTP inside the Docker network
+        nginx['listen_port'] = 80
+        nginx['listen_https'] = false
+        nginx['proxy_set_headers'] = { 'X-Forwarded-Proto' => 'https', 'X-Forwarded-Ssl' => 'on' }
+        registry_nginx['listen_port'] = 5050
+        registry_nginx['listen_https'] = false
+        registry_nginx['proxy_set_headers'] = { 'X-Forwarded-Proto' => 'https', 'X-Forwarded-Ssl' => 'on' }
+        # Real client IPs behind Caddy, so rate limits and IP bans hit the client, not Caddy
+        nginx['real_ip_trusted_addresses'] = ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16']
+        nginx['real_ip_header'] = 'X-Forwarded-For'
+        nginx['real_ip_recursive'] = 'on'
+        gitlab_rails['trusted_proxies'] = ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16']
+        # Sized for the 4 CPU / 8 GB limit; defaults follow the 56-core / 128 GB host and would not fit
+        puma['worker_processes'] = 4
+        sidekiq['concurrency'] = 10
+        postgresql['shared_buffers'] = '1GB'
+        prometheus_monitoring['enable'] = false
+        # Backups to the bind mount /opt/ops/gitlab-backups, copied off-site by offsite.sh (06 §8)
+        gitlab_rails['backup_keep_time'] = 259200
+        gitlab_rails['smtp_enable'] = true
+        gitlab_rails['smtp_address'] = ENV['MSP_SMTP_HOST']
+        gitlab_rails['smtp_port'] = ENV['MSP_SMTP_PORT'].to_i
+        gitlab_rails['smtp_user_name'] = ENV['MSP_SMTP_USER']
+        gitlab_rails['smtp_password'] = ENV['MSP_SMTP_PASSWORD']
+        gitlab_rails['smtp_authentication'] = 'login'
+        gitlab_rails['smtp_enable_starttls_auto'] = true
+        gitlab_rails['gitlab_email_from'] = ENV['MSP_SMTP_FROM']
+    volumes:
+      - ./gitlab/config:/etc/gitlab               # gitlab-secrets.json: copy to the password manager (06 §7)
+      - ./gitlab/logs:/var/log/gitlab
+      - ./gitlab/data:/var/opt/gitlab
+      - ./gitlab-backups:/var/opt/gitlab/backups
+    deploy: { resources: { limits: { cpus: "4", memory: 8G } } }
+
+  gitlab-runner:                                  # runner `ci`; job limits are in gitlab-runner/config.toml
+    image: gitlab/gitlab-runner:v19.4.1
+    restart: unless-stopped
+    volumes:
+      - ./gitlab-runner:/etc/gitlab-runner
+      - /var/run/docker.sock:/var/run/docker.sock
+    deploy: { resources: { limits: { cpus: "0.5", memory: 512M } } }
+
+  prometheus:
+    image: prom/prometheus:v3.15.0
+    restart: unless-stopped
+    ports: ["127.0.0.1:9090:9090"]                # loopback only, for the SSH tunnel in docs/09 §2
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus-data:/prometheus
+    networks: [default, edge-production, edge-staging]   # reaches msp-api-1:9090 and msp-staging-api-1:9090
+    deploy: { resources: { limits: { cpus: "0.5", memory: 1G } } }
+
+  alertmanager:
+    image: prom/alertmanager:v0.34.1
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "/etc/alertmanager/start.sh"]
+    ports: ["127.0.0.1:9093:9093"]                # loopback only, for the SSH tunnel in docs/09 §2
+    environment:
+      MSP_SMTP_HOST: ${MSP_SMTP_HOST:?}
+      MSP_SMTP_PORT: ${MSP_SMTP_PORT:?}
+      MSP_SMTP_USER: ${MSP_SMTP_USER:?}
+      MSP_SMTP_PASSWORD: ${MSP_SMTP_PASSWORD:?}
+      MSP_SMTP_FROM: ${MSP_SMTP_FROM:?}
+      MSP_ALERT_EMAIL_TO: ${MSP_ALERT_EMAIL_TO:?}
+      MSP_ALERT_TELEGRAM_BOT_TOKEN: ${MSP_ALERT_TELEGRAM_BOT_TOKEN:?}
+      MSP_ALERT_TELEGRAM_CHAT_ID: ${MSP_ALERT_TELEGRAM_CHAT_ID:?}
+    volumes:
+      - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - ./alertmanager-start.sh:/etc/alertmanager/start.sh:ro
+      - alertmanager-data:/alertmanager
+    deploy: { resources: { limits: { cpus: "0.1", memory: 128M } } }
+
+  grafana:
+    image: grafana/grafana:13.1.7
+    restart: unless-stopped
+    environment:
+      GF_SERVER_ROOT_URL: https://grafana.${MSP_DOMAIN:?}
+      GF_SECURITY_ADMIN_PASSWORD: ${MSP_GRAFANA_ADMIN_PASSWORD:?}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_METRICS_ENABLED: "false"                 # no /metrics behind grafana.<domain>
+    volumes:
+      - ./grafana-datasource.yml:/etc/grafana/provisioning/datasources/prometheus.yml:ro
+      - grafana-data:/var/lib/grafana
+    deploy: { resources: { limits: { cpus: "0.3", memory: 768M } } }
+
+  node-exporter:
+    image: prom/node-exporter:v1.12.1
+    restart: unless-stopped
+    pid: host
+    command:
+      - --path.rootfs=/host
+      - --collector.textfile.directory=/textfile  # offsite.sh writes msp_offsite_* here (06 §8)
+    volumes:
+      - /:/host:ro,rslave
+      - ./textfile:/textfile:ro
+    deploy: { resources: { limits: { cpus: "0.1", memory: 128M } } }
+
+  gmaps-db:                                       # latest weekly gmaps drop (D-37); no ports, no backup (06 §8)
+    image: postgres:16.15                         # CSV drops do not depend on the founder's Postgres version
+    restart: unless-stopped
+    shm_size: 1g
+    environment:
+      POSTGRES_DB: gmaps
+      POSTGRES_PASSWORD: ${MSP_GMAPS_DB_PASSWORD:?}   # superuser; role msp_source_ro is created by hand (09 RB-15)
+    volumes:
+      - gmaps-data:/var/lib/postgresql/data
+      - ./gmaps-dump:/dump:ro                     # drop files (09 RB-15)
+    networks: [gmaps]
+    healthcheck: { test: ["CMD", "pg_isready", "-U", "postgres"], interval: 5s }
+    deploy: { resources: { limits: { cpus: "2", memory: 4G } } }
+
+networks:
+  edge-production: { name: edge-production }     # app stacks join as external (06 §2)
+  edge-staging: { name: edge-staging }
+  gmaps: { name: gmaps }                          # gmaps-db + worker of both environments
+
+volumes:
+  caddy-data: {}
+  caddy-config: {}
+  prometheus-data: {}
+  alertmanager-data: {}
+  grafana-data: {}
+  gmaps-data: {}

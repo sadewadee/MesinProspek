@@ -1,0 +1,23 @@
+# Alertmanager config template: alerts go to email and the ops Telegram group (docs/09 §1.1).
+# No secrets here. alertmanager-start.sh fills the ${MSP_...} placeholders from /opt/ops/.env when the
+# container starts, so a changed value needs only `docker compose up -d` (docs/09 RB-12).
+global:
+  smtp_smarthost: "${MSP_SMTP_HOST}:${MSP_SMTP_PORT}"
+  smtp_from: "${MSP_SMTP_FROM}"
+  smtp_auth_username: "${MSP_SMTP_USER}"
+  smtp_auth_password: "${MSP_SMTP_PASSWORD}"
+
+route:
+  receiver: ops
+  group_by: [alertname, id, env]
+  repeat_interval: 4h
+
+receivers:
+  - name: ops
+    email_configs:
+      - to: "${MSP_ALERT_EMAIL_TO}"
+        send_resolved: true
+    telegram_configs:
+      - bot_token: "${MSP_ALERT_TELEGRAM_BOT_TOKEN}"
+        chat_id: ${MSP_ALERT_TELEGRAM_CHAT_ID}
+        send_resolved: true

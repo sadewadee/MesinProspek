@@ -1,0 +1,35 @@
+# One Caddy for all domains (docs/06-ci-cd.md §5). Upstreams are container names: the app stacks are the
+# Compose projects msp (/opt/msp) and msp-staging (/opt/msp-staging), reached over edge-production and
+# edge-staging. The app metrics listener :9090 is never routed; Prometheus scrapes it over Docker networks.
+
+(app) {
+	# {args[0]} = msp (production) or msp-staging
+	@api path /api/* /healthz /readyz
+	reverse_proxy @api {args[0]}-api-1:8080
+	handle_path /.ory/* {
+		reverse_proxy {args[0]}-kratos-1:4433 # public API only; admin 4434 is not routed
+	}
+	reverse_proxy {args[0]}-web-1:3000
+}
+
+app.{$MSP_DOMAIN} {
+	import app msp
+}
+
+staging.{$MSP_DOMAIN} {
+	import app msp-staging
+}
+
+gitlab.{$MSP_DOMAIN} {
+	reverse_proxy gitlab:80 # GitLab listens on plain HTTP; TLS ends here
+}
+
+registry.{$MSP_DOMAIN} {
+	reverse_proxy gitlab:5050
+}
+
+grafana.{$MSP_DOMAIN} {
+	@outside not remote_ip {$MSP_ADMIN_IPS} # allowlist = SSH admin IPs (docs/09 §2)
+	respond @outside 403
+	reverse_proxy grafana:3000
+}

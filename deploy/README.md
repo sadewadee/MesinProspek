@@ -1,0 +1,26 @@
+# deploy/
+
+File untuk satu server (D-19, D-26). Desainnya ada di [06](../docs/06-ci-cd.md) §2, §5, §7–§9; prosedur operasi ada di [09](../docs/09-runbook-operasional.md).
+
+| File | Isi |
+|---|---|
+| `bootstrap.sh` | Bootstrap server. Aman dijalankan ulang, dan menjadi langkah pertama RB-11 |
+| `ops/` | Stack `/opt/ops`: `compose.yaml`, `Caddyfile`, Prometheus + `alerts.yml`, Alertmanager, Grafana, `offsite.sh` + `msp-offsite.cron`, `.env.example` |
+| `docker-compose.prod.yml`, `docker-compose.staging.yml` | Stack aplikasi staging & production. Disalin oleh `deploy.sh` (06 §4) |
+| `postgres/` | Image Postgres + pgBackRest dan init pertama DB `msp`. `roles.sql` adalah symlink ke `apps/api/db/roles.sql`, jadi salin dengan `cp -rL` |
+| `admin-keys/<user>.pub` | Kunci SSH publik tiap admin. Nama file = nama user Linux |
+
+## Bootstrap (founder)
+
+1. Arahkan DNS `app.`, `staging.`, `gitlab.`, `registry.`, dan `grafana.<domain>` ke IP server.
+2. Tambahkan `admin-keys/<user>.pub` untuk setiap admin.
+3. Di server, sebagai root: `mkdir -p /opt/ops`. Isi `/opt/ops/.env` (format di `ops/.env.example`) dan `/opt/ops/rclone.conf` (remote `offsite`, 06 §8) dari password manager.
+4. `scp -r deploy root@<ip>:`, lalu `ssh root@<ip> bash deploy/bootstrap.sh`. Login root dimatikan setelah run ini; run berikutnya memakai `sudo bash deploy/bootstrap.sh` sebagai admin. Bila ada input yang kurang, skrip berhenti dan menyebutkannya.
+5. Langkah manual sekali (06 §9):
+   - GitLab: password root awal ada di `/opt/ops/gitlab/config/initial_root_password` dan hilang setelah 24 jam. Simpan `gitlab-secrets.json` dari folder yang sama ke password manager (06 §7).
+   - Runner `ci`: buat runner instance di GitLab dengan tag `ci`, lalu jalankan `cd /opt/ops && docker compose exec gitlab-runner gitlab-runner register --url https://gitlab.<domain> --token <token> --executor docker --template-config /etc/gitlab-runner/ci.template.toml`.
+   - Runner `deploy`: buat runner dengan tag `deploy` dan centang *Protected*, lalu jalankan `sudo gitlab-runner register --url https://gitlab.<domain> --token <token> --executor shell`.
+   - Pipeline schedule `backup`, uptime monitor eksternal (09 AL-01), lalu role, tabel, dan kiriman pertama `gmaps-db` (09 RB-15).
+6. Cek hasilnya: `cd /opt/ops && docker compose ps` menunjukkan semua service jalan, dan `https://gitlab.<domain>` serta `https://grafana.<domain>` (dari IP admin) bisa dibuka.
+
+Perubahan stack `/opt/ops` masuk lewat MR ke `deploy/ops/` (hanya di-merge founder, 06 §3). Setelah itu jalankan ulang `bootstrap.sh`; pipeline tidak me-restart stack ini (06 §2).

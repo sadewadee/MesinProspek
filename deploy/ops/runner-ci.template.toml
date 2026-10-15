@@ -1,0 +1,14 @@
+# Settings for runner `ci` (docs/06-ci-cd.md §2), merged in when registering it inside the gitlab-runner
+# container (bootstrap.sh copies this file to /opt/ops/gitlab-runner/ci.template.toml):
+#   docker compose exec gitlab-runner gitlab-runner register --url https://gitlab.<domain> \
+#     --token <glrt-token> --executor docker --template-config /etc/gitlab-runner/ci.template.toml
+# `concurrent = 1` is the global setting in config.toml, set by bootstrap.sh.
+[[runners]]
+  [runners.docker]
+    image = "alpine:3.24.2"          # default only; every job in .gitlab-ci.yml sets its own image
+    privileged = true                # docker:dind for build and E2E (risk accepted in 06 §2)
+    volumes = ["/certs/client", "/cache"]
+    cpus = "2"                       # job container: 2 CPU, 4 GB
+    memory = "4g"
+    service_cpus = "2"               # service containers (dind): 2 CPU, 4 GB
+    service_memory = "4g"
