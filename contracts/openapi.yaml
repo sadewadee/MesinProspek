@@ -1,0 +1,101 @@
+openapi: 3.0.3
+info:
+  title: MesinProspek API
+  version: 0.1.0
+  description: |
+    Single source of truth for the MesinProspek HTTP API (docs/04 §8).
+    Go server and TS client code are generated from this file by `make generate`.
+    Product endpoints live under /api/v1; health checks sit outside the prefix.
+servers:
+  - url: /
+tags:
+  - name: health
+    description: Liveness and readiness checks.
+paths:
+  /healthz:
+    get:
+      tags: [health]
+      operationId: getHealthz
+      summary: Liveness check
+      description: The process is alive. Has no dependencies.
+      responses:
+        "200":
+          description: Alive.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+        default:
+          $ref: "#/components/responses/Problem"
+  /readyz:
+    get:
+      tags: [health]
+      operationId: getReadyz
+      summary: Readiness check
+      description: The process can serve traffic (database reachable, migrations current).
+      responses:
+        "200":
+          description: Ready.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+        "503":
+          description: Not ready.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+components:
+  responses:
+    Problem:
+      description: Error in RFC 9457 problem details format.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+  schemas:
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+    Problem:
+      type: object
+      description: |
+        RFC 9457 problem details. Clients branch on `code`, never on the text fields.
+      required: [type, title, status, code, request_id]
+      properties:
+        type:
+          type: string
+          description: Problem type URI; `about:blank` when the HTTP status says it all.
+          example: about:blank
+        title:
+          type: string
+          description: Short summary of the problem type.
+          example: Service Unavailable
+        status:
+          type: integer
+          description: HTTP status code.
+          example: 503
+        detail:
+          type: string
+          description: Explanation specific to this occurrence. Never contains internal details.
+        code:
+          $ref: "#/components/schemas/ProblemCode"
+        request_id:
+          type: string
+          description: Identifier of the request, for support and log lookup.
+    ProblemCode:
+      type: string
+      description: Stable machine-readable error code (docs/04 §8). New codes are added only when used.
+      enum:
+        - INTERNAL
+        - NOT_FOUND
+        - UNAUTHENTICATED
+        - VALIDATION_FAILED
+        - RATE_LIMITED

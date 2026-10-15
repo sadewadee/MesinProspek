@@ -1,12 +1,14 @@
 # Standard commands, identical locally and in CI (docs/08 §0).
 GOLANGCI_LINT := go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2
+OAPI_CODEGEN := go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.8.0
 
 .PHONY: generate lint test build
 
 # Code generation: oapi-codegen, openapi-typescript, sqlc, design tokens.
-# Each generator is added by the work package that introduces it.
+# One generator per line; each work package appends the one it introduces.
 generate:
-	@echo "generate: no generators yet"
+	cd apps/api && $(OAPI_CODEGEN) -config internal/api/oapi-codegen.yaml ../../contracts/openapi.yaml
+	pnpm --filter @msp/api-client generate
 
 lint:
 	cd apps/api && $(GOLANGCI_LINT) run ./...

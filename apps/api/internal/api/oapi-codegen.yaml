@@ -1,0 +1,12 @@
+# oapi-codegen config for contracts/openapi.yaml (docs/04 §3, §8).
+# Run through `make generate` from apps/api; never edit api.gen.go by hand.
+package: api
+output: internal/api/api.gen.go
+generate:
+  std-http-server: true
+  strict-server: true
+  models: true
+compatibility:
+  # Prefix enum constants with their type (ProblemCodeINTERNAL), so a new enum
+  # with an overlapping value never renames existing constants.
+  always-prefix-enum-values: true

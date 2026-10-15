@@ -66,7 +66,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 func serveAPI(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           httpx.NewRouter(),
+		Handler:           httpx.NewRouter(dbNotConfigured),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
@@ -92,4 +92,9 @@ func serveAPI(ctx context.Context, cfg config.Config, logger *slog.Logger) error
 	}
 	logger.Info("api stopped")
 	return nil
+}
+
+// dbNotConfigured keeps /readyz at 503 until `msp api` has a database to ping.
+func dbNotConfigured(context.Context) error {
+	return errors.New("database not configured")
 }
