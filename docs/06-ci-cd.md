@@ -65,7 +65,7 @@ Di `/opt/ops`: `caddy` 0,5 · 0,5 GB, `gitlab` 4 · 8 GB, job CI 2 · 4 GB + ser
 |---|---|---|
 | `check` | MR, `main` | `make generate` + `git diff --exit-code`, `make lint`, `make test` (08 §0), `govulncheck`, cek MR. Job `e2e`: stack Compose + Playwright Chromium (05). Test import membaca DB sumber fixture (05): database kedua di service `postgres` yang sama, tanpa service tambahan |
 | `build` | `main` | Image `api` & `web` → registry GitLab dengan tag SHA (cache inline dari image `:main`). Laporan `trivy image` HIGH/CRITICAL (tidak memblokir) |
-| `deploy-staging` | `main` otomatis; tag `v*` | Runner `deploy`: `deploy/deploy.sh` di `/opt/msp-staging`. Lalu `smoke-staging` (runner `ci`): J-2 dengan akun test yang sudah terverifikasi (`main`), atau J-2..J-6 di semua browser dengan akun yang sama (tag). J-1 hanya di job `e2e` (Mailpit) |
+| `deploy-staging` | `main` otomatis; tag `v*` | Runner `deploy`: `deploy/deploy.sh` di `/opt/msp-staging`. Lalu `smoke-staging` (runner `ci`): J-2 dengan akun test yang sudah terverifikasi (`main`), atau J-2..J-7 di semua browser dengan akun yang sama (tag). J-1 hanya di job `e2e` (Mailpit) |
 | `deploy-production` | tag `vX.Y.Z`, manual, Maintainer | Runner `deploy`: `deploy/deploy.sh` di `/opt/msp`. Smoke manual per 09 RB-01 |
 | `rollback` | manual, Maintainer | Retry job `deploy-production` di pipeline tag sebelumnya (09 RB-02). Langkahnya sama dengan deploy, jadi tidak perlu job terpisah (DRY) |
 | *schedule* | harian 01:00 WIB | Job `backup` (§8): pgBackRest + GitLab ke disk lokal. Salinan off-site dibuat cron host `msp-offsite`, bukan pipeline |

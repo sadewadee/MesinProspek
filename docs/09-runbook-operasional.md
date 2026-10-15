@@ -1,6 +1,6 @@
 # 09 — Runbook Operasional
 
-Prosedur operasi F1 untuk `production` dan `staging`. Keduanya berjalan di **satu server** bersama GitLab dan monitoring (D-19, D-26). Versi 0.3 (lean) · 2026-10-11: data dibaca dari DB gmaps (D-31), lewat `gmaps-db` yang berisi kiriman mingguan ramping terbaru dari founder (D-35, D-37). Stack dan nama mengikuti [README](README.md). Pipeline, runner, batas resource, bootstrap server, dan konfigurasi backup ada di [06](06-ci-cd.md). Dokumen ini hanya berisi apa yang dikerjakan saat operasi.
+Prosedur operasi F1 untuk `production` dan `staging`. Keduanya berjalan di **satu server** bersama GitLab dan monitoring (D-19, D-26). Versi 0.4 (lean) · 2026-10-15: data dibaca dari DB gmaps (D-31), lewat `gmaps-db` yang berisi kiriman mingguan ramping terbaru dari founder (D-35, D-37). Fitur prospek (unlock, webhook, skor) ada di F2 (D-40), jadi tidak punya prosedur di sini. Stack dan nama mengikuti [README](README.md). Pipeline, runner, batas resource, bootstrap server, dan konfigurasi backup ada di [06](06-ci-cd.md). Dokumen ini hanya berisi apa yang dikerjakan saat operasi.
 
 **Konvensi.** Placeholder ditulis `<…>`. Waktu dalam WIB. Apa pun yang bisa diubah lewat GitLab atau halaman ops diubah lewat sana, bukan lewat SSH, termasuk pengaturan AI, plan, dan parameter estimasi (D-29, D-32). Perintah di server dijalankan dari direktori Compose (§1.1). `msp` dijalankan di image aplikasi: `docker compose run --rm worker msp <subcommand>`.
 
@@ -50,7 +50,7 @@ docker stats --no-stream                                       # CPU/RAM per con
 sudo journalctl -u gitlab-runner --since 1h                    # log runner deploy
 ```
 
-Antrean River (`import`, `score`, `export`, `webhook`, `ai`, `billing`) diperiksa di psql:
+Antrean River (README: `import`, `score`, `export`, `ai`, `billing`) diperiksa di psql:
 ```sql
 -- Q1: isi antrean
 SELECT queue, state, count(*), min(scheduled_at) AS tertua FROM river_job
@@ -84,7 +84,7 @@ WHERE state = 'discarded' AND finalized_at > now() - interval '24 hours' GROUP B
 2. GitLab → **Build → Pipelines** → pipeline tag `vX.Y.Z` → job manual `deploy-production` → **Run**. Runner `deploy` menjalankannya langsung di server: menulis `.env`, lalu `docker compose pull` → `msp migrate` → `docker compose up -d --wait` di `/opt/msp` (06).
 3. Gagal di `msp migrate`: versi lama tetap jalan. Baca log job, perbaiki lewat rilis baru. Gagal di `up --wait`: RB-02.
 
-**Verifikasi:** `curl -fsS https://app.<domain>/readyz`; `docker compose ps` semua `healthy`. Smoke test di workspace uji `<workspace-uji>`: login email dan Google → search → profil (estimasi dan pola keramaian tampil dengan tanggal data) → analisis lokasi baru → unlock 1 prospek → export kecil → webhook ke `<endpoint-uji>` → narasi AI → `/ops` terbuka dengan MFA. Pantau 5xx dan p95 di Grafana selama 30 menit.
+**Verifikasi:** `curl -fsS https://app.<domain>/readyz`; `docker compose ps` semua `healthy`. Smoke test di workspace uji `<workspace-uji>`: login email dan Google → search → profil (estimasi dan pola keramaian tampil dengan tanggal data) → analisis lokasi baru → tambah ke list + catatan → export CSV kecil (kolom estimasi ada, kolom telepon tidak ada) → narasi AI → `/ops` terbuka dengan MFA. Pantau 5xx dan p95 di Grafana selama 30 menit.
 
 ### RB-02 — Rollback
 **Kapan:** setelah deploy, error naik atau ada bug kritis yang tidak bisa diperbaiki dalam 30 menit.
@@ -118,23 +118,23 @@ Import membaca snapshot di `gmaps-db` (kiriman DB gmaps terbaru, RB-15) secara i
    2. Engineering memperbaiki **satu file pemetaan kolom** `source.sql` (ketiga pernyataannya, 04 §5.1) lewat MR biasa → `main` (staging otomatis) → tag patch → RB-01.
    3. Buat ulang tabel `gmaps-db` dari `source.sql` baru (RB-15, sekali per volume: `DROP TABLE business_listings`, lalu `create_table` + `GRANT`). Minta founder mengirim ulang kiriman dengan `export` baru dan batas yang sama dengan kiriman yang gagal, muat (RB-15), lalu jalankan import manual (langkah 2) di staging lalu production. Karena kegagalan terjadi sebelum data dibaca, tidak ada snapshot yang terlewat.
 
-Hitung ulang (rantai di README: estimasi → metrik wilayah → opportunity → skor) berjalan otomatis setelah import; tidak perlu RB-05.
+Hitung ulang (rantai di README) berjalan otomatis setelah import; tidak perlu RB-05.
 
 **Verifikasi:** `/ops/imports` berstatus selesai, termasuk hitung ulang; `/ops/health`: jumlah bisnis bertambah tepat sebesar **tempat baru** (tidak ada duplikat), % terpetakan kelurahan ≥ 98% (FR-DATA-04), dan setelah import pertama % bisnis dengan ≥ 2 snapshot berjarak ≥ 30 hari terisi (FR-OPS-01); antrean `import` dan `score` kosong (Q1).
 
 ### RB-04 — Sync wilayah GeoAPI
 **Kapan:** instalasi baru (sebelum import pertama), GeoAPI merilis data baru, atau % terpetakan wilayah turun.
 1. Di `tmux`, jalankan untuk staging lalu production: `cd /opt/msp-staging && docker compose run --rm worker msp tool geo-sync --country ID`, lalu perintah yang sama di `/opt/msp`. Tool menahan diri di batas GeoAPI 120 request/menit, jadi prosesnya bisa lama. Bila terputus, jalankan ulang.
-2. Setelah selesai, metrik wilayah dan skor dihitung ulang otomatis; tidak perlu RB-05. Pantau antrean `import` dan `score` (Q1) sampai kosong.
+2. Setelah selesai, penetapan wilayah dan rantai hitung ulang (README) berjalan otomatis; tidak perlu RB-05. Pantau antrean `import` dan `score` (Q1) sampai kosong.
 
 **Verifikasi:** laporan yang dicetak tool menampilkan jumlah area per level (provinsi, kab/kota, kecamatan, desa/kelurahan) tanpa error; `/ops/health` % terpetakan ≥ 98%; peta menampilkan atribusi GeoAPI.
 
 ### RB-05 — Rescore
-**Kapan:** hanya setelah rilis membawa versi model/bobot baru (`est-X.Y.Z`, `priority-X.Y.Z`, `geo-X.Y.Z`; perbaikan bug hitungan juga menaikkan versi). Setelah import (RB-03), geo-sync (RB-04), dan perubahan parameter estimasi (RB-14), hitung ulang sudah otomatis.
-1. Jalankan di jam sepi karena beban DB naik: `cd /opt/msp && docker compose run --rm worker msp tool rescore`. Tool menjalankan rantai yang sama (README): estimasi → metrik wilayah → opportunity → skor.
+**Kapan:** hanya setelah rilis membawa versi model baru (`est-X.Y.Z`, `geo-X.Y.Z`; perbaikan bug hitungan juga menaikkan versi). Setelah import (RB-03), geo-sync (RB-04), dan perubahan parameter estimasi (RB-14), hitung ulang sudah otomatis.
+1. Jalankan di jam sepi karena beban DB naik: `cd /opt/msp && docker compose run --rm worker msp tool rescore`. Tool menjalankan rantai yang sama (README).
 2. Pantau antrean `import` dan `score` (Q1) sampai kosong. Ada job `discarded` → AL-05.
 
-**Verifikasi:** `/ops/health` menampilkan versi model aktif yang baru; 3 profil yang dikenal (mis. Signa Cafe) menampilkan estimasi atau breakdown skor dengan versi baru dan nilai yang masuk akal; p95 kembali normal.
+**Verifikasi:** `/ops/health` menampilkan versi model aktif yang baru; 3 profil yang dikenal (mis. Signa Cafe) menampilkan estimasi dengan versi baru dan nilai yang masuk akal; p95 kembali normal.
 
 ### RB-06 — Plan workspace, grant credit, & refund manual
 **Kapan:** workspace membayar plan atau top-up (billing F1 manual), kompensasi, atau credit terpotong karena kesalahan. Credit bulanan sesuai plan diberikan otomatis oleh job `billing.monthly_grant` (FR-BILL-01, 04 §12); jangan di-grant manual.
@@ -146,19 +146,19 @@ Hitung ulang (rantai di README: estimasi → metrik wilayah → opportunity → 
 **Verifikasi:** saldo workspace berubah sesuai jumlah; entri ledger dan audit (`/ops/audit`) tercatat atas nama Anda (grant bulanan: aktor = sistem).
 
 ### RB-07 — Feature flag & kill switch AI
-**Kapan:** provider AI gagal dan perubahan di Pengaturan AI (RB-14) tidak menolong (AL-08), biaya AI melonjak, output AI bermasalah, atau export/webhook bermasalah (bug, banjir request, dugaan kebocoran).
-1. `/ops/flags` → `AI`, `export`, atau `webhook` → **Off** + alasan. Berlaku langsung tanpa deploy; app customer menampilkan banner FITUR DIMATIKAN.
+**Kapan:** provider AI gagal dan perubahan di Pengaturan AI (RB-14) tidak menolong (AL-08), biaya AI melonjak, output AI bermasalah, atau export bermasalah (bug, banjir request, dugaan kebocoran).
+1. `/ops/flags` → `AI` atau `export` → **Off** + alasan. Berlaku langsung tanpa deploy; app customer menampilkan banner FITUR DIMATIKAN.
 2. Mati > 30 menit → kirim pesan status ke workspace terdampak (§5). Penyebab sudah beres → **On** lagi.
 
-**Verifikasi:** di workspace uji kontrol fitur nonaktif; tidak ada job baru di antrean terkait (Q1); perubahan flag ada di `/ops/audit`. Setelah On: satu narasi AI, export, atau webhook uji berhasil.
+**Verifikasi:** di workspace uji kontrol fitur nonaktif; tidak ada job baru di antrean terkait (Q1); perubahan flag ada di `/ops/audit`. Setelah On: satu narasi AI atau export uji berhasil.
 
 ### RB-08 — Permintaan suppression
-**Kapan:** seseorang meminta nilai kontaknya (telepon, URL) tidak ditampilkan.
-1. Catat di `<tracker>`: tanggal, pemohon, nilai, tautan prospek.
-2. `/ops/suppression` → tambah nilai + alasan + nomor tiket. Lalu balas pemohon.
+**Kapan:** seseorang meminta bisnisnya atau URL-nya (website, akun sosial) tidak ditampilkan. Telepon tidak pernah ditampilkan maupun diekspor di F1 (D-40); suppression telepon baru ada di F2, jadi permintaan atas telepon cukup dicatat di langkah 1.
+1. Catat di `<tracker>`: tanggal, pemohon, nilai, tautan bisnis.
+2. `/ops/suppression` → tambah bisnis atau URL + alasan + nomor tiket. Lalu balas pemohon.
 3. Permintaan lain (akses, penghapusan, keberatan, ancaman hukum) → teruskan ke tim legal dan ikuti instruksinya. Jangan menjanjikan apa pun.
 
-**Verifikasi:** di workspace uji yang sudah unlock prospek itu, nilai tidak tampil di profil ("Kontak tidak tersedia"), file export, maupun payload webhook. Entri tercatat di `/ops/audit`.
+**Verifikasi:** di workspace uji, nilai tidak tampil di search, profil, maupun file export. Entri tercatat di `/ops/audit`.
 
 ### RB-09 — Cek backup
 **Kapan:** harian, saat AL-06 atau AL-12, dan sebelum deploy.
@@ -175,7 +175,7 @@ sudo journalctl -t msp-offsite --since 1h | tail                                
 ### RB-10 — Restore PITR ke DB sementara atau server baru
 **Kapan:** data rusak atau terhapus, server hilang (dari RB-11), atau uji restore bulanan.
 
-**Aturan:** jangan menimpa DB yang masih jalan. Di project sementara start **hanya `postgres`**: `api`, `web`, dan `kratos` akan bergabung ke network production (06 §2), dan `worker` akan mengirim webhook, email, dan panggilan AI sungguhan.
+**Aturan:** jangan menimpa DB yang masih jalan. Di project sementara start **hanya `postgres`**: `api`, `web`, dan `kratos` akan bergabung ke network production (06 §2), dan `worker` akan mengirim email dan panggilan AI sungguhan.
 
 1. Tentukan waktu target sebelum kejadian (dari `/ops/audit` atau log). Untuk RB-11 tanpa target waktu, hapus opsi `--type` dan `--target*` agar DB pulih sampai WAL terakhir.
 2. Siapkan direktori:
@@ -309,8 +309,8 @@ Aturan alert ada di `deploy/ops/` (Prometheus); AL-01 berasal dari uptime monito
 | AL-01 | **Situs/server down** (uptime monitor eksternal, email): `https://app.<domain>/readyz` atau `https://gitlab.<domain>` gagal 2× berturut | App: semua user, SEV-1. Hanya GitLab: deploy dan CI berhenti, SEV-3 | Keduanya gagal → server, jaringan, atau `caddy`: SSH lalu `cd /opt/ops && docker compose ps caddy`. Tidak bisa SSH → console/reboot di panel hosting; rusak permanen → RB-11. Hanya app → `cd /opt/msp && docker compose ps`; service mati/unhealthy → L1 → `docker compose up -d <service>`. `/healthz` OK tetapi `/readyz` gagal → DB: log `postgres`, disk (RB-13). Baru deploy → RB-02. Hanya GitLab → `cd /opt/ops && docker compose ps gitlab`, L1 |
 | AL-02 | **5xx tinggi:** > 5% respons API 5xx selama 10 menit | Sebagian aksi gagal. SEV-2, SEV-1 bila > 50% | L2. Mulai setelah deploy → RB-02. Error DB → langkah DB di AL-03. Error login → L1 untuk `kratos` |
 | AL-03 | **p95 di atas NFR-01:** search > 1 s atau profil > 500 ms selama 15 menit | App lambat. SEV-3, SEV-2 bila > 2× target | Ada import, rescore, atau hitung ulang parameter yang jalan → wajar sementara; pindahkan ke jam sepi bila mengganggu. CPU/RAM host jenuh → AL-09. Query macet: `SELECT pid, now()-query_start AS durasi, left(query,100) FROM pg_stat_activity WHERE state <> 'idle' ORDER BY durasi DESC LIMIT 10;`, lalu untuk yang > 5 menit dan bukan backup: `SELECT pg_cancel_backend(<pid>);`. Masih lambat → engineering (query/indeks) |
-| AL-04 | **Antrean River tertahan:** job `available` tertua > 15 menit di `export`, `webhook`, `ai`, `billing`, atau > 2 jam di `import`, `score` | Export, webhook, narasi AI, credit bulanan, atau skor tertunda. SEV-2 | Q1, `docker compose ps worker`, L1 untuk `worker`. Worker mati/macet → `docker compose restart worker` (job idempotent, STD-DB-06). Bila hanya `import`/`score` yang panjang karena import pertama (RB-03) atau hitung ulang parameter (RB-14) → tunggu |
-| AL-05 | **Banyak job gagal:** > 10 job `discarded` dalam 1 jam di antrean mana pun | Aksi user gagal (export/kirim yang gagal bisa diulang tanpa biaya). SEV-2 | Q2. `webhook` → biasanya endpoint customer menolak/timeout: kabari customer. `ai` → AL-08. `export` → disk (RB-13) atau bug (engineering). `import` → AL-10. `billing` → engineering, jangan grant manual (RB-06). Tidak ada redrive massal di F1: setelah penyebab beres, user mengulang aksinya; ops menjalankan import manual RB-03 (aman, tanpa duplikat) |
+| AL-04 | **Antrean River tertahan:** job `available` tertua > 15 menit di `export`, `ai`, `billing`, atau > 2 jam di `import`, `score` | Export, narasi AI, credit bulanan, atau estimasi dan metrik wilayah tertunda. SEV-2 | Q1, `docker compose ps worker`, L1 untuk `worker`. Worker mati/macet → `docker compose restart worker` (job idempotent, STD-DB-06). Bila hanya `import`/`score` yang panjang karena import pertama (RB-03) atau hitung ulang parameter (RB-14) → tunggu |
+| AL-05 | **Banyak job gagal:** > 10 job `discarded` dalam 1 jam di antrean mana pun | Aksi user gagal (export yang gagal bisa diulang tanpa biaya). SEV-2 | Q2. `ai` → AL-08. `export` → disk (RB-13) atau bug (engineering). `import` → AL-10. `billing` → engineering, jangan grant manual (RB-06). Tidak ada redrive massal di F1: setelah penyebab beres, user mengulang aksinya; ops menjalankan import manual RB-03 (aman, tanpa duplikat) |
 | AL-06 | **Arsip WAL/backup gagal:** tidak ada WAL terarsip > 15 menit, `failed_count` naik, atau backup terakhir > 26 jam | RPO ≤ 15 menit (NFR-04) tidak terjamin; `pg_wal` menumpuk sampai disk penuh. SEV-2, SEV-1 bila disk > 90% | RB-09 dan L1 untuk `postgres`. Repo ada di disk lokal, jadi penyebab umum: disk penuh (RB-13), pemilik/izin `/opt/msp/pgbackrest` bukan uid 999, `PGBACKREST_*` salah. Gangguan server off-site tidak memicu alert ini (→ AL-12). Setelah beres: `docker compose exec -u postgres postgres pgbackrest --stanza=msp backup` |
 | AL-07 | **Disk penuh:** > 80% peringatan, > 90% kritis | Postgres berhenti menulis bila disk penuh → situs down. SEV-2, SEV-1 bila > 90% | RB-13 |
 | AL-08 | **Provider AI gagal:** > 20% narasi AI memakai fallback selama 15 menit (peringatan); > 20% gagal di provider utama dan fallback selama 10 menit (kritis) | narasi AI lambat/gagal, fitur lain normal. SEV-3 / SEV-2 | Halaman status penyedia + L1 untuk `worker`. 401/403 → key salah atau dicabut (RB-12). 429 → kuota/rate limit di konsol penyedia. 5xx/timeout → di Pengaturan AI (RB-14) aktifkan fallback atau ganti provider/model utama, cek dengan **Uji koneksi**. Kritis > 30 menit → kill switch AI (RB-07); nyalakan lagi setelah pulih |
@@ -323,7 +323,7 @@ Aturan alert ada di `deploy/ops/` (Prometheus); AL-01 berasal dari uptime monito
 | Level | Contoh | Respons |
 |---|---|---|
 | SEV-1 | Situs down, server hilang, data hilang atau rusak, dugaan kebocoran data, credit terpotong salah secara massal | Segera, kapan pun; founder dilibatkan |
-| SEV-2 | Fitur utama gagal (login, export, webhook, AI), backup/WAL gagal, salinan off-site tertinggal, monitoring mati | ≤ 4 jam |
+| SEV-2 | Fitur utama gagal (login, analisis lokasi, export, AI), backup/WAL gagal, salinan off-site tertinggal, monitoring mati | ≤ 4 jam |
 | SEV-3 | Lambat sebagian, job gagal sporadis, fallback AI aktif, import harian gagal atau data sumber berhenti bertambah, GitLab/CI mati sementara production normal | Hari kerja berikutnya |
 
 1. **Stabilkan** dengan jalan tercepat: rollback (RB-02), kill switch (RB-07), restart service, hentikan CI/staging (AL-09), bersihkan disk. Akar masalah belakangan.
@@ -335,7 +335,7 @@ Aturan alert ada di `deploy/ops/` (Prometheus); AL-01 berasal dari uptime monito
 Subjek: [MesinProspek] Gangguan <fitur> — <tanggal>
 Halo,
 Sejak pukul <jam> WIB, <fitur> di MesinProspek <tidak dapat digunakan / lebih lambat dari biasanya>.
-Tim kami sedang menanganinya. <Export atau kirim webhook yang gagal bisa diulang tanpa biaya.>
+Tim kami sedang menanganinya. <Export yang gagal bisa diulang tanpa biaya.>
 Kabar berikutnya paling lambat pukul <jam> WIB.
 Salam, Tim MesinProspek
 

@@ -23,7 +23,7 @@ Semua yang tercantum di bawah dirancang di dokumen ini, tetapi **tidak dibangun,
 | Job & antrean | `intel.derive`, `score.all`, `score.icp` (rantai F1 berhenti di `geo.metrics`, §5.3); `webhook.deliver` dan antrean `webhook` (nama dicadangkan, README) |
 | Modul, fungsi & file | `intel.DetectGaps`, `intel.Score`, masking telepon di `intel.ProspectView`, fungsi unlock, `dialGuard`/`webhookHTTP` (guard SSRF) + signature HMAC webhook, enkripsi AES-GCM secret webhook, `icps_to_rescore()`, `data/url-patterns.yaml`, `data/scoring/priority-2.0.0.yaml` |
 | Endpoint & parameter | `/me/active-icp`, `/offerings*`, `/icps*`, `PUT /prospects/{id}/feedback`, `/prospects/{id}/tags`, `/prospects/{id}/owner`, `/unlocks`, `/unlocks/preview`, `/webhooks*`; di `/prospects`: `sort=score`, filter `bands`, `opps`, `has_phone`, `icp_id`; di `/exports`: `unlock_missing`, `format=xlsx` |
-| Lain | ADR-05, ADR-09, error `WEBHOOK_URL_REJECTED`, metrik `msp_webhook_deliveries_total`, flag `webhook` |
+| Lain | ADR-05, ADR-09, error `WEBHOOK_URL_REJECTED`, metrik `msp_webhook_deliveries_total` |
 | Bagian | §6 Skor & ICP, §10 Webhook, bagian unlock dan kirim webhook di §12 |
 
 ## 1. Ringkasan & keputusan arsitektur
@@ -219,7 +219,7 @@ Nilai tak dibulatkan disimpan untuk filter dan urutan. Pembulatan BR-EST-02 hany
 | `estimates` | §4.1 | PRD Lampiran E (§5.4) |
 | `imports` | `id`, `country_code`, `trigger` (`job`\|`cli`), `reset`, `cursor_at` + `cursor_id` (dimajukan per batch), `newest_at` (snapshot sumber terbaru yang diterima untuk negara ini), `status` (`running`\|`done`\|`failed`), `counts` jsonb, `rejects` jsonb (per alasan + 100 sampel `cid` + `created_at`), `warnings` jsonb, `error`, `started_at`, `finished_at` | Riwayat & status import (FR-OPS-01). **Watermark** = cursor run terakhir negara itu |
 | `areas` | `id` bigint (GeoAPI), `country_code`, `admin_level` 1–4, `name`, `external_code`, `parent_id`, `area_km2`, `population`, `density`, `centroid`, `geom` MultiPolygon (level 4 saja), `synced_at` | GIST(`geom`). Populasi = Kontur 2023 (perkiraan model) |
-| `area_metrics` | PK (`area_id`, `est_group`; `'*'` = semua), `business_count`, `density_per_1k`, `competition_pct`, `competition_level`, `est_n`, `demand_visits`, `demand_avg`, `price_p25`, `price_median`, `price_p75`, `limited`, `market_score`, `model_version` (`geo-X.Y.Z`) | Lampiran C, level 3–4, tidak bergantung ICP. NULL = tidak diketahui (ambang minimal Lampiran C) atau "Data terbatas" |
+| `area_metrics` | PK (`area_id`, `est_group`; `'*'` = semua), `business_count`, `density_per_1k`, `competition_pct`, `competition_level`, `est_n`, `demand_visits`, `demand_avg`, `price_p25`, `price_median`, `price_p75`, `limited`, `market_score`, `model_version` (`geo-X.Y.Z`) | Lampiran C, level 3–4, tidak bergantung ICP (bagian yang bergantung ICP: `icp_area_scores`, F2). NULL = tidak diketahui (ambang minimal Lampiran C) atau "Data terbatas" |
 | `categories` | `id` (mis. `fnb.restoran`, `lainnya`), `parent_id`, `name`, `visitor_source` (`kesehatan`\|`akomodasi`\|`kantor_pendidikan`\|`ritel`\|NULL) | Taksonomi 2 level, seed dari `data/categories.yaml`. `visitor_source` = jenis sumber pengunjung siang (Lampiran F) |
 | `peer_stats` **(F2)** | PK (`category_id`, `kab_id`), `n`, `url_fill`, `own_domain_share`, `social_fill`, `review_p25` | Kelompok pembanding BR-OPP-01 dan teks alasan |
 | `place_gaps` **(F2)** | PK (`place_id`, `code`), `severity`, `params` jsonb (mis. `{"peer_n":212,"own_domain_pct":61}`) | Gap global. Relevansi Offering dihitung saat skor |
@@ -780,7 +780,7 @@ VALUES ($id, $ws, $meter, 'debit', -$n, $idem_key, $ref, $user);   -- ref: locat
 -- (F2) POST /unlocks: n = place_ids yang belum di-unlock DAN tidak ter-suppress (yang ter-suppress dikembalikan "suppressed"); n = 0 → selesai
 -- (F2) billing.Debit(credit, n, idem_key, 'unlock'), lalu:
 -- (F2) INSERT INTO unlocks (workspace_id, place_id, via, ledger_id, user_id)
---      SELECT $ws, unnest($chargeable::uuid[]), 'unlock', $id, $user ON CONFLICT DO NOTHING;
+-- (F2)   SELECT $ws, unnest($chargeable::uuid[]), 'unlock', $id, $user ON CONFLICT DO NOTHING;
 -- (F2) INSERT INTO audit_log (...) VALUES (...);
 ```
 

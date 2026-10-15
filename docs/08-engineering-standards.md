@@ -4,10 +4,10 @@
 
 | Field | Value |
 |---|---|
-| Versi | 0.3 (lean). Sumber DB gmaps, estimasi, analisis lokasi |
-| Tanggal | 2026-10-11 |
+| Versi | 0.4 (lean). Sumber DB gmaps, estimasi, analisis lokasi; skor & opportunity di F2 (D-40) |
+| Tanggal | 2026-10-15 |
 | Prinsip | **KISS**, **DRY**, **make it work → make it right → make it fast** (D-23) |
-| Basis | `README.md` (stack F1, kosakata, struktur monorepo), `01-prd.md` v0.3 (BR-TRUST, BR-EST, BR-SCORE, BR-CRED, BR-AI-01, NFR-05/06/07/09, Lampiran E/F), `02-design-system/` (tokens) |
+| Basis | `README.md` (stack F1, kosakata, struktur monorepo), `01-prd.md` v0.4 (BR-TRUST, BR-EST, BR-CRED, BR-AI-01, NFR-05/06/07/09, Lampiran E/F; BR-SCORE di F2, D-40), `02-design-system/` (tokens) |
 | Pembaca | Agent AI pembangun (maks. 8 paralel), orchestrator (Claude), founder |
 
 > **Cara membaca.** Satu aturan = satu baris dengan ID `STD-<AREA>-nn`. Kolom **Ditegakkan oleh**:
@@ -44,7 +44,7 @@ Konfigurasi lint:
 | STD-GEN-01 | **KISS.** Dependency baru (Go module, paket npm runtime) atau komponen/service/lapisan baru wajib punya alasan tertulis di MR: masalah nyatanya apa, dan kenapa stdlib atau stack README tidak cukup | review (diff `go.mod` / `package.json`) |
 | STD-GEN-02 | **DRY.** Satu sumber kebenaran: aturan → PRD, API → `contracts/openapi.yaml`, skema → migrasi, styling → tokens, nama → README. Logika yang sama ditulis sekali. File hasil generate tidak diedit tangan | CI (generate tanpa diff), review |
 | STD-GEN-03 | **Make it work dulu.** Tulis kode paling sederhana yang benar. Optimasi, cache, atau konkurensi hanya untuk masalah terukur (benchmark, `EXPLAIN ANALYZE`, metrik) yang dicantumkan di MR. Abstraksi baru dibuat setelah ada ≥ 2 pemakai nyata | review |
-| STD-GEN-04 | **Unknown tidak pernah jadi `0`, `""`, atau `false`.** Bentuknya `NULL` di DB, pointer/`pgtype` di Go, `null` di API, dan "Tidak diketahui" di UI. Faktor skor yang Unknown dikeluarkan dari perhitungan (BR-TRUST-03, BR-SCORE-01) | test, review |
+| STD-GEN-04 | **Unknown tidak pernah jadi `0`, `""`, atau `false`.** Bentuknya `NULL` di DB, pointer/`pgtype` di Go, `null` di API, dan "Tidak diketahui" di UI. Faktor skor yang Unknown dikeluarkan dari perhitungan (BR-TRUST-03; `market_score` PRD Lampiran C, skor prioritas BR-SCORE-01 di F2) | test, review |
 | STD-GEN-05 | **Tanpa PII di log.** Nomor telepon dan nilai kontak tidak pernah masuk log, pesan error, atau prompt LLM (BR-AI-01). Log memakai ID | test (handler `slog` meredaksi kunci kontak), review |
 
 ## 2. Go backend (GO)
@@ -57,7 +57,7 @@ Konfigurasi lint:
 | STD-GO-04 | Tanpa state global yang bisa berubah dan tanpa `init()` yang punya efek samping. Dependency masuk lewat constructor `NewX(...)` dan dirakit di `cmd/msp` | lint (`gochecknoglobals`, `gochecknoinits`) |
 | STD-GO-05 | Konfigurasi proses dan secret hanya dari env `MSP_*` (README). Env dibaca sekali ke struct `Config` dan divalidasi saat start. Nilai salah → proses berhenti dengan pesan jelas. `os.Getenv` hanya boleh di paket config. Nilai yang diatur ops saat runtime (model AI, plan & kuota, parameter estimasi, D-29) dibaca dari DB ([04 §14](04-technical-design.md#14-konfigurasi--observability)): model ID, harga, dan kuota tidak di-hard-code di kode, dan secret tidak pernah disimpan di DB | lint (`forbidigo`), test, review |
 | STD-GO-06 | Log hanya lewat `log/slog` dengan handler JSON dari `cmd/msp`. `fmt.Print*` dan `log.*` dilarang. Sertakan `request_id`, `workspace_id`, atau `job_id` bila ada | lint (`forbidigo`) |
-| STD-GO-07 | Logika yang harus deterministik (estimasi, analisis lokasi, skor, opportunity, metrik wilayah, freshness BR-TRUST-02, cache AI) menerima waktu sebagai parameter (`asOf time.Time`) atau lewat clock yang di-inject. Logika ini tidak memanggil `time.Now()` (FR-INTL-04) | test (input + versi sama → output identik), review |
+| STD-GO-07 | Logika yang harus deterministik (estimasi, analisis lokasi, metrik wilayah, freshness BR-TRUST-02, cache AI; F2: skor, opportunity) menerima waktu sebagai parameter (`asOf time.Time`) atau lewat clock yang di-inject. Logika ini tidak memanggil `time.Now()` (FR-EST-06; F2: FR-INTL-04) | test (input + versi sama → output identik), review |
 | STD-GO-08 | Paket dibuat datar: `apps/api/internal/<modul>` (nama modul di 04). Tidak ada paket `util`, `common`, atau `helpers`. Sub-paket hanya dibuat dengan alasan di MR | review |
 | STD-GO-09 | Rumus estimasi dan analisis lokasi (PRD Lampiran E, F) hanya ada di paket `internal/estimate`, sebagai fungsi murni (tanpa I/O, tanpa `time.Now()`). Parameter `est.*` masuk sebagai argumen, tidak di-hard-code. Perubahan yang bisa mengubah hasil menaikkan konstanta versi `est-`/`loc-` ([04 §5.4](04-technical-design.md#54-estimasi-estcompute)) | test (golden test PRD §12; input + parameter + versi sama → hasil sama), review |
 
@@ -98,11 +98,11 @@ Konfigurasi lint:
 
 | ID | Aturan | Ditegakkan oleh |
 |---|---|---|
-| STD-TEST-01 | Paket logika (normalisasi, estimasi, analisis lokasi, skor, opportunity, wilayah, credit) memakai table-driven test (`[]struct{…}` + `t.Run`). Kasus Unknown wajib ikut diuji | review |
+| STD-TEST-01 | Paket logika (normalisasi, estimasi, analisis lokasi, wilayah, credit; F2: skor, opportunity) memakai table-driven test (`[]struct{…}` + `t.Run`). Kasus Unknown wajib ikut diuji | review |
 | STD-TEST-02 | Setiap bug fix menyertakan test yang gagal sebelum fix diterapkan | review |
 | STD-TEST-03 | Test integrasi (query, RLS, migrasi, job) memakai Postgres 16 + PostGIS asli, bukan mock DB | CI |
 | STD-TEST-04 | Test tidak memanggil API eksternal (GeoAPI, Claude, OpenAI-compatible) maupun DB gmaps asli. Gunakan fixture di `testdata/` + `httptest.Server`; DB gmaps diganti database `gmaps_fixture` (06). Base URL dan URL DB diambil dari config | CI (job test tanpa API key provider), review |
-| STD-TEST-05 | Coverage paket inti NFR-09 (normalisasi, estimasi, analisis lokasi, skor, opportunity, credit, isolasi workspace) ≥ 80% | CI (gate coverage) |
+| STD-TEST-05 | Coverage paket inti NFR-09 ≥ 80% (F1: normalisasi, estimasi, analisis lokasi, credit, isolasi workspace; F2 menambah skor dan opportunity) | CI (gate coverage) |
 
 ## 7. Git & merge request (GIT)
 

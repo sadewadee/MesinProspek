@@ -22,7 +22,7 @@ Kondisi saat ini:
 | No | Dokumen | Isi |
 |---|---|---|
 | 00 | [Analisis dokumen awal](00-analisis-dokumen-awal.md) | Temuan atas dokumen awal + register keputusan |
-| 01 | [PRD](01-prd.md) | **Sumber kebenaran requirement**: scope F1, rumus estimasi & analisis lokasi, skor/opportunity/wilayah, credit |
+| 01 | [PRD](01-prd.md) | **Sumber kebenaran requirement**: scope F1, rumus estimasi, analisis lokasi & wilayah, skor/opportunity (F2), credit |
 | 02 | [Design system & tokens](02-design-system/README.md) | Brand Forest & Mint, tokens (DTCG + CSS), komponen |
 | 03 | [UX spec](03-ux-spec.md) | Layar F1, alur, state, copy |
 | 04 | [Technical design](04-technical-design.md) | Arsitektur, data model, pipeline, API |
@@ -59,10 +59,10 @@ Semua dokumen memakai nama-nama ini persis.
 | Hal | Nama |
 |---|---|
 | Binary & subcommand | `msp api`, `msp worker`, `msp migrate`, `msp tool import --country ID` (baca inkremental dari DB gmaps; juga job harian), `msp tool geo-sync --country ID`, `msp tool rescore` |
-| Hitung ulang | Rantai tunggal: estimasi → metrik wilayah → opportunity → skor. Otomatis setelah import, setelah geo-sync, saat parameter estimasi diubah, dan saat ICP disimpan (ICP itu saja). `msp tool rescore` manual hanya setelah versi model/bobot berubah |
+| Hitung ulang | Rantai tunggal. F1: estimasi → metrik wilayah. F2 menyambung opportunity → skor (D-40). Otomatis setelah import, setelah geo-sync, dan saat parameter estimasi diubah; di F2 juga saat ICP disimpan (ICP itu saja). `msp tool rescore` manual hanya setelah versi model/bobot berubah |
 | Target Makefile (lokal = CI) | `make generate` (oapi-codegen, client TS, sqlc, design tokens), `make lint`, `make test` |
 | Sumber data | Kiriman mingguan ramping dari founder (tabel `business_listings` DB gmaps: hanya Indonesia, kolom yang dipakai, baris baru), dimuat ke `gmaps-db` dan dibaca read-only (D-35, D-37). Satu baris = satu snapshot satu tempat; riwayat disimpan di DB MSP. Pemetaan kolom di 04 |
-| Antrean River | `import`, `score`, `export`, `webhook`, `ai`, `billing` (grant bulanan) |
+| Antrean River | `import`, `score` (estimasi & metrik wilayah; F2: juga opportunity & skor), `export`, `ai`, `billing` (grant bulanan). `webhook`: **F2** (D-40), nama dicadangkan |
 | Service Compose (production & staging) | `web`, `api`, `worker`, `kratos`, `postgres` (`local` ditambah `caddy`) |
 | Service Compose (ops, di server yang sama) | `caddy` (satu untuk semua domain), `gitlab`, `gitlab-runner`, `prometheus`, `alertmanager`, `grafana`, `node-exporter`, `gmaps-db` (kiriman mingguan DB gmaps terbaru, dibaca read-only oleh `worker` staging dan production). Uptime dipantau layanan eksternal |
 | Environment | `local` (laptop, Docker Compose), `staging` dan `production` (keduanya di satu server, project Compose terpisah) |
@@ -73,7 +73,7 @@ Semua dokumen memakai nama-nama ini persis.
 | Rute HTTP | API `/api/v1` · Kratos `/.ory/*` · health `/healthz` (proses hidup) dan `/readyz` (DB siap) · metrik `/metrics` di listener internal `:9090`, hanya lewat network Docker (tidak di-route Caddy) |
 | Env var | Prefix `MSP_`, mis. `MSP_DATABASE_URL`, `MSP_SOURCE_DATABASE_URL` (kiriman mingguan ramping dari founder, dimuat ke `gmaps-db`; role read-only `msp_source_ro`), `MSP_ANTHROPIC_API_KEY`, `MSP_LLM_FALLBACK_API_KEY`, `MSP_GEOAPI_BASE_URL`, `MSP_STORAGE_DIR`, `MSP_ENCRYPTION_KEY`. Env hanya untuk secret & pengaturan proses; model AI dan plan ada di DB (setting ops) |
 | Image | `<registry>/msp/api:<git-sha>`, `<registry>/msp/web:<git-sha>`. Rilis = tag Git `vX.Y.Z` |
-| Versi model | Estimasi `est-X.Y.Z`, analisis lokasi `loc-X.Y.Z`, skor `priority-X.Y.Z`, wilayah `geo-X.Y.Z`, prompt AI `brief-X.Y.Z` |
+| Versi model | Estimasi `est-X.Y.Z`, analisis lokasi `loc-X.Y.Z`, wilayah `geo-X.Y.Z`, prompt AI `brief-X.Y.Z`; F2: skor `priority-X.Y.Z` |
 
 ## Struktur monorepo
 
@@ -87,7 +87,7 @@ MesinProspek/
 │  ├─ ui/             komponen React (Radix + tokens)
 │  └─ api-client/     client TS hasil generate OpenAPI
 ├─ contracts/openapi.yaml
-├─ data/              negara (countries.yaml), taksonomi kategori, pola URL (sosial, link aggregator, subdomain gratis)
+├─ data/              negara (countries.yaml), taksonomi kategori; F2: pola URL (sosial, link aggregator, subdomain gratis), bobot skor
 ├─ deploy/            docker-compose.*.yml, Caddyfile, skrip bootstrap server
 ├─ docs/
 └─ .gitlab-ci.yml
