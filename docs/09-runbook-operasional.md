@@ -83,8 +83,8 @@ WHERE state = 'discarded' AND finalized_at > now() - interval '24 hours' GROUP B
 ### RB-01 — Deploy production
 **Kapan:** tag `vX.Y.Z` lulus pipeline, sudah diverifikasi di staging, dan founder setuju.
 1. Pastikan tidak ada alert aktif dan RB-09 hijau.
-2. GitLab → **Build → Pipelines** → pipeline tag `vX.Y.Z` → job manual `deploy-production` → **Run**. Runner `deploy` menjalankannya langsung di server: menulis `.env`, lalu `docker compose pull` → `msp migrate` → `docker compose up -d --wait` di `/opt/msp` (06).
-3. Gagal di `msp migrate`: versi lama tetap jalan. Baca log job, perbaiki lewat rilis baru. Gagal di `up --wait`: RB-02.
+2. GitLab → **Build → Pipelines** → pipeline tag `vX.Y.Z` → job manual `deploy-production` → **Run**. Runner `deploy` menjalankan `deploy/deploy.sh production <sha>` langsung di server, di `/opt/msp` (langkahnya di 06 §4).
+3. Gagal sebelum `up` (pull, `msp migrate`, atau migrasi Kratos): container lama tetap jalan, tetapi `.env` dan `compose.yaml` di `/opt/msp` sudah menunjuk tag baru. Jalankan ulang job deploy rilis sebelumnya (RB-02 langkah 1) agar keduanya cocok lagi dengan yang jalan, baca log job, lalu perbaiki lewat rilis baru. Gagal di `up --wait`: RB-02.
 
 **Verifikasi:** `curl -fsS https://app.<domain>/readyz`; `docker compose ps` semua `healthy`. Smoke test di workspace uji `<workspace-uji>`: login email dan Google → search → profil (estimasi dan pola keramaian tampil dengan tanggal data) → analisis lokasi baru → tambah ke list + catatan → export CSV kecil (kolom estimasi ada, kolom telepon tidak ada) → narasi AI → `/ops` terbuka dengan MFA. Pantau 5xx dan p95 di Grafana selama 30 menit.
 
@@ -182,7 +182,7 @@ sudo journalctl -t msp-offsite --since 1h | tail                                
 1. Tentukan waktu target sebelum kejadian (dari `/ops/audit` atau log). Untuk RB-11 tanpa target waktu, hapus opsi `--type` dan `--target*` agar DB pulih sampai WAL terakhir.
 2. Siapkan direktori:
    - **Uji atau data rusak:** project sementara di server yang sama, dengan volume sendiri dan tanpa menyentuh production maupun staging. Cek dulu `df -h`, karena butuh ruang ± ukuran DB production + ukuran repo pgBackRest, dan jalankan di jam sepi. Siapkan dengan `sudo mkdir /opt/msp-restore && sudo cp -a /opt/msp/{.env,compose.yaml,compose.staging.yaml,kratos,postgres} /opt/msp-restore/` (repo lokal sengaja tidak ikut), lalu tambahkan `COMPOSE_FILE=compose.yaml:compose.staging.yaml` ke `.env`-nya (batas resource staging).
-   - **Server baru (RB-11):** `/opt/msp` berisi file `deploy/` dari tag yang berlaku (`docker-compose.prod.yml` sebagai `compose.yaml`, `kratos/`, `postgres/`) dan `.env` production dari password manager founder.
+   - **Server baru (RB-11):** `/opt/msp` berisi file `deploy/` dari tag yang berlaku (`docker-compose.prod.yml` sebagai `compose.yaml`, `kratos/`, `postgres/` disalin dengan `cp -rL`) dan `.env` (izin 600) yang disusun dari `deploy/.env.example` tag itu: nilai `CHANGE_ME` dan `PGBACKREST_REPO1_CIPHER_PASS` dari password manager founder, `MSP_ENV=production`, `COMPOSE_FILE=compose.yaml`, key lain sesuai contohnya. `MSP_IMAGE_REPO`/`MSP_IMAGE_TAG` boleh bernilai apa saja, karena deploy di RB-11 langkah 6 menulis ulang `.env`.
 3. Ambil repo pgBackRest dari **salinan off-site** (06 §8). Uji bulanan dan gerbang F1 selalu lewat jalur ini, bukan repo lokal, agar jalur saat server hilang terbukti. Passphrase repo ada di `.env` (`PGBACKREST_REPO1_CIPHER_PASS`).
    ```bash
    cd /opt/msp-restore                         # RB-11: /opt/msp
