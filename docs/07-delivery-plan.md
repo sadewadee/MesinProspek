@@ -65,7 +65,7 @@ Sampai WP-06 selesai, pekerjaan berjalan di repo saat ini. Setelah itu repo utam
 
 Paralel: WP-01 dan WP-05 mulai bersamaan; setelah WP-01 → WP-02, 03, 07; lalu WP-04 → WP-06, 08.
 
-**Status 2026-10-15:** WP-01 selesai. WP-02, 03, 05, 07 sedang dikerjakan. WP-04, 06, 08 menyusul. WP-05 dan WP-06 baru bisa diuji penuh di server founder (skrip ditulis dan divalidasi statis di repo).
+**Status 2026-10-15:** WP-01..08 selesai di repo: `make generate lint test` hijau, test integrasi jalan di Postgres 16 + PostGIS, dan journey auth (daftar → verifikasi → masuk, `/api/v1/me` 401/200) lulus dengan Playwright terhadap Kratos, Mailpit, Caddy, `msp api`, dan Next sungguhan. Yang hanya bisa dibuktikan di server founder: `bootstrap.sh` dan stack `/opt/ops` (WP-05), pipeline GitLab termasuk job `e2e` di dind dan anggaran 15 menit MR (WP-06, WP-08), `docker compose up`/build image (WP-04), serta email verifikasi lewat SMTP sungguhan. Gerbang Fase 0 di bawah menunggu langkah itu.
 
 **Gerbang Fase 0** (disetujui founder): pipeline `main` hijau, staging ter-deploy otomatis di server yang sama dengan GitLab, `docker compose up` jalan di lokal, daftar + login berhasil di staging, uptime monitor eksternal aktif.
 
