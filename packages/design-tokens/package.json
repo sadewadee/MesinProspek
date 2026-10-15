@@ -1,5 +1,12 @@
 {
   "name": "@msp/design-tokens",
   "version": "0.0.0",
-  "private": true
+  "private": true,
+  "exports": {
+    "./tokens.css": "./tokens.css",
+    "./tailwind.css": "./tailwind.css"
+  },
+  "scripts": {
+    "test": "node --test tailwind.test.mjs"
+  }
 }

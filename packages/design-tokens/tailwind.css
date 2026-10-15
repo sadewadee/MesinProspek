@@ -1,0 +1,88 @@
+/*
+ * Tailwind 4 theme for MesinProspek (STD-FE-01). Import after "tailwindcss".
+ *
+ * Values live only in docs/02-design-system/tokens/design-tokens.json; the
+ * generated tokens.css turns them into --msp-* variables. This file only maps
+ * Tailwind theme names to those variables. `inline` makes utilities read
+ * var(--msp-*) directly, so light/dark follow the token modes
+ * (prefers-color-scheme, data-theme) without `dark:` variants.
+ *
+ * Color names = token path without `color.`, without the `bg.` group and
+ * without a trailing `.default`: color.bg.canvas -> bg-canvas,
+ * color.fg.default -> text-fg, color.status.danger.fg -> text-status-danger-fg.
+ * Typography: use the generated .msp-text-* classes (e.g. msp-text-h1).
+ * Breakpoints keep Tailwind's defaults: they equal breakpoint.* (640..1536px)
+ * and media queries cannot read CSS variables.
+ * Add other token groups (domain/data-viz colors, z, motion, size) here when
+ * the first component needs them.
+ */
+@import "./tokens.css" layer(base);
+
+@theme inline {
+  --color-*: initial;
+  --color-canvas: var(--msp-color-bg-canvas);
+  --color-surface: var(--msp-color-bg-surface);
+  --color-surface-raised: var(--msp-color-bg-surface-raised);
+  --color-surface-sunken: var(--msp-color-bg-surface-sunken);
+  --color-hover: var(--msp-color-bg-hover);
+  --color-selected: var(--msp-color-bg-selected);
+  --color-overlay: var(--msp-color-bg-overlay);
+  --color-inverse: var(--msp-color-bg-inverse);
+
+  --color-fg: var(--msp-color-fg-default);
+  --color-fg-muted: var(--msp-color-fg-muted);
+  --color-fg-subtle: var(--msp-color-fg-subtle);
+  --color-fg-disabled: var(--msp-color-fg-disabled);
+  --color-fg-inverse: var(--msp-color-fg-inverse);
+  --color-fg-on-accent: var(--msp-color-fg-on-accent);
+  --color-fg-link: var(--msp-color-fg-link);
+
+  --color-border: var(--msp-color-border-default);
+  --color-border-subtle: var(--msp-color-border-subtle);
+  --color-border-strong: var(--msp-color-border-strong);
+  --color-border-input: var(--msp-color-border-input);
+  --color-border-focus: var(--msp-color-border-focus);
+
+  --color-accent: var(--msp-color-accent-default);
+  --color-accent-hover: var(--msp-color-accent-hover);
+  --color-accent-active: var(--msp-color-accent-active);
+  --color-accent-subtle: var(--msp-color-accent-subtle);
+  --color-accent-fg: var(--msp-color-accent-fg);
+  --color-accent-highlight: var(--msp-color-accent-highlight);
+
+  --color-status-success-fg: var(--msp-color-status-success-fg);
+  --color-status-success-bg: var(--msp-color-status-success-bg);
+  --color-status-success-border: var(--msp-color-status-success-border);
+  --color-status-warning-fg: var(--msp-color-status-warning-fg);
+  --color-status-warning-bg: var(--msp-color-status-warning-bg);
+  --color-status-warning-border: var(--msp-color-status-warning-border);
+  --color-status-danger-fg: var(--msp-color-status-danger-fg);
+  --color-status-danger-bg: var(--msp-color-status-danger-bg);
+  --color-status-danger-border: var(--msp-color-status-danger-border);
+  --color-status-info-fg: var(--msp-color-status-info-fg);
+  --color-status-info-bg: var(--msp-color-status-info-bg);
+  --color-status-info-border: var(--msp-color-status-info-border);
+
+  --font-*: initial;
+  --font-sans: var(--msp-font-family-sans);
+  --font-display: var(--msp-font-family-display);
+  --font-mono: var(--msp-font-family-mono);
+  --text-*: initial;
+
+  /* space.* has a 4px base: p-4 = 4 x space.1 = space.4. */
+  --spacing: var(--msp-space-1);
+
+  --radius-*: initial;
+  --radius-none: var(--msp-radius-none);
+  --radius-sm: var(--msp-radius-sm);
+  --radius-md: var(--msp-radius-md);
+  --radius-lg: var(--msp-radius-lg);
+  --radius-xl: var(--msp-radius-xl);
+  --radius-full: var(--msp-radius-full);
+
+  --shadow-*: initial;
+  --shadow-sm: var(--msp-shadow-sm);
+  --shadow-md: var(--msp-shadow-md);
+  --shadow-lg: var(--msp-shadow-lg);
+  --shadow-overlay: var(--msp-shadow-overlay);
+}

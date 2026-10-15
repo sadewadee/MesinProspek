@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="id">
-      <body>{children}</body>
+      <body className="msp-text-body bg-canvas text-fg">{children}</body>
     </html>
   );
 }

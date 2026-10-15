@@ -8,17 +8,17 @@
 //   node build.mjs            # write tokens.css and run contrast checks
 //   node build.mjs --check    # fail if tokens.css is stale or contrast fails (CI)
 //   node build.mjs --report   # print the contrast table as markdown
+//   node build.mjs --out <path> [--check]   # write/check <path> instead of tokens.css
 //
-// Reference implementation until packages/design-tokens (Style Dictionary) exists;
-// the output contract (CSS variable names) must stay identical.
+// This is the only token build: packages/design-tokens ships its output via --out
+// (`make generate`). Renaming a CSS variable is a MAJOR token change (README §2.4).
 
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
-import { dirname, join, relative } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SRC = join(HERE, "design-tokens.json");
-const OUT = join(HERE, "tokens.css");
 const MODE_EXT = "com.mesinprospek.mode";
 const CSS_EXT = "com.mesinprospek.css";
 const PREFIX = "msp";
@@ -259,6 +259,9 @@ function main(argv) {
   const css = buildCss(flat, res);
   const rows = checkContrast(res);
   const failures = rows.filter((r) => !r.ok);
+  const outArg = argv.indexOf("--out");
+  if (outArg !== -1 && !argv[outArg + 1]) throw new Error("--out needs a file path");
+  const out = outArg === -1 ? join(HERE, "tokens.css") : resolve(argv[outArg + 1]);
 
   if (argv.includes("--report")) {
     console.log("| Pasangan | Mode | Rasio | Min | Status |");
@@ -272,11 +275,11 @@ function main(argv) {
 
   let stale = false;
   if (argv.includes("--check")) {
-    stale = !existsSync(OUT) || readFileSync(OUT, "utf8") !== css;
-    if (stale) console.error("tokens.css is out of date: run `node build.mjs`");
+    stale = !existsSync(out) || readFileSync(out, "utf8") !== css;
+    if (stale) console.error(`${relative(process.cwd(), out)} is out of date: run \`make generate\``);
   } else {
-    writeFileSync(OUT, css, "utf8");
-    console.log(`wrote ${relative(join(HERE, "..", "..", ".."), OUT)} (${css.split("\n").length - 1} lines)`);
+    writeFileSync(out, css, "utf8");
+    console.log(`wrote ${relative(join(HERE, "..", "..", ".."), out)} (${css.split("\n").length - 1} lines)`);
   }
 
   for (const r of failures) {

@@ -9,8 +9,12 @@ OAPI_CODEGEN := go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@
 generate:
 	cd apps/api && $(OAPI_CODEGEN) -config internal/api/oapi-codegen.yaml ../../contracts/openapi.yaml
 	pnpm --filter @msp/api-client generate
+	node docs/02-design-system/tokens/build.mjs
+	node docs/02-design-system/tokens/build.mjs --out packages/design-tokens/tokens.css
 
+# STD-FE-01: apps/web styles only via design tokens (no raw hex/rgb/px, no Tailwind arbitrary values).
 lint:
+	! grep -rnIE '#[0-9a-fA-F]{3,8}\b|[0-9]px\b|rgba?\(|[a-z]-(\[|\(--)' $(wildcard apps/web/app apps/web/components) || (echo "STD-FE-01: use design tokens" && false)
 	cd apps/api && $(GOLANGCI_LINT) run ./...
 	pnpm -r --if-present lint
 	pnpm -r --if-present typecheck
