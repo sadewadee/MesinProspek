@@ -111,7 +111,7 @@ Konfigurasi lint:
 | STD-GIT-01 | MR kecil: satu WP atau satu perubahan, ±400 baris diubah (tidak termasuk kode generate dan fixture). Lebih besar dari itu → pecah | review |
 | STD-GIT-02 | Merge memakai squash, sehingga judul MR = pesan commit. Format Conventional Commits dengan WP sebagai scope bila ada (`feat(WP-14): …`, `fix`, `test`, `docs`, `refactor`, `chore`) | CI (regex judul MR) |
 | STD-GIT-03 | Merge hanya bila pipeline hijau. Test flaky diperbaiki, tidak di-retry sampai lolos | CI (setting GitLab "Pipelines must succeed") |
-| STD-GIT-04 | Deskripsi MR menyebut ID `WP-` dan ID PRD (`FR-`/`BR-`/`NFR-`) yang dikerjakan, plus alasan bila ada dependency/komponen baru (STD-GEN-01) | CI (regex deskripsi MR), review |
+| STD-GIT-04 | Deskripsi MR `feat`/`fix` menyebut ID `WP-` dan ID PRD (`FR-`/`BR-`/`NFR-`) yang dikerjakan (MR `docs`, `chore`, `refactor`, `test` boleh tanpa), plus alasan bila ada dependency/komponen baru (STD-GEN-01) | CI (regex deskripsi MR), review |
 
 ## 8. Agent AI (AGENT)
 

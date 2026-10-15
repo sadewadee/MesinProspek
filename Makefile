@@ -24,6 +24,7 @@ lint:
 	pnpm -r --if-present typecheck
 	$(GITLEAKS) git --log-opts=HEAD --redact --no-banner .   # STD-AGENT-06: no secret in the history of HEAD
 # TODO(WP-10): squawk (new migrations) and oasdiff breaking vs main (08 §0) arrive with the F1 migrations and contract.
+# TODO(WP-26): coverage gate >= 80% for the core packages in `make test` (NFR-09, STD-TEST-05), once estimate exists.
 
 test:
 	cd apps/api && go test -race ./...

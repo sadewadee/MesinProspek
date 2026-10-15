@@ -8,7 +8,9 @@
 # v*:    deploy-staging (+ smoke-staging J-2..J-7) -> deploy-production (manual, founder). Rollback: run
 #        deploy-production again in the previous release's pipeline (09 RB-02).
 # TODO(WP-08): job `e2e` (Compose stack + Playwright Chromium on every MR, 05 §2) with deploy/docker-compose.e2e.yml.
-# TODO(WP-25): job `backup` on the daily pipeline schedule (06 §8), and "schedule" in workflow:rules.
+# TODO(WP-25): job `backup` on the daily pipeline schedule (06 §8). Adding "schedule" to workflow:rules also needs
+#   `&& $CI_PIPELINE_SOURCE != "schedule"` in the main rules of .mr-main, .main, deploy-staging and smoke-staging,
+#   or the nightly pipeline also runs check, build and deploy-staging.
 
 stages: [check, build, deploy-staging, deploy-production]
 
@@ -69,7 +71,9 @@ check:
     - test -z "$(git status --porcelain)" || { git status --short; exit 1; }
     - make lint
     - make test                                        # unit + integration on the postgres service
-    - (cd apps/api && go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...)   # known reachable vulnerabilities (06 §4)
+    # Known vulnerabilities in dependencies (04 §15.8): Go (reachable code only) and production JS packages.
+    - (cd apps/api && go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...)
+    - pnpm audit --prod --audit-level high
 
 mr-check:
   extends: .go                                         # only for the image: already on the runner, has git

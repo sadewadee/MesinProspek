@@ -1,5 +1,5 @@
 # App stack for staging and production (docs/06-ci-cd.md §5). deploy/deploy.sh copies this file to
-# $DEPLOY_DIR/compose.yaml (/opt/msp or /opt/msp-staging) next to .env, kratos/ and postgres/.
+# compose.yaml in /opt/msp or /opt/msp-staging, next to .env, kratos/ and postgres/.
 # The project name is the directory name, so containers are msp-api-1 or msp-staging-api-1 (Caddyfile).
 # Limits = production column of 06 §2; staging overrides them in docker-compose.staging.yml.
 
@@ -61,7 +61,11 @@ services:
   postgres:
     build: ./postgres                               # postgis/postgis + pgBackRest (06 §8)
     image: msp-postgres:16
-    env_file: .env                                  # POSTGRES_PASSWORD, PGBACKREST_* (production), DB URLs for first init
+    # Only the keys postgres reads, not env_file: .env, whose MSP_IMAGE_TAG changes on every deploy and would
+    # recreate postgres each time. DB URLs: role passwords at first init (init-msp.sh). Unset keys stay unset.
+    environment:
+      [POSTGRES_PASSWORD, MSP_DATABASE_URL, MSP_MIGRATE_DATABASE_URL, DSN, PGBACKREST_REPO1_CIPHER_PASS, PGBACKREST_STANZA,
+       PGBACKREST_PG1_PATH, PGBACKREST_REPO1_PATH, PGBACKREST_REPO1_CIPHER_TYPE, PGBACKREST_REPO1_RETENTION_FULL]
     restart: unless-stopped
     shm_size: 1g
     stop_grace_period: 60s                          # clean shutdown instead of SIGKILL and crash recovery

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Merge request checks, run by the mr-check job in .gitlab-ci.yml (docs/06-ci-cd.md §4):
 #   - title: Conventional Commits, becomes the squash commit message (STD-GIT-02);
-#   - description: names a WP- and a PRD ID (STD-GIT-04);
+#   - description of a feat or fix MR: names a WP- and a PRD ID (STD-GIT-04);
 #   - migrations: ones already on the target branch never change, and new ones are numbered after the
 #     target branch's latest, so goose applies them in order on staging and production (STD-DB-01).
 # Input: GitLab's predefined CI_MERGE_REQUEST_* variables (set them by hand to run it locally) and a
@@ -18,11 +18,14 @@ re='^(feat|fix|test|docs|refactor|chore)(\([^()]+\))?!?: [^ ]'
 [[ $title =~ $re ]] ||
   fail "title must be <type>(<scope>): <summary>, type feat|fix|test|docs|refactor|chore, '!' for breaking, e.g. 'feat(WP-14): ...' (STD-GIT-02)"
 
+# feat and fix change behaviour, so they trace to a WP and the PRD; docs, chore, refactor and test may not.
 desc=${CI_MERGE_REQUEST_DESCRIPTION:-}
-grep -Eq '\bWP-[0-9]{2}\b' <<<"$desc" ||
-  fail "description must name the work package, e.g. WP-14 (STD-GIT-04, template .gitlab/merge_request_templates/Default.md)"
-grep -Eq '\b((FR|BR)-[A-Z]+-[0-9]{2}|NFR-[0-9]{2})\b' <<<"$desc" ||
-  fail "description must name the PRD IDs it implements, e.g. FR-SRCH-01, BR-EST-02, NFR-03 (STD-GIT-04)"
+if [[ $title =~ ^(feat|fix) ]]; then
+  grep -Eq '\bWP-[0-9]{2}\b' <<<"$desc" ||
+    fail "description must name the work package, e.g. WP-14 (STD-GIT-04, template .gitlab/merge_request_templates/Default.md)"
+  grep -Eq '\b((FR|BR)-[A-Z]+-[0-9]{2}|NFR-[0-9]{2})\b' <<<"$desc" ||
+    fail "description must name the PRD IDs it implements, e.g. FR-SRCH-01, BR-EST-02, NFR-03 (STD-GIT-04)"
+fi
 
 migrations=apps/api/db/migrations
 base=${CI_MERGE_REQUEST_DIFF_BASE_SHA:?}
