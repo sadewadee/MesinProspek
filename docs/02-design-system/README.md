@@ -45,7 +45,7 @@ komponen (packages/ui)                                ← tidak boleh hardcode h
 - Line height disimpan sebagai dimensi absolut (px), bukan rasio, agar tinggi baris tabel presisi.
 
 ### 2.2 Penamaan → CSS variable
-`color.score.hot.solid` → `--msp-color-score-hot-solid`. Token tipografi komposit menghasilkan beberapa variabel (`--msp-text-body-font-size`, dst.) ditambah kelas utilitas `.msp-text-body`.
+`color.bg.canvas` → `--msp-color-bg-canvas`. Token tipografi komposit menghasilkan beberapa variabel (`--msp-text-body-font-size`, dst.) ditambah kelas utilitas `.msp-text-body`.
 
 Pemilihan tema:
 
@@ -61,9 +61,10 @@ Pemilihan tema:
 node docs/02-design-system/tokens/build.mjs           # tulis tokens.css + cek kontras
 node docs/02-design-system/tokens/build.mjs --check   # CI: gagal bila CSS basi atau kontras gagal
 node docs/02-design-system/tokens/build.mjs --report  # tabel kontras lengkap (markdown)
+node docs/02-design-system/tokens/build.mjs --out packages/design-tokens/tokens.css   # salinan untuk paket
 ```
 
-`build.mjs` adalah satu-satunya build token (Node, tanpa dependency). `packages/design-tokens` memakai output-nya langsung (CSS variables + preset Tailwind). CI menjalankan `--check` sebagai quality gate (lihat `06-ci-cd.md`).
+`build.mjs` adalah satu-satunya build token (Node, tanpa dependency). `make generate` menulis dua salinan `tokens.css` (di sini dan di `packages/design-tokens`), dan CI menjalankan `make generate` + `git diff --exit-code` sehingga salinan basi atau kontras gagal langsung terdeteksi (06). `packages/design-tokens/tailwind.css` memetakan token ke tema Tailwind 4 (§7).
 
 ### 2.4 Versioning token
 | Perubahan | Versi |
@@ -191,7 +192,7 @@ Aturan chart tambahan: satu sumbu Y (tidak ada dual-axis); legend selalu ada unt
 | `text.numeric` | sans | 14 / 20 | 500, **tabular-nums** | Kolom angka |
 | `text.mono` | mono | 13 / 20 | 400 | ID, JSON payload |
 
-Font: **Plus Jakarta Sans** (semua heading), **Inter** (body, tabel, data), dan **JetBrains Mono** (mono). Ketiganya berlisensi SIL OFL dan di-self-host. Tidak ada huruf kapital penuh untuk label berbahasa Indonesia; gunakan sentence case.
+Font: **Plus Jakarta Sans** (semua heading), **Inter** (body, tabel, data), dan **JetBrains Mono** (mono). Ketiganya berlisensi SIL OFL dan akan di-self-host (belum: saat ini web memakai stack font dari token dengan fallback sistem). Tidak ada huruf kapital penuh untuk label berbahasa Indonesia; gunakan sentence case.
 
 ---
 
@@ -244,11 +245,6 @@ Komponen dibangun di `packages/ui` di atas Radix primitives. Komponen hanya bole
 @import "tokens.css";
 
 .prospect-row:hover { background: var(--msp-color-bg-hover); }
-.badge--hot {
-  background: var(--msp-color-score-hot-solid);
-  color: var(--msp-color-score-hot-on-solid);
-  border-radius: var(--msp-radius-sm);
-}
 .badge--inferred {
   color: var(--msp-color-claim-inferred-fg);
   background: var(--msp-color-claim-inferred-bg);
@@ -256,27 +252,21 @@ Komponen dibangun di `packages/ui` di atas Radix primitives. Komponen hanya bole
 }
 ```
 
-**Tailwind preset** (ringkas; akan dihasilkan oleh `packages/design-tokens`)
+**Tailwind 4** (`packages/design-tokens/tailwind.css`, sudah dipakai `apps/web`)
 
-```js
-// tailwind preset — warna menunjuk CSS variable agar mode gelap otomatis
-export default {
-  theme: {
-    extend: {
-      colors: {
-        canvas: "var(--msp-color-bg-canvas)",
-        surface: "var(--msp-color-bg-surface)",
-        fg: { DEFAULT: "var(--msp-color-fg-default)", muted: "var(--msp-color-fg-muted)" },
-        score: {
-          hot: { DEFAULT: "var(--msp-color-score-hot-solid)", fg: "var(--msp-color-score-hot-on-solid)" },
-        },
-      },
-      spacing: { 1: "var(--msp-space-1)", 2: "var(--msp-space-2)" /* … */ },
-      borderRadius: { md: "var(--msp-radius-md)" },
-    },
-  },
-};
+Tailwind 4 berbasis CSS, tanpa preset JS. `tailwind.css` mengimpor `tokens.css` ke `layer(base)`, lalu satu blok `@theme inline` memetakan nama tema Tailwind ke `var(--msp-*)`. Karena utility membaca variabel token langsung, mode gelap ikut otomatis tanpa `dark:`.
+
+```css
+/* apps/web/app/globals.css */
+@import "tailwindcss";
+@import "@msp/design-tokens/tailwind.css";
 ```
+
+- **Nama utility** = jalur token tanpa `color.`, tanpa `bg.`, dan tanpa `.default` di akhir: `bg-canvas`, `text-fg`, `text-fg-muted`, `text-accent-fg`, `text-status-danger-fg`.
+- **Spasi:** `--spacing` = `--msp-space-1`, jadi `p-4` = 4 × token dasar.
+- **Default Tailwind dihapus** (palet warna, font, skala teks, radius, shadow), sehingga `bg-red-500` atau `text-sm` tidak menghasilkan CSS. Tipografi memakai kelas `msp-text-*` dari `tokens.css`.
+- `tailwind.css` ditulis tangan dan hanya berisi nama, bukan nilai. Test `tailwind.test.mjs` gagal bila ada `--msp-*` yang tidak ada di `tokens.css`.
+- Token domain, data-viz, z-index, gerak, dan ukuran dipetakan saat komponen pertama membutuhkannya.
 
 ---
 
@@ -306,5 +296,6 @@ Aturan tambahan:
 | D-17 | Brand final | **Selesai:** Forest & Mint, Plus Jakarta Sans + Inter. Logo menyusul. |
 | DS-01 | Set ikon: Lucide diusulkan (ISC) | Proposed |
 | DS-02 | Basemap peta & gaya peta dasar | Menunggu Q-05 (lisensi dataset) |
-| DS-03 | `packages/design-tokens` memakai output `build.mjs` langsung (tanpa Style Dictionary) | Saat bootstrap monorepo (WP-07) |
+| DS-03 | `packages/design-tokens` memakai output `build.mjs` langsung (tanpa Style Dictionary) | **Selesai** (WP-07): `tokens.css` + `tailwind.css` |
+| DS-05 | Self-host font Plus Jakarta Sans, Inter, JetBrains Mono | Saat UI pertama (WP-18) |
 | DS-04 | Ilustrasi empty state | Setelah brand final |
