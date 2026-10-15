@@ -1,0 +1,11 @@
+# sqlc: queries in db/queries, schema from the goose migrations (STD-DB-02).
+version: "2"
+sql:
+  - engine: postgresql
+    schema: db/migrations
+    queries: db/queries
+    gen:
+      go:
+        package: q
+        out: internal/platform/db/q
+        sql_package: pgx/v5

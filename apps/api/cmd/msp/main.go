@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"msp/internal/platform/config"
+	"msp/internal/platform/db"
 	"msp/internal/platform/httpx"
 )
 
@@ -40,7 +41,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	cfg, err := config.Load()
+	cfg, err := config.Load(args[0])
 	if err != nil {
 		_, _ = fmt.Fprintln(stderr, err)
 		return 1
@@ -54,7 +55,15 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 			return 1
 		}
 		return 0
-	case "worker", "migrate", "tool":
+	case "migrate":
+		applied, err := db.Migrate(ctx, cfg.MigrateDatabaseURL)
+		if err != nil {
+			logger.Error("migrate failed", "error", err)
+			return 1
+		}
+		logger.Info("migrations applied", "count", len(applied), "versions", applied)
+		return 0
+	case "worker", "tool":
 		logger.Error("command not implemented yet", "command", args[0])
 		return 2
 	default:
