@@ -77,7 +77,8 @@ apt-get update -q
 suffix="-1~ubuntu.$VERSION_ID~$VERSION_CODENAME"
 apt-get install -y -q --allow-change-held-packages --allow-downgrades \
   "docker-ce=5:$DOCKER_VERSION$suffix" "docker-ce-cli=5:$DOCKER_VERSION$suffix" containerd.io docker-buildx-plugin \
-  "docker-compose-plugin=$COMPOSE_VERSION$suffix" "gitlab-runner=$RUNNER_VERSION-1"
+  "docker-compose-plugin=$COMPOSE_VERSION$suffix" "gitlab-runner=$RUNNER_VERSION-1" \
+  "gitlab-runner-helper-images=$RUNNER_VERSION-1"   # gitlab-runner depends on exactly this version
 apt-mark hold docker-ce docker-ce-cli docker-compose-plugin gitlab-runner gitlab-runner-helper-images >/dev/null
 # Security updates only (Ubuntu default origins); reboots stay manual (09 §6)
 printf 'APT::Periodic::Update-Package-Lists "1";\nAPT::Periodic::Unattended-Upgrade "1";\n' > /etc/apt/apt.conf.d/20auto-upgrades

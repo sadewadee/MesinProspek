@@ -46,7 +46,8 @@ check:
   extends: [.mr-main, .go]
   stage: check
   services:
-    # Same digest as deploy/postgres/Dockerfile: integration tests run on the production Postgres + PostGIS.
+    # Test database: Postgres 16 + PostGIS 3, the majors of deploy/postgres/Dockerfile. That image is built on the
+    # server and not published, so minor versions differ (here 16.9 / 3.5); tests rely on nothing minor-specific.
     - name: postgis/postgis:16-3.5@sha256:94146ac37bc61e2322f88016056c5920729cb8c64c8542ed590af8fc2abdac07
       alias: postgres
   variables:

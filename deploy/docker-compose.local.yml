@@ -73,7 +73,7 @@ services:
     ports: ["127.0.0.1:8025:8025"]                  # web UI
 
   postgres:
-    build: ./postgres                               # postgis/postgis + pgBackRest, as in production
+    build: ./postgres                               # Postgres 16 + PostGIS + pgBackRest, as in production
     image: msp-postgres:16
     <<: *env
     ports: ["127.0.0.1:5432:5432"]                  # host-side tools and MSP_TEST_DATABASE_URL
