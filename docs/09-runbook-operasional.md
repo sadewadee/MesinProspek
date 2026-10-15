@@ -34,6 +34,8 @@ Monitoring ini ada di server yang sama, jadi server yang mati hanya bisa terdete
 | Uptime monitor eksternal `<penyedia>` | AL-01 (server/situs mati) | Server mati tidak terdeteksi otomatis; andalkan cek harian (§6) |
 
 ### 1.3 Log & perintah umum
+File `.env` berizin 600 milik user `deploy`, jadi semua perintah `docker compose` di server dijalankan dengan `sudo` (admin punya sudo; contoh di bawah menghilangkan `sudo` agar ringkas). Jangan menjalankan `docker compose down` di `/opt/ops`, karena stack itu memiliki network bersama.
+
 Log aplikasi berformat JSON (`slog`) di stdout container. Docker merotasi log berdasarkan ukuran, jadi **simpan log ke file segera saat insiden**. Perintah yang sama berlaku di `/opt/msp-staging` (staging) dan `/opt/ops` (GitLab, monitoring, Caddy).
 
 ```bash
@@ -65,7 +67,7 @@ WHERE state = 'discarded' AND finalized_at > now() - interval '24 hours' GROUP B
 - Agent AI tidak punya akses SSH. Mereka bekerja lewat GitLab (MR dan pipeline) dan tidak bisa menjalankan job production.
 - Semua akun web operasional wajib MFA, kecuali login admin bawaan Grafana. Sebagai gantinya, Grafana hanya bisa diakses dari IP allowlist yang sama dengan SSH, dan password-nya panjang serta disimpan di password manager founder. Prometheus dan Alertmanager tidak dibuka ke internet: `ssh -L 9090:localhost:9090 -L 9093:localhost:9093 <user>@<server>`.
 - Salinan semua secret production disimpan di password manager founder, sebagai cadangan bila GitLab hilang (RB-11).
-- **Orang keluar:** hapus kuncinya dari `~/.ssh/authorized_keys` dan IP-nya dari allowlist. Nonaktifkan akun GitLab dan ops-nya, dan keluarkan ia dari penerima email uptime monitor. Ganti password admin Grafana, lalu rotasi secret yang pernah ia pegang (RB-12).
+- **Orang keluar:** hapus kuncinya dari `~/.ssh/authorized_keys` dan IP-nya dari allowlist. Nonaktifkan akun GitLab dan ops-nya, dan keluarkan ia dari penerima email uptime monitor. Ganti password admin Grafana dengan `cd /opt/ops && sudo docker compose exec grafana grafana cli admin reset-admin-password <baru>` lalu perbarui `MSP_GRAFANA_ADMIN_PASSWORD` di `/opt/ops/.env` (Grafana hanya membaca variabel itu saat start pertama), lalu rotasi secret yang pernah ia pegang (RB-12).
 
 | Akses | Siapa | Catatan |
 |---|---|---|

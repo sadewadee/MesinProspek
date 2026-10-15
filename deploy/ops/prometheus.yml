@@ -19,3 +19,9 @@ scrape_configs:
         labels: { env: production }
       - targets: ["msp-staging-api-1:9090"]
         labels: { env: staging }
+  - job_name: msp-worker                 # job metrics (msp_jobs_total, msp_queue_depth, import timestamps; 04 §14)
+    static_configs:
+      - targets: ["msp-worker-1:9090"]
+        labels: { env: production }
+      - targets: ["msp-staging-worker-1:9090"]
+        labels: { env: staging }

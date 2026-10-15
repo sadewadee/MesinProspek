@@ -28,7 +28,7 @@ services:
   worker:
     <<: *app
     command: ["msp", "worker"]
-    networks: [default, gmaps]                      # gmaps -> gmaps-db:5432 (read-only role msp_source_ro)
+    networks: [default, gmaps, edge]                # gmaps -> gmaps-db:5432 (read-only msp_source_ro); edge -> Prometheus scrapes :9090 (no Caddy route)
     stop_grace_period: 60s                          # running River jobs can finish
     deploy: { resources: { limits: { cpus: "4", memory: 6G } } }
 
