@@ -4,10 +4,10 @@
 
 | Field | Value |
 |---|---|
-| Versi | 0.3 (lean). Fixture DB sumber (DB gmaps), estimasi, analisis lokasi, golden test sample case founder |
-| Tanggal | 2026-10-11 |
-| Sumber requirement | [`01-prd.md`](01-prd.md) v0.3: FR/BR/NFR, §7 data input, Lampiran A–F, §12 gerbang rilis. Dokumen ini **merujuk**, tidak menyalin rumus |
-| Scope | **F1** dirinci. F2/F3: PRD §6, plus tambahan khusus test di §8 |
+| Versi | 0.4 (lean). Fixture DB sumber (DB gmaps), estimasi, analisis lokasi, golden test sample case founder; test fitur prospek dipindah ke F2 (D-40) |
+| Tanggal | 2026-10-15 |
+| Sumber requirement | [`01-prd.md`](01-prd.md) v0.4: FR/BR/NFR, §7 data input, Lampiran A–F, §12 gerbang rilis. Dokumen ini **merujuk**, tidak menyalin rumus |
+| Scope | **F1** dirinci di §1–§7 (FR PRD §9). Test fitur prospek yang dirancang untuk F2 (PRD §9.1, D-40) disimpan di **§9 dan tidak dijalankan di F1**. F2/F3 lain: PRD §6, plus tambahan khusus test di §8 |
 | Terkait | [`04`](04-technical-design.md) (nama tabel/endpoint, pemetaan kolom sumber), [`06`](06-ci-cd.md) (job pipeline), [`09`](09-runbook-operasional.md) (prosedur import & muat kiriman DB gmaps) |
 
 > Konvensi: `TC-<AREA>-nn` = test case kritis, `GT-nn` = golden test sample case founder (PRD §12), `EC-nn` = edge case data, `J-n` = journey E2E. Level: **U** = unit, **I** = integration, **E** = E2E. Dokumen ini menjelaskan **perilaku** yang diuji; nama tabel, endpoint, dan header mengikuti `04`.
@@ -16,12 +16,12 @@
 
 ## 1. Tujuan & prinsip
 
-1. **Logika dulu.** Investasi terbesar di unit test logika inti: normalisasi, estimasi, analisis lokasi, skor, opportunity, metrik wilayah, credit (NFR-09). Murah, cepat, deterministik.
+1. **Logika dulu.** Investasi terbesar di unit test logika inti: normalisasi, estimasi, analisis lokasi, metrik wilayah, credit (NFR-09). Murah, cepat, deterministik.
 2. **Test adalah kontrak untuk agent.** Setiap paket kerja (WP) menyebut ID `TC-`/`GT-`/`EC-` yang harus lulus. ID ditulis di test (`// GT-01` di Go, `test('J-7 …')` di Playwright). Mengubah ekspektasi test wajib menyebut alasan + ID PRD di deskripsi MR. **Ekspektasi GT hanya boleh berubah bila PRD §12 berubah** (keputusan founder).
 3. **Setiap MR hijau sebelum merge.** Tidak ada `t.Skip`/`test.skip` tanpa issue. Tidak ada retry otomatis: test flaky = bug, diperbaiki, bukan diulang.
 4. **Proporsional.** Banyak unit, cukup integration, 7 journey E2E, 2 golden test. Tanpa mutation testing, soak test, atau load test di F1.
-5. **Deterministik & tertutup.** CI tidak memanggil layanan luar: DB gmaps asli diganti fixture DB sumber (§6); GeoAPI, LLM, penerima webhook, dan Google di-fake. Waktu (`clock`) dan ID acak di-inject.
-6. **DRY.** Ekspektasi merujuk Lampiran A–F. Data uji = seed SQL sumber + satu builder baris snapshot dengan default; tiap test hanya menimpa field yang relevan.
+5. **Deterministik & tertutup.** CI tidak memanggil layanan luar: DB gmaps asli diganti fixture DB sumber (§6); GeoAPI, LLM, dan Google di-fake. Waktu (`clock`) dan ID acak di-inject.
+6. **DRY.** Ekspektasi merujuk Lampiran C–F (Lampiran A–B hanya untuk test F2 di §9). Data uji = seed SQL sumber + satu builder baris snapshot dengan default; tiap test hanya menimpa field yang relevan.
 
 ---
 
@@ -29,8 +29,8 @@
 
 | Level | Tool | Yang diuji | Lokasi | Kapan |
 |---|---|---|---|---|
-| Unit (Go) | `go test -race`, **table-driven** | Aturan murni: BR-NORM, BR-EST, BR-SCORE, BR-OPP, BR-TRUST, Lampiran A–C, E (estimasi), F (analisis lokasi), validator SSRF, HMAC, validator rujukan fakta AI | `apps/api/internal/<modul>/*_test.go` | Setiap MR |
-| Unit (frontend) | **Vitest** | Util saja: format Rupiah/angka/tanggal id-ID dan jam lokal + label WIB/WITA/WIT (NFR-07, BR-NORM-06), format rentang perkiraan, mask kontak, label band, claim type & keyakinan | `apps/web/**/*.test.ts` | Setiap MR |
+| Unit (Go) | `go test -race`, **table-driven** | Aturan murni: BR-NORM-03..06, BR-EST, BR-TRUST, Lampiran C (metrik wilayah), E (estimasi), F (analisis lokasi), validator rujukan fakta AI | `apps/api/internal/<modul>/*_test.go` | Setiap MR |
+| Unit (frontend) | **Vitest** | Util saja: format Rupiah/angka/tanggal id-ID dan jam lokal + label WIB/WITA/WIT (NFR-07, BR-NORM-06), format rentang perkiraan, label claim type & keyakinan | `apps/web/**/*.test.ts` | Setiap MR |
 | Integration | `go test -tags=integration` + **PostgreSQL 16 + PostGIS** sebagai GitLab CI `services:` | API (handler hasil oapi-codegen via `httptest`) + DB nyata: RLS, `percent_rank()`, point-in-polygon, radius analisis lokasi, ledger, job River (dijalankan inline), import end-to-end dari **DB sumber fixture** (database kedua `gmaps_fixture` di service yang sama, 06), rantai hitung ulang, golden test | `apps/api/internal/<modul>/*_integration_test.go` | Setiap MR |
 | Kontrak API | oapi-codegen + generator client TS | `contracts/openapi.yaml` → kode Go & `packages/api-client` ter-generate ulang tanpa diff (`git diff --exit-code`) | CI job | Setiap MR |
 | E2E | **Playwright** (Chromium di MR) | 7 journey kritis (tabel di bawah) di stack Docker Compose dengan data fixture | `apps/web/e2e/` | Setiap MR; smoke J-2 di staging setelah deploy `main` |
@@ -40,12 +40,12 @@
 
 | ID | Journey | FR |
 |---|---|---|
-| J-1 | Daftar → verifikasi email (Mailpit, hanya di stack test CI, jadi J-1 tidak jalan di staging) → tujuan **Kompetitor & omzet** → daftar bisnis dengan perkiraan omzet tampil. Akun kedua: tujuan **Cari prospek** → wizard Offering + ICP → hasil pertama | FR-AUTH-01, FR-ICP-01 |
-| J-2 | Search kata kunci + filter kelompok estimasi & punya pola keramaian + urut perkiraan omzet → profil: panel perkiraan (rentang, sumber harga, parameter, "Data per", penanda), pola keramaian + padanan tabel, riwayat ulasan, claim type tiap nilai, kontak ter-mask, tautan Google Maps; dengan ICP aktif: skor + "Kenapa bisnis ini?" | FR-SRCH-01, FR-PROF-01, FR-EST-01..05, FR-INTL-01 |
-| J-3 | Unlock 1 bisnis (saldo −1) → tambah ke list → tampilan Estimasi di list → export CSV dengan preview biaya → file terunduh dengan kolom estimasi | FR-ACT-01..03 |
+| J-1 | Daftar → verifikasi email (Mailpit, hanya di stack test CI, jadi J-1 tidak jalan di staging) → onboarding menampilkan tepat 2 tujuan → **Kompetitor & omzet** → daftar bisnis dengan perkiraan omzet tampil. Akun kedua: tujuan **Analisis lokasi** → form analisis baru tampil dengan saldo grant awal (D-36) | FR-AUTH-01, FR-ONB-01 |
+| J-2 | Search kata kunci + filter kelompok estimasi & punya pola keramaian + urut perkiraan omzet → profil: panel perkiraan (rentang, sumber harga, parameter, "Data per", penanda), pola keramaian + padanan tabel, riwayat ulasan, claim type tiap nilai, website & akun sosial, tautan Google Maps; tidak ada nomor telepon di halaman (tampilan telepon: F2, D-40) | FR-SRCH-01, FR-PROF-01, FR-EST-01..05, FR-INTL-01 |
+| J-3 | Simpan 2 bisnis ke list → tambah catatan → detail list dengan kolom estimasi (tabel perbandingan) → export CSV dari list → riwayat export "Selesai" → file terunduh berisi kolom estimasi, website & akun sosial, tanpa kolom telepon (F2, D-40); saldo credit tetap | FR-ACT-01, FR-ACT-03 |
 | J-4 | Peringkat wilayah per kelompok estimasi → tabel padanan peta tampil → drilldown ke daftar bisnis dan ke form analisis lokasi (tiles di-intercept `page.route`) | FR-GEO-01, FR-INTL-03 |
-| J-5 | Admin daftar webhook (penerima test) → kirim bisnis terpilih → log pengiriman; buat narasi AI profil (LLM fake) dengan 5 bagian dan rujukan fakta | FR-ACT-04, FR-ACT-05 |
-| J-6 | Login ops + TOTP → buat plan & tetapkan ke workspace → grant credit → saldo workspace bertambah → ubah parameter estimasi → estimasi di profil berubah → status import (snapshot terakhir, jeda) tampil → matikan flag AI → tambah suppression → kontak tersembunyi | FR-AUTH-03, FR-OPS-01, FR-EST-06, FR-BILL-01, FR-PRIV-02 |
+| J-5 | Simpan pencarian (kata kunci + filter) → buka ulang dari tab Pencarian tersimpan: kata kunci & filter utuh, jumlah hasil dihitung saat dibuka; buat narasi AI profil (LLM fake) dengan 5 bagian dan rujukan fakta → saldo AI −1; buka lagi → dari cache, saldo tetap | FR-SRCH-02, FR-ACT-05 |
+| J-6 | Login ops + TOTP → buat plan & tetapkan ke workspace → grant credit → saldo workspace bertambah → ubah parameter estimasi → estimasi di profil berubah → status import (snapshot terakhir, jeda) tampil → matikan flag AI → tombol narasi nonaktif → tambah suppression satu bisnis → bisnis hilang dari search dan profil | FR-AUTH-03, FR-OPS-01, FR-EST-06, FR-BILL-01, FR-PRIV-02 |
 | J-7 | Dari profil "Analisis lokasi di sini" → ubah radius, kelompok, harga rencana, pembanding → dialog 1 credit → hasil (CI: data GT-02, kesimpulan sesuai §4.1) + tabel padanan chart → keluar, buka ulang dari daftar (saldo tetap) → narasi AI (LLM fake) → feedback Relevan | FR-LOC-01, FR-INTL-05, FR-ACT-05, FR-BILL-01 |
 
 **Kapan jalan**
@@ -68,15 +68,17 @@
 
 ## 3. Cakupan per area
 
+Satu baris per FR F1 (PRD §9). FR F2 (PRD §9.1) dan bagian F2 dari FR F1 ada di §9.1.
+
 | ID | Yang diuji | Level | TC / GT / EC |
 |---|---|---|---|
 | **AUTH** | | | |
-| FR-AUTH-01 | Email belum terverifikasi → data 403. Login email/password & verifikasi via E2E. Login Google: cek manual di staging (§7) | I, E | TC-AUTH-01 |
+| FR-AUTH-01 | Email belum terverifikasi → data 403. Login email/password & verifikasi via E2E. Login Google: cek manual di staging (§7) | I, E | TC-AUTH-01, J-1 |
 | FR-AUTH-02 | Workspace dibuat saat daftar; undang anggota; matriks role Admin vs Member → 403; batas seat plan saat undang | I | TC-AUTH-02, TC-AUTH-04 |
 | FR-AUTH-03 | Akun ops tanpa MFA (AAL1) ditolak | I, E | TC-AUTH-03 |
 | **DATA** | | | |
 | FR-DATA-01 | Import inkremental dari DB sumber (read-only): import pertama membaca seluruh riwayat, upsert per ID tempat, riwayat per tempat per hari, import ulang rentang sama tanpa duplikat, filter negara, laporan (snapshot baru, tempat baru, berubah, dilewati, ditolak per alasan), cek kolom sumber, kolom yang tidak diimpor, kiriman mingguan (muat atomik, tumpang-tindih 1 hari) | U, I | TC-DATA-01, TC-DATA-05, TC-DATA-09, TC-DATA-12, TC-DATA-13, TC-DATA-14, EC-07, EC-12 |
-| FR-DATA-02 | BR-NORM-01..06: telepon, URL & sosial, kategori dwibahasa, harga, jam buka, `popular_times`, distribusi bintang, zona waktu lokal, penggabungan snapshot, atribut & pemilik | U, I | TC-DATA-02..04, TC-DATA-06..08, TC-DATA-10, TC-DATA-11, EC-01..06, EC-09, EC-10, EC-14, EC-16 |
+| FR-DATA-02 | BR-NORM-03..06: kategori dwibahasa, harga, jam buka, `popular_times`, distribusi bintang, zona waktu lokal, penggabungan snapshot, atribut & pemilik; `phone`, website, dan akun sosial disimpan apa adanya (BR-NORM-01/02 di F2) | U, I | TC-DATA-01, TC-DATA-04, TC-DATA-06..08, TC-DATA-10, TC-DATA-11, EC-02, EC-06, EC-09, EC-10, EC-14, EC-16 |
 | FR-DATA-03 | `msp tool geo-sync --country ID` dari rekaman GeoAPI: 4 level, populasi, atribusi, idempoten, throttle ≤ 120 req/menit | U, I | TC-GEO-01 |
 | FR-DATA-04 | Point-in-polygon → rantai kelurahan → provinsi; tanpa koordinat / di luar semua poligon → "Tidak diketahui" (tanpa fallback desa terdekat). ≥ 98% dicek di staging | I | TC-GEO-02, EC-08 |
 | **EST** | | | |
@@ -90,36 +92,31 @@
 | FR-LOC-01 | Lampiran F: tetangga & data cukup, pola tetangga, jam inti & saran jam buka, pembanding, posisi harga, sumber pengunjung siang, keyakinan; simpan, buka ulang, credit | U, I, E | TC-LOC-01..06, GT-02, J-7 |
 | **INTL** | | | |
 | FR-INTL-01 | Claim type + sumber + tanggal data untuk setiap nilai, termasuk estimasi dan analisis lokasi; freshness (BR-TRUST-01..03) | U, I, E | TC-INTL-06, TC-INTL-07 |
-| FR-INTL-02 | Tiap kode Lampiran B: kasus terpicu & tidak; relevansi per Offering; guard BR-OPP-01; teks alasan terisi | U | TC-INTL-01, TC-INTL-02 |
 | FR-INTL-03 | Rumus Lampiran C per kelompok estimasi (kelompok `lainnya`: semua bisnis), "Data terbatas", ambang kompetisi, permintaan terbukti, rentang harga, label "Populasi: perkiraan model Kontur 2023" | U, I | TC-GEO-03, TC-GEO-04, EC-11 |
-| FR-INTL-04 | Lampiran A, BR-SCORE-01..03: kecocokan ICP (termasuk Sebagian), renormalisasi, coverage, band & cap, persentil di Postgres, determinisme per versi `priority-X.Y.Z` | U, I | TC-INTL-03..05, TC-ICP-02 |
-| FR-INTL-05 | Feedback Relevan/Tidak relevan pada opportunity dan kesimpulan analisis lokasi tersimpan per workspace, tidak bocor ke workspace lain | I, E | TC-PRIV-01, J-7 |
-| **ICP** | | | |
-| FR-ICP-01 | Onboarding per tujuan sampai hasil pertama | E | J-1 |
-| FR-ICP-02 | Beberapa ICP per workspace, satu ICP aktif per user, ganti ICP → skor & urutan berubah | I | TC-ICP-01 |
+| FR-INTL-05 | Feedback Relevan/Tidak relevan pada kesimpulan analisis lokasi tersimpan per workspace, tidak bocor ke workspace lain | I, E | TC-PRIV-01, J-7 |
+| **ONB** | | | |
+| FR-ONB-01 | Onboarding dengan 2 tujuan (Analisis lokasi, Kompetitor & omzet) sampai hasil pertama; ≤ 5 menit dicek founder di gerbang (§7 butir 6) | E | J-1 |
 | **SRCH / PROF / GEO** | | | |
-| FR-SRCH-01 | Kata kunci + tiap filter (termasuk kelompok estimasi, rentang omzet, punya pola keramaian) + kombinasi; urut skor / kunjungan / omzet / laju ulasan; jumlah hasil = total item yang dipaginasi | I | TC-SRCH-01 |
-| FR-SRCH-02 | Simpan pencarian → buka ulang → kata kunci & filter utuh, hasil dihitung ulang dari data terbaru (segment dinamis) | I | — |
-| FR-PROF-01 | Semua bagian profil: panel perkiraan (dan varian hotel), pola keramaian + tabel, riwayat ulasan, harga, jam buka, atribut, penanda listing diklaim, tombol analisis lokasi; kontak ter-mask sampai unlock; tautan Maps dari `cid` | I, E | TC-INTL-06, TC-DATA-11, J-2 |
+| FR-SRCH-01 | Kata kunci + tiap filter (kategori, kelompok estimasi, wilayah, rentang omzet, punya pola keramaian, ada website/sosial, rating) + kombinasi; urut kunjungan / omzet / laju ulasan; jumlah hasil = total item yang dipaginasi | I, E | TC-SRCH-01, J-2 |
+| FR-SRCH-02 | Simpan pencarian → buka ulang → kata kunci & filter utuh, hasil dihitung ulang dari data terbaru (segment dinamis) | E | J-5 |
+| FR-PROF-01 | Semua bagian profil: panel perkiraan (dan varian hotel), pola keramaian + tabel, riwayat ulasan, harga, jam buka, atribut, penanda listing diklaim, website & akun sosial, tombol analisis lokasi, tautan Maps dari `cid`; nomor telepon tidak ada di respons maupun halaman (F2, D-40) | I, E | TC-INTL-06, TC-DATA-11, J-2 |
 | FR-GEO-01 | Peringkat kecamatan/kelurahan per kelompok estimasi (urutan Lampiran C), peta selalu punya tabel, drilldown ke bisnis dan analisis lokasi | I, E | TC-GEO-04, J-4 |
 | **ACT / BILL** | | | |
-| FR-ACT-01 | List, tag, catatan, assign ke anggota workspace yang sama saja; tampilan Estimasi di list | I, E | J-3 |
-| FR-ACT-02 | Unlock 1 credit, permanen, idempotent, juga saat paralel | I | TC-ACT-01 |
-| FR-ACT-03 | Preview biaya, export tanpa unlock (telepon ter-mask, gratis), "Unlock & export" menagih lewat unlock, export gagal bisa diulang tanpa biaya, tanpa tagih ganda, batas 10.000 baris, kolom estimasi | I, E | TC-ACT-02, TC-ACT-05 |
-| FR-ACT-04 | Validasi URL (SSRF), HMAC, retry, log pengiriman, batas 100 bisnis | U, I | TC-ACT-03..05 |
-| FR-ACT-05 | Narasi profil dan analisis lokasi: 5 bagian, fakta saja + rujukan, tanpa telepon (BR-AI-01), fallback, cache 7 hari, kill switch, AI credit (Lampiran D); provider/model/fallback dari pengaturan ops berlaku ≤ 60 s, API key tidak pernah keluar lewat API | U, I | TC-AI-01..04 |
-| FR-BILL-01 | Saldo = jumlah ledger; idempotency key; grant & refund oleh ops; plan dikelola ops; grant bulanan otomatis idempotent; batas seat; debit analisis lokasi (tidak ditagih bila "Tidak dapat dianalisis") | U, I | TC-ACT-01, TC-LOC-04, TC-BILL-01, TC-BILL-02, TC-AUTH-04 |
+| FR-ACT-01 | List + catatan; kolom estimasi di list (tabel perbandingan kompetitor); list dan catatan terisolasi per workspace | I, E | TC-PRIV-01, J-3 |
+| FR-ACT-03 | Export CSV async: identitas, wilayah, website & akun sosial, kolom estimasi; tanpa kolom telepon; gratis (0 entri ledger); gagal bisa diulang; batas 10.000 baris | I, E | TC-ACT-02, TC-ACT-05, J-3 |
+| FR-ACT-05 | Narasi profil dan analisis lokasi: 5 bagian, fakta saja + rujukan, tanpa telepon (BR-AI-01), fallback, cache 7 hari, kill switch, AI credit (Lampiran D); provider/model/fallback dari pengaturan ops berlaku ≤ 60 s, API key tidak pernah keluar lewat API | U, I, E | TC-AI-01..04, J-5, J-7 |
+| FR-BILL-01 | Saldo = jumlah ledger; idempotency key; grant & refund oleh ops; plan dikelola ops; grant bulanan otomatis idempotent; grant awal workspace baru; batas seat; debit analisis lokasi (tidak ditagih bila "Tidak dapat dianalisis") dan narasi AI | U, I | TC-LOC-04, TC-AI-03, TC-BILL-01..03, TC-AUTH-04 |
 | **OPS / PRIV** | | | |
-| FR-OPS-01 | Hanya akun ops; grant credit, plan, pengaturan AI, parameter estimasi, status import (snapshot terakhir, jeda, laporan), kesehatan data (% terisi termasuk harga & `popular_times`, % riwayat ≥ 30 hari, % terpetakan), flag, suppression | I, E | TC-AUTH-03, TC-BILL-01, TC-AI-04, TC-EST-06, TC-DATA-01, J-6 |
-| FR-OPS-02 | Audit ditulis untuk tiap aksi (termasuk parameter estimasi); UPDATE/DELETE ditolak | I | TC-OPS-01 |
+| FR-OPS-01 | Hanya akun ops; grant credit, plan, pengaturan AI, parameter estimasi, status import (snapshot terakhir, jeda, laporan), kesehatan data (% terisi termasuk harga & `popular_times`, % riwayat ≥ 30 hari, % terpetakan), flag (AI, export), suppression | I, E | TC-AUTH-03, TC-BILL-01, TC-AI-04, TC-EST-06, TC-DATA-01, J-6 |
+| FR-OPS-02 | Audit ditulis untuk tiap aksi (termasuk analisis lokasi dan parameter estimasi); UPDATE/DELETE ditolak | I | TC-OPS-01 |
 | FR-PRIV-01 | RLS lintas workspace (termasuk analisis lokasi tersimpan) + test katalog: setiap tabel data workspace ber-RLS | I | TC-PRIV-01 |
-| FR-PRIV-02 | Suppression di profil, export, webhook | I | TC-PRIV-02 |
+| FR-PRIV-02 | Suppression bisnis dan URL di tampilan dan export | I, E | TC-PRIV-02, J-6 |
 | **NFR** | | | |
 | NFR-01, NFR-02 | Search, profil, analisis lokasi (p95 ≤ 3 s), export, narasi, durasi import harian: diukur sekali di staging sebelum rilis (§7), bukan di setiap MR | Manual + skrip | — |
-| NFR-05 | RLS, SSRF, akun read-only ke DB sumber, pemindaian secret di pipeline (`06`) | I, CI | TC-PRIV-01, TC-ACT-03, TC-DATA-01 |
+| NFR-05 | RLS, akun read-only ke DB sumber, pemindaian secret di pipeline (`06`) | I, CI | TC-PRIV-01, TC-DATA-01 |
 | NFR-06 | axe di setiap journey + J-2 keyboard-only; status tidak hanya warna; setiap chart punya padanan tabel | E | J-1..7 |
 | NFR-07 | Format id-ID, waktu sistem Asia/Jakarta, jam buka & pola dalam zona lokal tempat | U (Vitest, Go) | TC-DATA-10 |
-| NFR-09 | Coverage paket inti ≥ 80% (normalisasi, estimasi, analisis lokasi, skor, opportunity, metrik wilayah, credit) | CI | — |
+| NFR-09 | Coverage paket inti ≥ 80% (normalisasi, estimasi, analisis lokasi, credit, isolasi workspace) | CI | — |
 
 ---
 
@@ -127,17 +124,15 @@
 
 | ID | Skenario | Ekspektasi | Level | Ref |
 |---|---|---|---|---|
-| TC-DATA-01 | Seed DB sumber fixture lalu `msp tool import --country ID` dua kali; tambah snapshot dengan waktu scrape lebih baru lalu import lagi (sama dengan job `import.run`); lalu `--reset` | Run 1 membaca seluruh riwayat: tempat baru = jumlah tempat ID, snapshot baru = jumlah baris ID. Run 2: 0 snapshot baru, 0 tempat baru, jumlah bisnis & baris riwayat tetap. Run 3: hanya baris baru yang dibaca, tempat yang berubah dihitung "berubah". `--reset` membaca ulang seluruh riwayat → 0 duplikat bisnis maupun riwayat, lalu run berikutnya lanjut dari cursor. Koneksi sumber hanya `SELECT`. Teks, nama, dan foto `user_reviews` serta `status` tidak tersalin ke tabel MSP maupun evidence; dari ulasan hanya tanggal (`newest_review_dates`, TC-EST-07). Status import di `/ops/imports` (snapshot terakhir, jeda, laporan) ikut diperbarui | I | FR-DATA-01, NFR-05, PRD §7.1 |
-| TC-DATA-02 | Normalisasi `phone`: `0812-0000-0001`, `+62 812 0000 0001`, `62812…`, `(024) 831-2345`, `021 555 1234`, `12345` | Seluler → `+62812…` + "Kemungkinan WhatsApp" (Perkiraan); tetap → `+6224…` (Turunan, tanpa WhatsApp); `12345` → tidak valid, tidak dihitung kontak. Nilai mentah selalu tersimpan | U | BR-NORM-01 |
-| TC-DATA-03 | Klasifikasi `website`: `linktr.ee/x`, `instagram.com/x`, `WWW.Instagram.com/x?hl=id`, `wa.me/62812…`, `x.wixsite.com/y`, `warunguji.co.id`, `""`, NULL. `social_links` `{"instagram": "…"}` | aggregator, sosial, sosial, link pesan, subdomain gratis, domain sendiri, kosong, kosong. Akun sosial dari `social_links` tampil sebagai Instagram. Pola dibaca dari file data di `data/` (bukan hard-code) | U | BR-NORM-02 |
+| TC-DATA-01 | Seed DB sumber fixture lalu `msp tool import --country ID` dua kali; tambah snapshot dengan waktu scrape lebih baru lalu import lagi (sama dengan job `import.run`); lalu `--reset` | Run 1 membaca seluruh riwayat: tempat baru = jumlah tempat ID, snapshot baru = jumlah baris ID. Run 2: 0 snapshot baru, 0 tempat baru, jumlah bisnis & baris riwayat tetap. Run 3: hanya baris baru yang dibaca, tempat yang berubah dihitung "berubah". `--reset` membaca ulang seluruh riwayat → 0 duplikat bisnis maupun riwayat, lalu run berikutnya lanjut dari cursor. Koneksi sumber hanya `SELECT`. Teks, nama, dan foto `user_reviews` serta `status` tidak tersalin ke tabel MSP maupun evidence; dari ulasan hanya tanggal (`newest_review_dates`, TC-EST-07). `phone`, `website`, dan `social_links` tersimpan apa adanya (nilai mentah; normalisasi BR-NORM-01/02 di F2). Status import di `/ops/imports` (snapshot terakhir, jeda, laporan) ikut diperbarui | I | FR-DATA-01, FR-DATA-02, NFR-05, PRD §7.1 |
 | TC-DATA-04 | Kategori dwibahasa: `category` "Restaurant" vs "Restoran"; "Cafe", "Kafe", "Coffee shop"; "Hotel", "Hotel bintang 3", "Resor", "Vila", "Penginapan"; "Klinik", "Apotek"; `category` "Restoran" dengan `categories` berisi "Kafe"; `category` "Xyz" dengan `categories` ["Xyz", "Kafe"]; "Xyz" tanpa label lain yang dikenal | Restaurant = Restoran (kategori MSP & kelompok `makan` sama); kafe → `kafe`; akomodasi → `hotel` + kelas akomodasi (bintang 3, resor, vila, penginapan, hotel umum); klinik & apotek → non-F&B jenis kesehatan (Lampiran F); "Restoran" + "Kafe" → tetap `makan` (kategori utama menentukan), "Kafe" tampil sebagai kategori tambahan; kategori utama tak dikenal → label pertama yang dikenal di daftar (`kafe`); tidak ada yang dikenal → "Lainnya" + peringatan `unmapped_category` di laporan (tidak ditolak). Mapping dibaca dari `data/categories.yaml` | U | BR-NORM-03 |
 | TC-DATA-05 | Sumber berisi tempat `address_country` ID, SG, MY, dan kosong (koordinat di dalam / di luar bbox ID), di-import dengan `--country ID`; lalu snapshot lebih baru untuk tempat ID yang sama (1 berubah) + 1 tempat baru | Run 1: hanya tempat ID (termasuk yang kosong dengan koordinat di dalam bbox ID; aturan di 04) menjadi bisnis; sisanya tidak ditulis dan dihitung "dilewati (negara lain)" (bukan ditolak). Run 2: 1 tempat baru, 1 berubah, 0 duplikat; freshness tempat yang punya snapshot baru = tanggal snapshot itu (BR-TRUST-02) | I | FR-DATA-01, D-28 |
 | TC-DATA-06 | Harga per orang: "Rp 25–50K", "Rp 75–200K", "Rp 75-200K" (tanda hubung biasa), "Rp 100–225 rb", "Rp 1–25.000", "Rp 250,000+", "$", "$$", "murah", "", NULL | 25.000–50.000; 75.000–200.000 (dua-duanya); 100.000–225.000; 1–25.000; min 250.000 tanpa max; sisanya "Tidak diketahui" (peringatan `unparsed_price` di laporan, baris tidak ditolak) | U | BR-NORM-04, PRD §7.1 |
 | TC-DATA-07 | `open_hours` kunci hari Indonesia: "08.00–23.00", "17.00–02.00", "Tutup", format tak dikenal. `popular_times` kunci hari Inggris → jam "6".."23": lengkap; satu hari semua 0; satu nilai 101 / −1 / bukan angka. `reviews_per_rating` `{"1":48,…,"5":1319}` | Jadwal Senin–Minggu; lewat tengah malam → tutup 02.00 hari berikutnya; "Tutup" → tutup; tak dikenal → hari itu "Tidak diketahui". Matriks 7 × 24 (jam yang tidak ada = 0); hari semua 0 → tutup; nilai di luar 0–100 → field `popular_times` ditolak (Tidak diketahui) + peringatan `invalid_popular_times`, field lain tetap masuk. Distribusi bintang + persen per bintang | U | BR-NORM-06, FR-DATA-02 |
-| TC-DATA-08 | Satu tempat dengan snapshot: (a) harga hanya di snapshot tertua; (b) telepon kosong di snapshot terbaru tetapi ada di sebelumnya; (c) dua snapshot di hari yang sama (09.00 dan 21.00); (d) kategori "Restaurant" lalu "Restoran" | (a) harga terkini = nilai tertua dengan tanggal snapshot-nya sendiri (freshness dari tanggal itu); (b) telepon = nilai sebelumnya dengan tanggalnya; (c) riwayat hanya 1 baris untuk hari itu, dari snapshot 21.00; riwayat menyimpan jumlah ulasan, rating, distribusi bintang, harga; (d) kelompok tetap `makan`. Field lain dari snapshot terbaru | U, I | BR-NORM-05 |
+| TC-DATA-08 | Satu tempat dengan snapshot: (a) harga hanya di snapshot tertua; (b) website kosong di snapshot terbaru tetapi ada di sebelumnya; (c) dua snapshot di hari yang sama (09.00 dan 21.00); (d) kategori "Restaurant" lalu "Restoran" | (a) harga terkini = nilai tertua dengan tanggal snapshot-nya sendiri (freshness dari tanggal itu); (b) website = nilai sebelumnya dengan tanggalnya; (c) riwayat hanya 1 baris untuk hari itu, dari snapshot 21.00; riwayat menyimpan jumlah ulasan, rating, distribusi bintang, harga; (d) kelompok tetap `makan`. Field lain dari snapshot terbaru | U, I | BR-NORM-05 |
 | TC-DATA-09 | Skema sumber berubah: kolom `price_range` di-rename di fixture; lalu kolom tambahan tak dikenal ditambahkan | Rename → import gagal **saat mulai** dengan pesan `source schema mismatch: <detail>; perbaiki apps/api/internal/ingest/gmaps/source.sql`, 0 baris ditulis, status `failed` (dasar alert 09 AL-10), data lama tetap dipakai. Kolom tambahan → diabaikan, import jalan. Kolom yang diperiksa = yang dipakai `source.sql` | I | FR-DATA-01, PRD §13 |
 | TC-DATA-10 | Zona waktu lokal: Signa Cafe (`timezone` `Asia/Makassar`, jam buka "08.00–23.00", puncak jam 20) dan tempat `Asia/Jakarta` serta `Asia/Jayapura` dengan nilai jam yang sama | Jam ditafsirkan sebagai waktu lokal, tanpa konversi: API & UI menampilkan "08.00–23.00 WITA" dan puncak "20.00 WITA" (bukan 07.00–22.00 WIB); Jakarta → WIB; Jayapura → WIT. Jam inti, tamu per jam, dan saran jam buka analisis lokasi memakai jam lokal yang sama. Waktu sistem ("Data per", log) tetap Asia/Jakarta | U, E | BR-NORM-06, NFR-07 |
-| TC-DATA-11 | `about` berisi grup atribut (populer untuk: Sarapan, Makan siang, Makan malam; tipe pengunjung: Turis); `owner` terisi vs NULL | Profil menampilkan atribut sebagai Teramati per grup. `owner` terisi → "Listing diklaim pemilik"; NULL → "Tidak diketahui". Hanya penanda yang dipakai; isi `owner` tidak ditampilkan | U, I | FR-PROF-01, PRD §7.1 |
+| TC-DATA-11 | `about` berisi grup atribut (populer untuk: Sarapan, Makan siang, Makan malam; tipe pengunjung: Turis); `owner` terisi vs NULL; `website` `linktr.ee/x` dan `social_links` `{"instagram": "…"}` | Profil menampilkan atribut sebagai Teramati per grup. `owner` terisi → "Listing diklaim pemilik"; NULL → "Tidak diketahui". Hanya penanda yang dipakai; isi `owner` tidak ditampilkan. Website dan akun sosial tampil apa adanya sebagai Teramati (tanpa klasifikasi URL; BR-NORM-02 di F2) | U, I | FR-PROF-01, FR-DATA-02, PRD §7.1 |
 | TC-DATA-12 | Satu import per environment: jalankan `msp tool import --country ID` saat import lain sedang memegang kunci (kunci dipegang test); lalu job harian `import.run` terpicu saat kunci dipegang; lalu kunci dilepas | CLI berhenti dengan pesan jelas "import sedang berjalan" tanpa membaca atau menulis apa pun; job harian dilewati (bukan gagal, tidak dicoba ulang terus); setelah kunci dilepas import berjalan normal dan melanjutkan dari cursor | I | FR-DATA-01, 04 §5.1 |
 | TC-DATA-13 | Muat kiriman secara atomik (09 RB-15): `export` dari `source.sql` dijalankan ke `gmaps_fixture` (berperan sebagai DB founder) menjadi kiriman 1 dan kiriman 2; database uji kedua dibuat dengan `create_table` lalu diisi kiriman 1. Kiriman 2 dimuat dengan `TRUNCATE` + `COPY … HEADER MATCH` dalam satu transaksi yang ditahan sebelum commit, sementara `read_batch` dijalankan dari koneksi read-only. Lalu muat file rusak dan file dengan kolom berbeda | Kiriman hanya berisi baris `address_country` ID dan kolom `export` (tanpa `user_reviews`, `status`). `newest_review_dates` hasil `export` sama dengan kolom yang di-seed di fixture (§6). `jsonb`, `text[]`, teks multibaris, NULL vs string kosong sama persis dengan fixture. Query sebelum pemuatan melihat kiriman 1 utuh; query selama pemuatan menunggu commit lalu melihat kiriman 2 utuh; tidak pernah kosong, sebagian, atau campuran. File rusak atau kolom berbeda → transaksi batal dan kiriman 1 tetap utuh; import berikutnya berjalan normal | I | FR-DATA-01, 04 §5.1 |
 | TC-DATA-14 | Tumpang-tindih kiriman: C = `max(created_at)` kiriman 1. Baris R (satu-satunya snapshot tempat baru T, `created_at` = C − 1 jam) belum ada saat kiriman 1 dibuat (transaksinya belum commit). Kiriman 1 dimuat dan di-import; R lalu ditambahkan ke fixture; kiriman 2 = `export` dengan batas C − 1 hari (berisi R, baris kiriman 1 di jendela 1 hari, dan baris baru), dimuat, lalu import dua kali | Import pertama setelah kiriman 2 membaca R walau `created_at`-nya di bawah cursor (jendela 24 jam): T menjadi tepat 1 bisnis dengan 1 baris riwayat. Baris kiriman 1 yang terbaca ulang memberi 0 snapshot baru dan 0 duplikat; baris baru masuk. Import berikutnya: 0 snapshot baru | I | FR-DATA-01, BR-NORM-05, 04 §5.1 |
@@ -158,15 +153,8 @@
 | TC-GEO-02 | Poligon kotak buatan: titik di dalam kelurahan A, tepat di batas A/B, di luar semua poligon (termasuk 100 m dari tepi A) | A + kecamatan/kab/prov induknya; titik batas → tepat satu kelurahan (deterministik); di luar → tidak terpetakan (wilayah "Tidak diketahui", tanpa fallback desa terdekat), masuk hitungan "% terpetakan" | I | FR-DATA-04 |
 | TC-GEO-03 | Metrik area per kelompok estimasi: populasi 499 / 500, jumlah bisnis 4 / 5; persentil kompetisi 32,9 / 33 / 66 / 66,1 | <500 atau <5 → "Data terbatas", metrik tampil, `market_score` kosong; kompetisi Rendah/Sedang/Sedang/Tinggi; dihitung terpisah untuk `makan`, `kafe`, `hotel`; faktor Wilayah memakai kecamatan bila kelurahan terbatas | U | Lampiran C, A |
 | TC-GEO-04 | Kelurahan dengan 2 vs 3 bisnis `makan` ber-estimasi (kunjungan tengah 4.000, 6.000, 8.000) dan 2 vs 3 ber-harga; kelurahan tanpa bisnis ber-estimasi; `GET /areas/ranking?group=` untuk `makan` dan bisnis `lainnya` di profil | 2 → permintaan terbukti & rentang harga "Tidak diketahui"; 3 → jumlah 18.000, rata-rata 6.000 per bisnis, median & sebaran titik tengah harga; `market_score` `geo-3.0.0` memakai bobot Lampiran C, faktor kunjungan yang tidak diketahui dikeluarkan dan bobotnya dibagi ulang. Peringkat urut `market_score`. Bisnis `lainnya` memakai metrik semua bisnis di area | U, I | Lampiran C, FR-GEO-01 |
-| TC-INTL-01 | Guard BR-OPP-01 untuk OPP-WEB-NONE: kelompok 20 bisnis dengan 10 ber-website; 20 dengan 9; 19 dengan 18 | 50% & ≥ 20 → opportunity dibuat untuk yang tanpa website; 45% → tidak dibuat; 19 bisnis → tidak dibuat | U | BR-OPP-01 |
-| TC-INTL-02 | Website = linktr.ee untuk Offering `website_dev`, `social_media`, `reputation_mgmt` | Skor OPP-WEB-SOCIAL = severity × relevansi (1 / 0,6 / 0). Relevansi 0 → bukan opportunity, gap tetap tampil di kartu digital | U | Lampiran B |
-| TC-INTL-03 | Faktor Popularitas & Wilayah tidak diketahui; lalu hitung ulang input yang sama | Faktor dikeluarkan, bobot dibagi ulang, `coverage` = 0,75; breakdown menandai faktor yang dikeluarkan; hasil identik untuk input + `priority-X.Y.Z` sama | U | BR-SCORE-01, FR-INTL-04 |
-| TC-INTL-04 | Band pada skor 59, 60, 79, 80 | COLD, WARM, WARM, HOT | U | BR-SCORE-02 |
-| TC-INTL-05 | Skor 85 dengan coverage 0,59; coverage 0,60; coverage 1 tapi kriteria ICP *wajib* tidak diketahui | WARM + "Data terbatas"; HOT; WARM + "Data terbatas" | U | BR-SCORE-02 |
 | TC-INTL-06 | Buka profil bisnis fixture lengkap, minim, dan hotel | Setiap nilai (termasuk estimasi, pola, riwayat, atribut) punya claim type + sumber + tanggal data, evidence bisa dibuka; estimasi tanpa data → "Belum dapat diperkirakan" + alasan; email/person → "Tidak diketahui"; tidak pernah kosong/"0"/"—" | I, E | FR-INTL-01, FR-PROF-01, BR-TRUST-01/03, BR-EST-01 |
 | TC-INTL-07 | Umur data 180, 181, 365, 366 hari (clock fake) | Baru, Menua, Menua, Usang | U | BR-TRUST-02 |
-| TC-ICP-01 | User ganti ICP aktif; ICP dengan kriteria *wajib* yang tidak cocok | Skor & urutan berubah sesuai ICP baru; bisnis yang gagal kriteria wajib tidak tampil | I | FR-ICP-02, Lampiran A |
-| TC-ICP-02 | ICP kategori Restoran Asia, min. rating 4,0, min. ulasan 20. Bisnis: rating 4,0 / 3,7 / 3,6 / tidak ada; ulasan 20 / 10 / 9; kategori Restoran Asia / kategori lain dengan induk sama / Lainnya | Rating: Cocok / Sebagian / Tidak / Tidak diketahui; ulasan: Cocok / Sebagian / Tidak; kategori: Cocok / Sebagian / Tidak (Lainnya tidak pernah cocok) | U | Lampiran A |
 | TC-SRCH-01 | Kata kunci + filter kategori, kelompok estimasi, kelurahan, rentang perkiraan omzet, punya pola keramaian, band, tipe opportunity, ada telepon, rating minimum; urut skor, kunjungan, omzet, laju ulasan; tanpa ICP dan dengan ICP | ID hasil = himpunan ekspektasi fixture; total = jumlah item seluruh halaman; filter omzet memakai nilai tengah; urut turun dengan tie-break stabil, "Belum dapat diperkirakan" selalu di akhir; semua bisnis yang lolos filter tampil, kolom skor terisi untuk kandidat ICP aktif; urut skor atau filter band → hanya kandidat ICP; tanpa ICP aktif `sort=score` → 422 | I | FR-SRCH-01, FR-ICP-02 |
 | TC-AUTH-01 | Session dengan email belum terverifikasi memanggil endpoint data | 403; setelah verifikasi → 200 | I | FR-AUTH-01 |
 | TC-AUTH-02 | Member: undang anggota, kelola ICP, daftar webhook, lihat usage. Admin: aksi yang sama | Member → 403 untuk semua; Admin → 2xx | I | FR-AUTH-02 |
@@ -174,10 +162,7 @@
 | TC-AUTH-04 | Plan dengan 2 seat: workspace berisi Admin + 1 undangan tertunda mengundang orang ke-3; lalu undangan tertunda dibatalkan dan undang ulang | Ditolak `SEAT_LIMIT` tanpa undangan maupun email; setelah dibatalkan → 2xx | I | FR-AUTH-02, FR-BILL-01 |
 | TC-PRIV-01 | User workspace A membaca/mengubah list, ICP, catatan, feedback (opportunity & kesimpulan analisis), **analisis lokasi tersimpan**, unlock, ledger, export, webhook milik B lewat ID; query langsung dengan konteks A | 404 untuk akses by ID; 0 baris milik B. Test katalog: tiap tabel data workspace punya RLS aktif + policy (menangkap tabel baru tanpa RLS) | I | FR-PRIV-01, NFR-05 |
 | TC-PRIV-02 | Telepon bisnis masuk suppression list setelah di-unlock | Tersembunyi di profil, tidak ada di file export dan payload webhook | I | FR-PRIV-02 |
-| TC-ACT-01 | Unlock bisnis yang sama dua kali berurutan dan 2 request paralel; saldo 0 | Satu debit saja, saldo = jumlah ledger; saldo 0 → ditolak tanpa entri ledger | I | FR-ACT-02, FR-BILL-01, BR-CRED-01 |
 | TC-ACT-02 | "Unlock & export" 10 bisnis (3 sudah di-unlock); lalu job export dibuat gagal (fake `storage` error) dan diulang; export 10 bisnis yang sama tanpa unlock | Tanpa unlock → 0 debit, 7 telepon ter-mask di file. Preview 7 credit; konfirmasi → 7 debit + 7 unlock (via unlock); export gagal → tidak ada debit tambahan; ulang → sukses, tetap total 7 debit. File memuat kolom estimasi (daftar di 04) dengan rentang, sumber harga, dan tanggal data | I | FR-ACT-02/03, BR-CRED-01 |
-| TC-ACT-03 | Daftar URL: skema `http://`; `https://` ke `localhost`, `127.0.0.1`, `2130706433` (desimal), `[::1]`, `10.x`, `172.16.x`, `192.168.x`, `169.254.169.254`, `0.0.0.0`, `[fd00::1]`; host publik yang resolve ke IP privat, host publik yang redirect 302 ke `169.254.169.254` | Semua ditolak saat daftar; IP dicek ulang saat koneksi (resolver fake); redirect tidak diikuti → pengiriman gagal tercatat | U, I | FR-ACT-04, NFR-05 |
-| TC-ACT-04 | Penerima `httptest` membalas 500, 500, 200; lalu selalu 500; body diubah 1 byte | Signature HMAC-SHA256 valid; 3 percobaan tercatat lalu sukses; selalu 500 → berhenti di batas retry, status gagal; body diubah → verifikasi gagal | I | FR-ACT-04 |
 | TC-ACT-05 | Bulk unlock & kirim ke webhook 100 vs 101 bisnis; export 10.000 vs 10.001 baris | Tepat di batas → diterima; 101 / 10.001 → 422 tanpa debit maupun job | I | FR-ACT-02..04 |
 | TC-AI-01 | Buat narasi profil (fixture GT-01) dan narasi analisis lokasi (fixture GT-02) dengan LLM fake; fake membalas kalimat tanpa rujukan fakta, lalu valid | Request ke LLM hanya berisi fakta level bisnis dan hasil hitungan (estimasi, pola, kesimpulan analisis), tanpa telepon (mentah/E.164), nilai kontak, maupun `user_reviews`; narasi punya 5 bagian (masalah, data, cara membaca, kesimpulan, batasan); jawaban tanpa rujukan ditolak → dibuat ulang sekali; gagal lagi → error jelas, tidak ditagih | U, I | FR-ACT-05, BR-AI-01 |
 | TC-AI-02 | Fake Claude membalas 5xx/timeout; lalu keduanya gagal | Request pindah ke fake OpenAI-compatible (base URL & model dari pengaturan AI), provider, model & versi `brief-2.0.0` tercatat; keduanya gagal → error, tanpa narasi tersimpan | I | FR-ACT-05, D-15 |
@@ -271,11 +256,7 @@ Setiap EC = satu tempat di `edge-cases.sql` (§6), dengan nama tempat diawali ID
 
 | ID | Kasus di sumber | Ekspektasi |
 |---|---|---|
-| EC-01 | `website` = `https://linktr.ee/…` | Link aggregator, tidak dihitung "punya website"; OPP-WEB-SOCIAL |
 | EC-02 | `website` NULL vs `""` | Keduanya kosong; website "Tidak diketahui"; OPP-WEB-NONE hanya bila BR-OPP-01 terpenuhi |
-| EC-03 | `website` = `https://wa.me/62812…` | Link pesan, bukan website; OPP-WEB-SOCIAL |
-| EC-04 | `phone` telepon tetap vs seluler, dengan spasi/tanda hubung/kurung | Tipe benar; hanya seluler yang "Kemungkinan WhatsApp"; faktor Kontak 60 vs 80 (Lampiran A) |
-| EC-05 | `phone` kosong; `social_links` ada / tidak ada | Kontak "Tidak diketahui"; faktor Kontak 30 (hanya sosial) atau 0 |
 | EC-06 | `review_rating` ada tanpa `review_count` | Rating Teramati, jumlah ulasan "Tidak diketahui"; laju ulasan "Belum dapat diperkirakan"; Popularitas dikeluarkan dari skor; OPP-REP-LOW-RATING tidak terpicu |
 | EC-07 | Satu `cid` dengan banyak baris (snapshot), termasuk dua baris di hari yang sama | **Bukan duplikat dan bukan error**: satu bisnis, riwayat satu baris per hari (snapshot terakhir hari itu), laporan menghitung snapshot baru (BR-NORM-05) |
 | EC-08 | Koordinat kosong; tempat ID dengan koordinat di luar Indonesia (mis. Singapura) | Bisnis tetap diimpor, wilayah "Tidak diketahui", tidak masuk metrik area; faktor Wilayah dikeluarkan; "Analisis lokasi di sini" nonaktif bila koordinat kosong |
@@ -351,3 +332,83 @@ Cek pendukung (sekali, di staging, sebelum tag; ringan sesuai §2): NFR-01 denga
 Cakupan fitur: [PRD §6](01-prd.md). Tambahan khusus test:
 - F2: E2E per fitur baru; set evaluasi kecil untuk kualitas narasi AI & NL search; E2E semua browser di `main`.
 - F3: load test data > 5 juta tempat di lingkungan terpisah dari production; test deploy tanpa downtime (migrasi kompatibel mundur); cek regresi `EXPLAIN` untuk query utama.
+
+---
+
+## 9. F2 (D-40), tidak dijalankan di F1
+
+Test fitur prospek (PRD §9.1, Lampiran A–B, BR-NORM-01/02, BR-SCORE-01..03, BR-OPP-01) disimpan di sini agar tidak ditulis ulang saat F2 (DRY). **Tidak dijalankan di F1:** kodenya tidak ditulis di F1, ID di bagian ini dikecualikan dari cek ID gerbang (§7 butir 4), dan tidak dibuat sebagai `t.Skip`/`test.skip`. Saat F2 dimulai, baris di sini dipindah kembali ke §2–§5 dan ekspektasinya dicek ulang terhadap PRD saat itu.
+
+### 9.1 Cakupan F2
+
+| ID | Yang diuji | Level | TC / EC / J |
+|---|---|---|---|
+| FR-INTL-02 | Tiap kode Lampiran B: kasus terpicu & tidak; relevansi per Offering; guard BR-OPP-01; teks alasan terisi | U | TC-INTL-01, TC-INTL-02, EC-01, EC-03, EC-05 |
+| FR-INTL-04 | Lampiran A, BR-SCORE-01..03: kecocokan ICP (termasuk Sebagian), renormalisasi, coverage, band & cap, persentil di Postgres, determinisme per versi `priority-X.Y.Z` | U, I | TC-INTL-03..05, TC-ICP-02 |
+| FR-ICP-01 | Jalur onboarding "Cari prospek" (Offering → ICP) sampai hasil pertama | E | J-1 (bagian F2, §9.4) |
+| FR-ICP-02 | Beberapa ICP per workspace, satu ICP aktif per user, ganti ICP → skor & urutan berubah | I | TC-ICP-01 |
+| FR-ACT-02 | Unlock 1 credit, permanen, idempotent, juga saat paralel; batas 100 bisnis | I | TC-ACT-01, TC-ACT-07 |
+| FR-ACT-04 | Validasi URL (SSRF), HMAC, retry, log pengiriman, batas 100 bisnis | U, I, E | TC-ACT-03, TC-ACT-04, TC-ACT-07, J-5 (bagian F2) |
+| BR-NORM-01/02 | Normalisasi telepon (E.164, "Kemungkinan WhatsApp") dan klasifikasi URL website | U | TC-DATA-02, TC-DATA-03, EC-01, EC-03, EC-04 |
+| Bagian F2 dari FR F1 | FR-SRCH-01 (filter band, tipe opportunity, ada telepon; urut skor), FR-PROF-01 (skor, "Kenapa bisnis ini?", opportunity, kontak ter-mask), FR-ACT-01 (tag & assign), FR-ACT-03 (XLSX, kolom telepon, "Unlock & export"), FR-INTL-05 (feedback opportunity), FR-PRIV-02 (suppression kontak) | I, E | TC-ACT-06, §9.2 (perluasan), §9.4 |
+| NFR-05 | Pengecekan SSRF webhook | U, I | TC-ACT-03 |
+| NFR-09 | Coverage paket inti ditambah skor dan opportunity | CI | — |
+
+Tools tambahan F2: unit Go untuk BR-SCORE, BR-OPP, BR-NORM-01/02, Lampiran A–B, validator SSRF, dan HMAC; Vitest untuk mask kontak dan label band; fake penerima webhook (`httptest`) dan resolver DNS fake untuk SSRF.
+
+### 9.2 Test case F2
+
+| ID | Skenario | Ekspektasi | Level | Ref |
+|---|---|---|---|---|
+| TC-DATA-02 | Normalisasi `phone`: `0812-0000-0001`, `+62 812 0000 0001`, `62812…`, `(024) 831-2345`, `021 555 1234`, `12345` | Seluler → `+62812…` + "Kemungkinan WhatsApp" (Perkiraan); tetap → `+6224…` (Turunan, tanpa WhatsApp); `12345` → tidak valid, tidak dihitung kontak. Nilai mentah selalu tersimpan | U | BR-NORM-01 |
+| TC-DATA-03 | Klasifikasi `website`: `linktr.ee/x`, `instagram.com/x`, `WWW.Instagram.com/x?hl=id`, `wa.me/62812…`, `x.wixsite.com/y`, `warunguji.co.id`, `""`, NULL. `social_links` `{"instagram": "…"}` | aggregator, sosial, sosial, link pesan, subdomain gratis, domain sendiri, kosong, kosong. Akun sosial dari `social_links` tampil sebagai Instagram. Pola dibaca dari file data di `data/` (bukan hard-code) | U | BR-NORM-02 |
+| TC-INTL-01 | Guard BR-OPP-01 untuk OPP-WEB-NONE: kelompok 20 bisnis dengan 10 ber-website; 20 dengan 9; 19 dengan 18 | 50% & ≥ 20 → opportunity dibuat untuk yang tanpa website; 45% → tidak dibuat; 19 bisnis → tidak dibuat | U | BR-OPP-01 |
+| TC-INTL-02 | Website = linktr.ee untuk Offering `website_dev`, `social_media`, `reputation_mgmt` | Skor OPP-WEB-SOCIAL = severity × relevansi (1 / 0,6 / 0). Relevansi 0 → bukan opportunity, gap tetap tampil di kartu digital | U | Lampiran B |
+| TC-INTL-03 | Faktor Popularitas & Wilayah tidak diketahui; lalu hitung ulang input yang sama | Faktor dikeluarkan, bobot dibagi ulang, `coverage` = 0,75; breakdown menandai faktor yang dikeluarkan; hasil identik untuk input + `priority-X.Y.Z` sama | U | BR-SCORE-01, FR-INTL-04 |
+| TC-INTL-04 | Band pada skor 59, 60, 79, 80 | COLD, WARM, WARM, HOT | U | BR-SCORE-02 |
+| TC-INTL-05 | Skor 85 dengan coverage 0,59; coverage 0,60; coverage 1 tapi kriteria ICP *wajib* tidak diketahui | WARM + "Data terbatas"; HOT; WARM + "Data terbatas" | U | BR-SCORE-02 |
+| TC-ICP-01 | User ganti ICP aktif; ICP dengan kriteria *wajib* yang tidak cocok | Skor & urutan berubah sesuai ICP baru; bisnis yang gagal kriteria wajib tidak tampil | I | FR-ICP-02, Lampiran A |
+| TC-ICP-02 | ICP kategori Restoran Asia, min. rating 4,0, min. ulasan 20. Bisnis: rating 4,0 / 3,7 / 3,6 / tidak ada; ulasan 20 / 10 / 9; kategori Restoran Asia / kategori lain dengan induk sama / Lainnya | Rating: Cocok / Sebagian / Tidak / Tidak diketahui; ulasan: Cocok / Sebagian / Tidak; kategori: Cocok / Sebagian / Tidak (Lainnya tidak pernah cocok) | U | Lampiran A |
+| TC-ACT-01 | Unlock bisnis yang sama dua kali berurutan dan 2 request paralel; saldo 0 | Satu debit saja, saldo = jumlah ledger; saldo 0 → ditolak tanpa entri ledger | I | FR-ACT-02, FR-BILL-01, BR-CRED-01 |
+| TC-ACT-03 | Daftar URL: skema `http://`; `https://` ke `localhost`, `127.0.0.1`, `2130706433` (desimal), `[::1]`, `10.x`, `172.16.x`, `192.168.x`, `169.254.169.254`, `0.0.0.0`, `[fd00::1]`; host publik yang resolve ke IP privat, host publik yang redirect 302 ke `169.254.169.254` | Semua ditolak saat daftar; IP dicek ulang saat koneksi (resolver fake); redirect tidak diikuti → pengiriman gagal tercatat | U, I | FR-ACT-04, NFR-05 |
+| TC-ACT-04 | Penerima `httptest` membalas 500, 500, 200; lalu selalu 500; body diubah 1 byte | Signature HMAC-SHA256 valid; 3 percobaan tercatat lalu sukses; selalu 500 → berhenti di batas retry, status gagal; body diubah → verifikasi gagal | I | FR-ACT-04 |
+| TC-ACT-06 | "Unlock & export" 10 bisnis (3 sudah di-unlock); lalu job export dibuat gagal (fake `storage` error) dan diulang; export 10 bisnis yang sama tanpa unlock; ulangi dengan format XLSX | Tanpa unlock → 0 debit, 7 telepon ter-mask di file. Preview 7 credit; konfirmasi → 7 debit + 7 unlock (via unlock); export gagal → tidak ada debit tambahan; ulang → sukses, tetap total 7 debit. File memuat kolom estimasi (daftar di 04) dengan rentang, sumber harga, dan tanggal data. XLSX memuat kolom yang sama dengan CSV | I | FR-ACT-02/03, BR-CRED-01; dulu TC-ACT-02 (v0.3) |
+| TC-ACT-07 | Bulk unlock & kirim ke webhook 100 vs 101 bisnis | Tepat di batas → diterima; 101 → 422 tanpa debit maupun job | I | FR-ACT-02, FR-ACT-04; dulu bagian TC-ACT-05 (v0.3) |
+
+**Perluasan F2 untuk TC F1.** TC F1 di §4 diperluas dengan skenario berikut saat fiturnya dibangun:
+
+| TC F1 | Skenario tambahan | Ekspektasi tambahan | Ref |
+|---|---|---|---|
+| TC-SRCH-01 | Filter band, tipe opportunity, ada telepon; urut skor; tanpa ICP dan dengan ICP | Kolom skor terisi untuk kandidat ICP aktif; urut skor atau filter band → hanya kandidat ICP; tanpa ICP aktif `sort=score` → 422 | FR-SRCH-01, FR-ICP-02 |
+| TC-AUTH-02 | Member: kelola ICP, daftar webhook | Member → 403; Admin → 2xx | FR-AUTH-02 |
+| TC-PRIV-01 | Workspace A membaca/mengubah ICP, feedback opportunity, unlock, dan webhook milik B | 404 by ID; 0 baris milik B | FR-PRIV-01 |
+| TC-PRIV-02 | Telepon bisnis masuk suppression list setelah di-unlock | Tersembunyi di profil, tidak ada di file export dan payload webhook; tidak bisa di-unlock dan tidak ditagih | FR-PRIV-02 |
+| TC-OPS-01 | Aksi teraudit tambahan: unlock, webhook | Satu entri per aksi | FR-OPS-02 |
+| TC-GEO-03 | Kelurahan "Data terbatas" | Faktor Wilayah skor prioritas memakai kecamatan | Lampiran A |
+
+### 9.3 Edge case F2
+
+Tempat fixture EC di bawah tetap ada di `edge-cases.sql`. Di F1 tempat itu cukup terimpor tanpa error dengan nilai tersimpan apa adanya (TC-DATA-01); ekspektasi di bawah baru diperiksa di F2.
+
+| ID | Kasus di sumber | Ekspektasi |
+|---|---|---|
+| EC-01 | `website` = `https://linktr.ee/…` | Link aggregator, tidak dihitung "punya website"; OPP-WEB-SOCIAL |
+| EC-03 | `website` = `https://wa.me/62812…` | Link pesan, bukan website; OPP-WEB-SOCIAL |
+| EC-04 | `phone` telepon tetap vs seluler, dengan spasi/tanda hubung/kurung | Tipe benar; hanya seluler yang "Kemungkinan WhatsApp"; faktor Kontak 60 vs 80 (Lampiran A) |
+| EC-05 | `phone` kosong; `social_links` ada / tidak ada | Kontak "Tidak diketahui"; faktor Kontak 30 (hanya sosial) atau 0 |
+
+Tambahan F2 untuk EC F1 (§5): EC-02 → OPP-WEB-NONE hanya bila BR-OPP-01 terpenuhi. EC-06 → Popularitas dikeluarkan dari skor; OPP-REP-LOW-RATING tidak terpicu. EC-08 → faktor Wilayah dikeluarkan. EC-11 → faktor Wilayah memakai kecamatan.
+
+### 9.4 Bagian F2 dari journey E2E
+
+ID journey tetap J-1..J-7 (dirujuk `06` dan `07`). Langkah berikut ditambahkan ke journey yang sama saat F2:
+
+| Journey | Langkah tambahan | FR |
+|---|---|---|
+| J-1 | Akun ketiga: tujuan **Cari prospek** → wizard Offering + ICP → hasil pertama | FR-ICP-01 |
+| J-2 | Dengan ICP aktif: skor + "Kenapa bisnis ini?"; kontak ter-mask | FR-INTL-04, FR-ACT-02 |
+| J-3 | Unlock 1 bisnis (saldo −1) sebelum masuk list; export dengan preview biaya ("Unlock & export") | FR-ACT-02, FR-ACT-03 |
+| J-5 | Admin daftar webhook (penerima test) → kirim bisnis terpilih → log pengiriman | FR-ACT-04 |
+| J-6 | Tambah suppression telepon → kontak tersembunyi | FR-PRIV-02 |
+
+Gerbang F2 menambah TC-ACT-01 (unlock) dan TC-ACT-03 (SSRF) ke cek "test otomatis lulus" (§7 butir 4).

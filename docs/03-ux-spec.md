@@ -189,7 +189,7 @@ Tidak dibangun di F1. Rancangan fiturnya ada di PRD §9.1. Di F1, membandingkan 
 | Pola keramaian (FR-EST-04, Lampiran E §E.4) | Label tetap (bukan tooltip): **"Relatif terhadap jam tersibuk tempat ini, bukan jumlah orang."** · "Data per <tanggal>" · zona waktu lokal. Tab **Rata-rata 7 hari** · Sen … Min. Chart "Pola keramaian satu tempat" (02 §3.3 Chart F1); jam puncak diberi label teks. Ringkasan: jam puncak (juga per hari), jam inti, **"Ramai sepanjang hari"** bila pola datar, keramaian rata-rata ("rata-rata 76% dari jam tersibuknya"), bentuk per blok waktu (Pagi/Siang/Sore/Malam/Larut, %). **Lihat sebagai tabel** (NFR-06): jam · nilai · perkiraan tamu per jam (tengah, hanya bila kunjungan diketahui). Hari dengan semua nilai 0 → "Tutup". Tanpa `popular_times` → BELUM DAPAT DIPERKIRAKAN ("data pola keramaian tidak tersedia untuk tempat ini") |
 | Riwayat ulasan (FR-EST-01) | Chart "Riwayat ulasan" (02 §3.3): jumlah ulasan per hari snapshot · laju setahun dan laju 90 hari terakhir. "Lihat data" → tabel tanggal, jumlah ulasan, rating. Laju ditulis dengan sumbernya, sama seperti di panel perkiraan. Riwayat < 30 hari → catatan "Riwayat snapshot sejak <tanggal>"; laju dari ulasan terbaru bila ada, laju 90 hari "Tidak diketahui". Kedua metode tidak tersedia → copy `review_data_insufficient` (§7) |
 | Harga, jam buka & atribut | Harga per orang (Teramati + tanggal snapshot-nya, BR-NORM-05) · jam buka per hari + zona · atribut tempat (Populer untuk, Tipe pengunjung, opsi layanan; Teramati) |
-| Kehadiran digital | Website · akun sosial · rating & jumlah ulasan (Teramati, ditampilkan apa adanya) · "Lihat di Google Maps". URL yang di-suppress tidak tampil (FR-PRIV-02) |
+| Kehadiran digital | Website · akun sosial · rating & jumlah ulasan (Teramati, ditampilkan apa adanya). URL yang di-suppress tidak tampil (FR-PRIV-02) |
 | Konteks wilayah | Kelurahan: populasi (perkiraan model Kontur 2023), jumlah & densitas bisnis sekelompok per 1.000 (kelompok `lainnya`: semua bisnis, Lampiran C), kompetisi, permintaan terbukti, `market_score` → "Lihat wilayah" (SCR-05) |
 | Narasi AI | FLOW-04. Teks `text.body-lg`, rujukan `[n]` |
 | Aksi & kerja tim | Simpan ke list · ‹ › bisnis berikutnya. Panel list & catatan (FR-ACT-01) |
@@ -322,16 +322,16 @@ Pola band (`ScoreBadge`) dan kontak ter-mask (`MaskedValue`) tidak dipakai di F1
 
 Wireframe bersifat struktural. WF-02 memakai data golden test Signa Cafe dan WF-04 memakai Warung Kita (05 §4.1). Nama lain fiktif. Alamat dan nilai yang tidak ada di fixture ditulis sebagai `<…>`.
 
-### WF-01 — Bisnis, tampilan Estimasi tanpa ICP (SCR-03, ≥ 1280 px)
+### WF-01 — Bisnis (SCR-03, ≥ 1280 px)
 
 ```
 +------------------------------------------------------------------------------------------------------------+
-| MesinProspek  Kopi Nusantara   ICP aktif: [Tanpa ICP v]                         Credit 12 · AI 20   [RA v] |
+| MesinProspek  Kopi Nusantara                                                    Credit 12 · AI 20   [RA v] |
 +-------------+------------------------+---------------------------------------------------------------------+
 | > Bisnis    | FILTER         [Reset] | [Cari nama, kategori, alamat...                ] [Simpan pencarian] |
 |   Analisis  | Kelompok estimasi      | Makan (x)  Provinsi Bali (x)  Punya pola keramaian (x)              |
 |   lokasi    |  (o) Makan  ( ) Kafe   |---------------------------------------------------------------------|
-|   Wilayah   |  ( ) Hotel             | 214 bisnis     Tampilan: [Estimasi | Prospek]   Urut: [Omzet v]     |
+|   Wilayah   |  ( ) Hotel             | 214 bisnis                                      Urut: [Omzet v]     |
 |   List      | Wilayah                |---------------------------------------------------------------------|
 |   Export    |  Bali > [Semua kab v]  | [ ] BISNIS & LOKASI      KUNJUNGAN/THN   OMZET/THN       POLA       |
 |   Pengatur. | Perkiraan omzet/thn    |---------------------------------------------------------------------|
@@ -339,7 +339,7 @@ Wireframe bersifat struktural. WF-02 memakai data golden test Signa Cafe dan WF-
 |             | Pola keramaian         |     Restoran · <kel.>    13.800–27.600   1,8–3,6 M       sepanjang  |
 |             |  [x] Punya pola        |     Data per 24 Sep 2026 laju 276/thn    harga sendiri   hari       |
 |             | Kategori, rating,      |                                          [!] ulasan bintang 5       |
-|             | kontak & digital   [+] |---------------------------------------------------------------------|
+|             | website & sosial   [+] |---------------------------------------------------------------------|
 |             |                        | [ ] Rumah Makan Contoh   6.700           Rp270 jt        Puncak     |
 |             |                        |     Restoran · <kel.>    5.000–10.000    200–400 jt      19.00 WITA |
 |             |                        |     Data per 20 Sep 2026 laju 100/thn    median kab/kota            |
@@ -350,12 +350,11 @@ Wireframe bersifat struktural. WF-02 memakai data golden test Signa Cafe dan WF-
 |             |                        |---------------------------------------------------------------------|
 |             |                        | Menampilkan 50 dari 214                           [Muat 50 lagi]    |
 +-------------+------------------------+---------------------------------------------------------------------+
-| BAR AKSI (sticky, muncul bila >= 1 dipilih): 2 dipilih · [Simpan ke list] [Tag] [Tugaskan]                 |
-|   [Unlock · 2 credit] [Export] [Kirim ke webhook]  [Batal]                                                 |
+| BAR AKSI (sticky, muncul bila >= 1 dipilih): 2 dipilih · [Simpan ke list] [Export] [Batal]                 |
 +------------------------------------------------------------------------------------------------------------+
 ```
 
-Urut omzet memakai nilai tengah; bisnis yang omzetnya "Belum dapat diperkirakan" tampil di akhir. Sumber harga ditulis sebagai teks. `[!]` dirender sebagai ikon `triangle-alert` dengan `aria-label` berisi kalimat FR-EST-05 utuh. Tampilan Prospek sama dengan baris lama: `ScoreBadge`, opportunity teratas, indikator kontak.
+Urut omzet memakai nilai tengah; bisnis yang omzetnya "Belum dapat diperkirakan" tampil di akhir. Sumber harga ditulis sebagai teks. `[!]` dirender sebagai ikon `triangle-alert` dengan `aria-label` berisi kalimat FR-EST-05 utuh.
 
 ### WF-02 — Profil bisnis (SCR-04, ≥ 1280 px)
 
@@ -364,7 +363,6 @@ Urut omzet memakai nilai tengah; bisnis yang omzetnya "Belum dapat diperkirakan"
 | < Kembali ke hasil   1 dari 214  [<] [>]                                                                   |
 | Signa Cafe                                        [Analisis lokasi di sini] [Simpan ke list] [Google Maps] |
 | Restoran (Turunan) · juga Kafe · <alamat>, Bali · Listing diklaim pemilik (Teramati) · Baru · 17 hari lalu |
-| (Tanpa ICP aktif: "Kenapa bisnis ini?" dan opportunity tidak tampil)                                       |
 +---------------------------------------------------------------------+--------------------------------------+
 | PERKIRAAN KUNJUNGAN & OMZET  [Perkiraan]   Data per 24 Sep 2026     | HARGA, JAM BUKA & ATRIBUT            |
 |                          Rendah      Tengah      Tinggi             | Harga  Rp100.000–225.000 per orang   |
@@ -375,14 +373,14 @@ Urut omzet memakai nilai tengah; bisnis yang omzetnya "Belum dapat diperkirakan"
 |   (10 Feb–24 Sep 2026; 1.336 → 1.507 ulasan) · harga tempat ini     |   Makan malam · Pengunjung: Turis    |
 |   · asumsi: faktor belanja 0,8, review rate 2% / 1,5% / 1%          |                                      |
 |   · buka 7 hari/minggu                                              |--------------------------------------|
-| Pesanan aplikasi pesan-antar umumnya tidak tercakup.                | KONTAK              Belum di-unlock  |
-| [!] Proporsi bintang 5 sangat tinggi (87,5%); bisa jadi lebih       | Telepon [lock] <ter-mask>            |
-|     banyak tamu menulis ulasan dari biasanya, sehingga omzet        |                   [Unlock · 1 credit]|
-|     cenderung di sisi bawah rentang.                                |                                      |
-| [Tabel sensitivitas v]  [Lihat evidence]                est-1.0.0   |                                      |
+| Pesanan aplikasi pesan-antar umumnya tidak tercakup.                | LIST & CATATAN                       |
+| [!] Proporsi bintang 5 sangat tinggi (87,5%); bisa jadi lebih       | List: Kompetitor Bali                |
+|     banyak tamu menulis ulasan dari biasanya, sehingga omzet        | Catatan: "Cek harga menu baru"       |
+|     cenderung di sisi bawah rentang.                                |   Rina A. · 10 Okt 2026              |
+| [Tabel sensitivitas v]  [Lihat evidence]                est-1.0.0   | [+ Tambah catatan]                   |
 |---------------------------------------------------------------------|--------------------------------------|
 | POLA KERAMAIAN   Data per 24 Sep 2026 · waktu lokal WITA            | KEHADIRAN DIGITAL                    |
-| Relatif terhadap jam tersibuk tempat ini, bukan jumlah orang.       | Website signa.cafe  Domain sendiri   |
+| Relatif terhadap jam tersibuk tempat ini, bukan jumlah orang.       | Website signa.cafe (Teramati)        |
 | [Rata-rata 7 hari] [Sen] [Sel] [Rab] [Kam] [Jum] [Sab] [Min]        | Sosial  Instagram (Teramati)         |
 |      |                               #  #  #                        | Rating  4,7 · 1.507 ulasan (Teramati)|
 |      |       #  #  #  #  #  #  #  #  #  #  #  #                     |--------------------------------------|
@@ -394,13 +392,13 @@ Urut omzet memakai nilai tengah; bisnis yang omzetnya "Belum dapat diperkirakan"
 | tersibuknya                                  [Lihat sebagai tabel]  | Masalah · Data · Cara membaca ·      |
 |---------------------------------------------------------------------| Kesimpulan · Batasan                 |
 | RIWAYAT ULASAN                                       [Lihat data]   | [Buat narasi · 1 AI credit]          |
-| 1.336  ___.....-----'''''  1.507        10 Feb 2026 → 24 Sep 2026   |--------------------------------------|
-| Laju setahun 276/tahun · dari riwayat snapshot                      | KERJA TIM                            |
-| 90 hari terakhir 342/tahun                                          | List: Kompetitor Bali · Tag: kafe    |
+| 1.336  ___.....-----'''''  1.507        10 Feb 2026 → 24 Sep 2026   |                                      |
+| Laju setahun 276/tahun · dari riwayat snapshot                      |                                      |
+| 90 hari terakhir 342/tahun                                          |                                      |
 +---------------------------------------------------------------------+--------------------------------------+
 ```
 
-Tab Sel menunjukkan puncak jam 13 (= 100). `[i]` membuka evidence drawer. Setelah unlock, baris telepon menjadi nomor penuh + [Salin] [Telepon] [WhatsApp] + "Di-unlock oleh Rina A. · 10 Okt 2026". Dengan ICP aktif, panel "Kenapa bisnis ini?" (`FactorBar`) dan Opportunity tampil di bawah Riwayat ulasan.
+Tab Sel menunjukkan puncak jam 13 (= 100). `[i]` membuka evidence drawer.
 
 ### WF-03 — Wilayah (SCR-05, ≥ 1280 px)
 
@@ -430,7 +428,7 @@ Tab Sel menunjukkan puncak jam 13 (= 100). `[i]` membuka evidence drawer. Setela
 +-----------------------------------------------------+------------------------------------------------------+
 ```
 
-Tabel dan peta tersinkron: memilih baris menyorot poligon, dan sebaliknya. Tabel adalah padanan peta yang aksesibel (FR-GEO-01). Dengan ICP aktif, tabel menambah kolom bisnis cocok dan HOT/WARM.
+Tabel dan peta tersinkron: memilih baris menyorot poligon, dan sebaliknya. Tabel adalah padanan peta yang aksesibel (FR-GEO-01). Kolom "Skor" = skor pasar (`market_score`, Lampiran C).
 
 ### WF-04 — Hasil analisis lokasi (SCR-13, ≥ 1280 px)
 
@@ -480,7 +478,7 @@ Tabel dan peta tersinkron: memilih baris menyorot poligon, dan sebaliknya. Tabel
 
 ## 7. Copy & format id-ID
 
-Nada: lugas, sopan, tanpa menyalahkan user. Istilah produk mengikuti PRD: *credit*, *unlock*, *export*, *webhook*, *Offering*, *ICP*, *opportunity*, *estimasi*, *analisis lokasi*, *narasi AI*, *jam inti*. Sentence case, tanpa huruf kapital penuh kecuali band HOT/WARM/COLD.
+Nada: lugas, sopan, tanpa menyalahkan user. Istilah produk mengikuti PRD: *credit*, *export*, *list*, *estimasi*, *analisis lokasi*, *narasi AI*, *jam inti*. Sentence case, tanpa huruf kapital penuh.
 
 | Jenis | Format | Catatan |
 |---|---|---|
@@ -494,24 +492,20 @@ Nada: lugas, sopan, tanpa menyalahkan user. Istilah produk mengikuti PRD: *credi
 | Jam buka & jam lokal | 08.00–23.00 WITA · puncak 20.00 WITA | Zona waktu lokal tempat + label WIB/WITA/WIT (BR-NORM-06). Label zona boleh ditulis sekali per panel |
 | Jam pola (blok 1 jam) | jam 17–21 · jam 12–14 dan 17–20 | "jam 21" = 21.00–21.59. Saran jam buka ditulis sebagai jam operasional (16.00–22.00) |
 | Waktu relatif | baru saja · 5 menit lalu · 3 hari lalu | Lebih dari 30 hari → tanggal absolut, kecuali umur data di badge freshness ("Menua · 210 hari lalu"). `<time datetime>` selalu ada |
-| Telepon | +62 812-3456-7890 | Disimpan E.164 (BR-NORM-01) |
 | Credit | 1 credit · 35 credit · 1 AI credit | Tanpa bentuk jamak |
 
 **Pola error:** *[Apa yang terjadi]. [Kenapa, bila diketahui]. [Apa yang bisa dilakukan].* + tombol aksi + `Kode <8 karakter>` (dari correlation ID). Kode teknis tidak dipakai sebagai kalimat utama.
 
 | Situasi | Copy |
 |---|---|
-| Dialog unlock | "Unlock kontak Rumah Makan Sari Rasa? Biaya 1 credit · saldo 184 → 183. Kontak terbuka permanen untuk workspace ini." |
-| Dialog Unlock & export | "Export 120 bisnis (CSV). 85 sudah di-unlock (gratis), 35 akan di-unlock · 35 credit. Saldo 184 → 149. Unlock dijalankan sekarang; bila export gagal, ulangi tanpa biaya." |
+| Dialog export | "Export 120 bisnis (CSV) dengan kolom estimasi, website, dan akun sosial. Gratis. File muncul di halaman Export setelah selesai diproses." |
 | Dialog analisis lokasi | "Jalankan analisis lokasi? Biaya 1 credit · saldo 184 → 183. Hasil tersimpan dan bisa dibuka ulang gratis. Tidak ditagih bila hasilnya Tidak dapat dianalisis." |
-| Credit kurang | "Credit tidak cukup. Aksi ini butuh 35 credit, saldo Anda 20. Minta Admin workspace menambah credit." |
+| Credit kurang | "Credit tidak cukup. Aksi ini butuh 1 credit, saldo Anda 0. Minta Admin workspace menambah credit." |
 | Tidak diketahui | "Tidak diketahui — data sumber tidak memuat jam buka." |
 | Keyakinan rendah | "Keyakinan rendah: hanya 1 tetangga sejenis dengan data keramaian. Cek lapangan: hitung kendaraan parkir di Kampoeng Renon pada jam puncak dan jam sepi selama 2–3 hari." |
 | Tidak dapat dianalisis | "Tidak dapat dianalisis: tidak ada tetangga sejenis dengan data keramaian dalam radius 500 m. Perbesar radius atau lihat F&B lain di bawah." |
 | Tidak didukung tetangga | "Jam inti pembanding 12–14 tidak didukung tetangga: tetangga sejenis tidak ramai di jam ini." |
-| WhatsApp | "Kemungkinan WhatsApp karena nomor seluler. Belum dikonfirmasi." |
-| Export gagal | "Export gagal diproses. Layanan penyimpanan tidak merespons. Kontak yang sudah di-unlock tetap terbuka; coba lagi tanpa biaya. [Coba lagi] · Kode 7F3A21C0" |
-| URL webhook ditolak | "URL tidak dapat dipakai. Alamat ini mengarah ke jaringan privat atau internal. Gunakan URL HTTPS publik." |
+| Export gagal | "Export gagal diproses. Layanan penyimpanan tidak merespons. Coba lagi; export tidak memakai credit. [Coba lagi] · Kode 7F3A21C0" |
 | Seat penuh | "Seat plan Growth sudah terpakai 5 dari 5. Keluarkan anggota atau batalkan undangan, atau hubungi tim MesinProspek untuk menambah seat." |
 | Pengaturan AI disimpan (ops) | "Pengaturan AI disimpan. Narasi baru memakai model ini dalam 1 menit." |
 | Parameter estimasi disimpan (ops) | "Parameter estimasi disimpan. Estimasi semua bisnis sedang dihitung ulang." |
@@ -550,8 +544,8 @@ Nada: lugas, sopan, tanpa menyalahkan user. Istilah produk mengikuti PRD: *credi
 - Tabel: `<th scope>`, `aria-sort` pada kolom urut. Checkbox dan target ≥ 24px (`size.target-min`); 44px di layar sentuh.
 - **Setiap chart punya padanan tabel** (02 §3.3): pola keramaian (profil & analisis), perbandingan pola, rentang estimasi (tabel Rendah · Tengah · Tinggi), dan riwayat ulasan. Sparkline punya ringkasan teks (nilai awal, akhir, laju).
 - Peta wilayah selalu punya padanan tabel peringkat; peta analisis lokasi punya tabel Tetangga. Titik analisis bisa dipilih tanpa peta (pilih bisnis atau wilayah dari pencarian). Radius bisa diisi lewat input angka. Legend berlabel teks.
-- Label screen reader: `ScoreBadge` "Skor prioritas 85, HOT"; `MaskedValue` "Nomor disembunyikan, unlock 1 credit"; `ConfidenceMeter` "Keyakinan rendah, 1 dari 3"; rentang "Perkiraan omzet per tahun, rendah 1,8 miliar, tengah 2,4 miliar, tinggi 3,6 miliar"; `FactorBar` disajikan sebagai `<table>`.
-- `lang="id"`. Progres skor/export/narasi/analisis diumumkan lewat `role="status"`. `prefers-reduced-motion` dihormati (durasi 0 di `tokens.css`).
+- Label screen reader: `ConfidenceMeter` "Keyakinan rendah, 1 dari 3"; rentang "Perkiraan omzet per tahun, rendah 1,8 miliar, tengah 2,4 miliar, tinggi 3,6 miliar".
+- `lang="id"`. Progres export/narasi/analisis diumumkan lewat `role="status"`. `prefers-reduced-motion` dihormati (durasi 0 di `tokens.css`).
 
 ---
 
@@ -559,4 +553,5 @@ Nada: lugas, sopan, tanpa menyalahkan user. Istilah produk mengikuti PRD: *credi
 
 - Analytics produk: F2 (lihat PRD §6).
 - Perbandingan bebas antar bisnis dan antar wilayah, estimasi kategori lain, watch/alert: F2.
+- **Fitur prospek: F2 (D-40, PRD §9.1).** Tidak ada di layar F1: jalur onboarding "Cari prospek" dan pemilih ICP (SCR-02, SCR-08), FLOW-02, tampilan Prospek + filter dan urut skor/opportunity (SCR-03), skor + "Kenapa bisnis ini?" + opportunity + telepon & unlock (SCR-04), HOT/WARM per wilayah (SCR-05), tag & assign (SCR-06), XLSX + "Unlock & export" (SCR-07), webhook (SCR-09), flag webhook dan suppression kontak (SCR-12). Rancangan UX v0.3 di riwayat git dokumen ini bisa menjadi titik awal saat F2 dimulai.
 - F2/F3 lainnya: lihat [PRD §6](01-prd.md).
