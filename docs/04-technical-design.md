@@ -270,10 +270,14 @@ Nilai tak dibulatkan disimpan untuk filter dan urutan. Pembulatan BR-EST-02 hany
 ```sql
 ALTER TABLE lists ENABLE ROW LEVEL SECURITY;  ALTER TABLE lists FORCE ROW LEVEL SECURITY;
 CREATE POLICY ws ON lists
-  USING      (workspace_id = current_setting('app.workspace_id', true)::uuid)
-  WITH CHECK (workspace_id = current_setting('app.workspace_id', true)::uuid);
--- members: tambahan OR user_id = current_setting('app.user_id', true)::uuid  (agar /me bisa daftar workspace)
+  USING      (workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid)
+  WITH CHECK (workspace_id = NULLIF(current_setting('app.workspace_id', true), '')::uuid);
+-- members: tambahan OR user_id = NULLIF(current_setting('app.user_id', true), '')::uuid  (agar /me bisa daftar workspace)
 ```
+
+`NULLIF(…, '')` wajib: di koneksi pool yang pernah menjalankan `InWorkspace`, `current_setting(…, true)` mengembalikan `''`, bukan NULL, sehingga `::uuid` tanpa `NULLIF` melempar error alih-alih mengembalikan 0 baris (terbukti di test WP-03).
+
+Role DB dibuat sekali oleh ops lewat `apps/api/db/roles.sql` (idempoten): `msp_owner` (pemilik skema, dipakai `msp migrate`) dan `msp_app` (runtime, bukan owner, tanpa `BYPASSRLS`). Ekstensi `postgis` dibuat superuser saat database `msp` dibuat; migrasi baseline hanya `CREATE EXTENSION IF NOT EXISTS` (06 §9).
 
 ```go
 // platform/db — satu-satunya jalan ke tabel workspace

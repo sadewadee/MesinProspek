@@ -93,7 +93,7 @@ check:
   services: [{ name: "postgis/postgis:16-3.5", alias: postgres }]
   variables:
     POSTGRES_PASSWORD: test
-    MSP_DATABASE_URL: "postgres://postgres:test@postgres:5432/postgres?sslmode=disable"
+    MSP_TEST_DATABASE_URL: "postgres://postgres:test@postgres:5432/postgres?sslmode=disable"   # superuser khusus test; test membuat & menghapus DB sendiri. CI=true dari GitLab membuat test DB/PostGIS yang hilang gagal, bukan skip
     # DB sumber fixture (05): database kedua di service yang sama, dibuat & di-seed oleh setup test
     MSP_SOURCE_DATABASE_URL: "postgres://postgres:test@postgres:5432/gmaps_fixture?sslmode=disable"
     GOMODCACHE: $CI_PROJECT_DIR/.cache/go-mod
