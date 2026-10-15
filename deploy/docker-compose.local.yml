@@ -12,6 +12,11 @@ x-env: &env
     - .env.local.example
     - { path: .env.local, required: false }
 
+x-kratos: &kratos                                   # kratos and kratos-migrate
+  <<: *env
+  image: oryd/kratos:v26.2.0                        # same version as docker-compose.prod.yml
+  depends_on: { postgres: { condition: service_healthy } }
+
 x-app: &app                                         # api, worker and migrate: same image
   <<: *env
   build: ../apps/api                                # same context as the CI build job
@@ -31,6 +36,7 @@ services:
   web:
     build: { context: .., dockerfile: apps/web/Dockerfile }
     image: msp-local/web
+    <<: *env                                        # MSP_KRATOS_PUBLIC_URL: server-side reads of Kratos flows
     healthcheck: { test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/"], interval: 5s }
 
   api:
@@ -47,12 +53,20 @@ services:
     command: ["msp", "migrate"]
     depends_on: { postgres: { condition: service_healthy } }
 
+  kratos-migrate:                                   # one-shot `kratos migrate sql` (role kratos, DSN) before kratos
+    <<: *kratos
+    command: ["migrate", "sql", "-e", "--yes"]
+
   kratos:
-    image: oryd/kratos:v1.3.1                       # TODO(WP-08): Kratos config in deploy/kratos/
+    <<: *kratos
+    # --dev: cookies without Secure on plain-HTTP localhost. The courier sends email to Mailpit.
     command: ["serve", "-c", "/etc/kratos/kratos.yml", "--dev", "--watch-courier"]
-    <<: *env
-    depends_on: { postgres: { condition: service_healthy } }
+    depends_on:
+      postgres: { condition: service_healthy }
+      kratos-migrate: { condition: service_completed_successfully }
+      mailpit: { condition: service_started }
     volumes: ["./kratos:/etc/kratos:ro"]
+    healthcheck: { test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4434/health/ready"], interval: 5s }
 
   mailpit:
     image: axllent/mailpit:v1.31.2                  # SMTP mailpit:1025 inside the network

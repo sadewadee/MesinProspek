@@ -16,6 +16,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"msp/internal/platform/auth"
 	"msp/internal/platform/config"
 	"msp/internal/platform/db"
 	"msp/internal/platform/httpx"
@@ -96,7 +97,7 @@ func serveAPI(ctx context.Context, cfg config.Config, logger *slog.Logger) error
 
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           httpx.NewRouter(ready, logger),
+		Handler:           httpx.NewRouter(ready, auth.NewClient(cfg.KratosPublicURL), cfg.PublicURL, logger),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

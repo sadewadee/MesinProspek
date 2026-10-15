@@ -70,7 +70,7 @@ docker compose pull --quiet --ignore-buildable
 
 log "Migrating: msp migrate, then Kratos"
 docker compose run --rm worker msp migrate
-docker compose run --rm kratos migrate sql -e --yes
+docker compose run --rm kratos-migrate        # `kratos migrate sql -e --yes`; `up` runs it again, a no-op
 
 log "Starting containers"
 docker compose up -d --build --wait --wait-timeout 300 --remove-orphans

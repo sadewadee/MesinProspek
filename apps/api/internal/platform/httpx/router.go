@@ -3,11 +3,12 @@ package httpx
 
 import (
 	"context"
-	"crypto/rand"
+	"fmt"
 	"log/slog"
 	"net/http"
 
 	"msp/internal/api"
+	"msp/internal/platform/auth"
 )
 
 // ReadyChecker reports whether `msp api` can serve traffic. A non-nil error
@@ -17,15 +18,29 @@ type ReadyChecker func(ctx context.Context) error
 
 // NewRouter returns the handler for `msp api`. All routes come from the
 // generated contract (contracts/openapi.yaml); routes outside /api/v1 are
-// limited to health checks (docs/04 §8).
-func NewRouter(ready ReadyChecker, logger *slog.Logger) http.Handler {
-	return api.Handler(api.NewStrictHandler(server{ready: ready, logger: logger}, nil))
+// limited to health checks (docs/04 §8). Operations need a Kratos session
+// (sessions) unless they are public, and state-changing requests must come
+// from publicURL (docs/04 §9). Every error, including unknown routes, is
+// answered as problem+json by writeError.
+func NewRouter(ready ReadyChecker, sessions *auth.Client, publicURL string, logger *slog.Logger) http.Handler {
+	s := server{ready: ready, sessions: sessions, logger: logger}
+	badRequest := func(w http.ResponseWriter, r *http.Request, err error) {
+		s.writeError(w, r, fmt.Errorf("%w: %w", errBadRequest, err))
+	}
+	strict := api.NewStrictHandlerWithOptions(s, []api.StrictMiddlewareFunc{s.authenticate}, api.StrictHTTPServerOptions{
+		RequestErrorHandlerFunc:  badRequest,
+		ResponseErrorHandlerFunc: s.writeError,
+	})
+	mux := http.NewServeMux()
+	api.HandlerWithOptions(strict, api.StdHTTPServerOptions{BaseRouter: mux, ErrorHandlerFunc: badRequest})
+	return s.sameOrigin(publicURL, s.routes(mux))
 }
 
 // server implements api.StrictServerInterface.
 type server struct {
-	ready  ReadyChecker
-	logger *slog.Logger
+	ready    ReadyChecker
+	sessions *auth.Client
+	logger   *slog.Logger
 }
 
 // GetHealthz reports that the process is alive. It has no dependencies;
@@ -44,16 +59,16 @@ func (s server) GetReadyz(ctx context.Context, _ api.GetReadyzRequestObject) (ap
 	return api.GetReadyz200JSONResponse{Status: api.HealthStatusOk}, nil
 }
 
-// newProblem builds an RFC 9457 problem (docs/04 §8). The request ID is minted
-// here until request logging exists; then it moves to the middleware that
-// logs it, so both carry the same ID.
-func newProblem(status int, code api.ProblemCode, detail string) api.Problem {
-	return api.Problem{
-		Type:      "about:blank",
-		Title:     http.StatusText(status),
-		Status:    status,
-		Code:      code,
-		Detail:    &detail,
-		RequestId: rand.Text(),
+// GetMe returns the identity of the session (placeholder until WP-10).
+func (server) GetMe(ctx context.Context, _ api.GetMeRequestObject) (api.GetMeResponseObject, error) {
+	p, ok := auth.PrincipalFrom(ctx)
+	if !ok {
+		return nil, auth.ErrUnauthenticated
 	}
+	return api.GetMe200JSONResponse{
+		IdentityId: p.IdentityID.String(),
+		Email:      p.Email,
+		Verified:   p.Verified,
+		Aal:        api.MeAal(p.AAL),
+	}, nil
 }

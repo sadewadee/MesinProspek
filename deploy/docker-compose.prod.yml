@@ -14,6 +14,8 @@ services:
   web:                                              # no env_file: web holds no secrets
     image: ${MSP_IMAGE_REPO:?}/web:${MSP_IMAGE_TAG:?}
     restart: unless-stopped
+    environment:                                    # server-side reads of Kratos flows (docs/04 §9)
+      MSP_KRATOS_PUBLIC_URL: ${MSP_KRATOS_PUBLIC_URL:?set MSP_KRATOS_PUBLIC_URL in .env}
     networks: [default, edge]
     healthcheck: { test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/"], interval: 5s }
     deploy: { resources: { limits: { cpus: "1", memory: 2G } } }
@@ -32,16 +34,28 @@ services:
     stop_grace_period: 60s                          # running River jobs can finish
     deploy: { resources: { limits: { cpus: "4", memory: 6G } } }
 
-  kratos:
-    image: oryd/kratos:v1.3.1                       # TODO(WP-08): confirm the version pin
-    # TODO(WP-08): kratos.yml and identity schema in deploy/kratos/ (deploy.sh copies it), DSN for the
-    # kratos database in .env, and serve flags (e.g. courier).
-    command: ["serve", "-c", "/etc/kratos/kratos.yml"]
+  kratos-migrate:                                   # one-shot `kratos migrate sql` as role kratos (DSN); deploy.sh runs it first
+    image: oryd/kratos:v26.2.0                      # same version as kratos below
+    command: ["migrate", "sql", "-e", "--yes"]
     env_file: .env
-    restart: unless-stopped
     depends_on: { postgres: { condition: service_healthy } }
+    deploy: { resources: { limits: { cpus: "0.5", memory: 256M } } }
+
+  kratos:
+    image: oryd/kratos:v26.2.0
+    # Config: kratos/kratos.yml (deploy.sh copies deploy/kratos/); secrets and DSN from .env. The courier
+    # (verification and recovery email) runs inside the server process.
+    command: ["serve", "-c", "/etc/kratos/kratos.yml", "--watch-courier"]
+    env_file: .env
+    environment:
+      SERVE_PUBLIC_BASE_URL: ${MSP_PUBLIC_URL:?set MSP_PUBLIC_URL in .env}/.ory/   # Caddy routes /.ory/* here
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+      kratos-migrate: { condition: service_completed_successfully }
     volumes: ["./kratos:/etc/kratos:ro"]
     networks: [default, edge]                       # public API :4433 via Caddy /.ory/*; admin :4434 stays internal
+    healthcheck: { test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4434/health/ready"], interval: 5s }
     deploy: { resources: { limits: { cpus: "0.5", memory: 512M } } }
 
   postgres:

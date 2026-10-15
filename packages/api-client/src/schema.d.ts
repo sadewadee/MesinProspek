@@ -44,10 +44,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Current user
+         * @description The identity of the Kratos session. Needs a session but not a verified email, so the web app
+         *     can send an unverified user to the verification screen; other operations answer
+         *     403 EMAIL_NOT_VERIFIED until the email is verified (FR-AUTH-01). Placeholder until WP-10
+         *     adds user, membership, role and balance.
+         */
+        get: operations["getMe"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        Me: {
+            /** @description Kratos identity ID (UUID). */
+            identity_id: string;
+            /** @description Email address of the identity (Kratos trait `email`). */
+            email: string;
+            /** @description The email address is verified. */
+            verified: boolean;
+            /**
+             * @description Authenticator assurance level of the session; aal2 = with TOTP.
+             * @enum {string}
+             */
+            aal: "aal1" | "aal2";
+        };
         Health: {
             /** @enum {string} */
             status: "ok";
@@ -79,7 +115,7 @@ export interface components {
          * @description Stable machine-readable error code (docs/04 §8). New codes are added only when used.
          * @enum {string}
          */
-        ProblemCode: "INTERNAL" | "NOT_FOUND" | "UNAUTHENTICATED" | "VALIDATION_FAILED" | "RATE_LIMITED" | "NOT_READY";
+        ProblemCode: "INTERNAL" | "NOT_FOUND" | "UNAUTHENTICATED" | "VALIDATION_FAILED" | "RATE_LIMITED" | "NOT_READY" | "FORBIDDEN" | "EMAIL_NOT_VERIFIED" | "MFA_REQUIRED" | "METHOD_NOT_ALLOWED";
     };
     responses: {
         /** @description Error in RFC 9457 problem details format. */
@@ -147,6 +183,30 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getMe: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The signed-in identity. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Me"];
+                };
+            };
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
             default: components["responses"]["Problem"];
         };
     };

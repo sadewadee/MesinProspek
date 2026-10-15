@@ -28,9 +28,31 @@ func (e HealthStatus) Valid() bool {
 	}
 }
 
+// Defines values for MeAal.
+const (
+	MeAalAal1 MeAal = "aal1"
+	MeAalAal2 MeAal = "aal2"
+)
+
+// Valid indicates whether the value is a known member of the MeAal enum.
+func (e MeAal) Valid() bool {
+	switch e {
+	case MeAalAal1:
+		return true
+	case MeAalAal2:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ProblemCode.
 const (
+	ProblemCodeEMAILNOTVERIFIED ProblemCode = "EMAIL_NOT_VERIFIED"
+	ProblemCodeFORBIDDEN        ProblemCode = "FORBIDDEN"
 	ProblemCodeINTERNAL         ProblemCode = "INTERNAL"
+	ProblemCodeMETHODNOTALLOWED ProblemCode = "METHOD_NOT_ALLOWED"
+	ProblemCodeMFAREQUIRED      ProblemCode = "MFA_REQUIRED"
 	ProblemCodeNOTFOUND         ProblemCode = "NOT_FOUND"
 	ProblemCodeNOTREADY         ProblemCode = "NOT_READY"
 	ProblemCodeRATELIMITED      ProblemCode = "RATE_LIMITED"
@@ -41,7 +63,15 @@ const (
 // Valid indicates whether the value is a known member of the ProblemCode enum.
 func (e ProblemCode) Valid() bool {
 	switch e {
+	case ProblemCodeEMAILNOTVERIFIED:
+		return true
+	case ProblemCodeFORBIDDEN:
+		return true
 	case ProblemCodeINTERNAL:
+		return true
+	case ProblemCodeMETHODNOTALLOWED:
+		return true
+	case ProblemCodeMFAREQUIRED:
 		return true
 	case ProblemCodeNOTFOUND:
 		return true
@@ -65,6 +95,24 @@ type Health struct {
 
 // HealthStatus defines model for Health.Status.
 type HealthStatus string
+
+// Me defines model for Me.
+type Me struct {
+	// Aal Authenticator assurance level of the session; aal2 = with TOTP.
+	Aal MeAal `json:"aal"`
+
+	// Email Email address of the identity (Kratos trait `email`).
+	Email string `json:"email"`
+
+	// IdentityId Kratos identity ID (UUID).
+	IdentityId string `json:"identity_id"`
+
+	// Verified The email address is verified.
+	Verified bool `json:"verified"`
+}
+
+// MeAal Authenticator assurance level of the session; aal2 = with TOTP.
+type MeAal string
 
 // Problem RFC 9457 problem details. Clients branch on `code`, never on the text fields.
 type Problem struct {
@@ -98,6 +146,9 @@ type ProblemCode string
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// GetMe Current user
+	// (GET /api/v1/me)
+	GetMe(w http.ResponseWriter, r *http.Request)
 	// GetHealthz Liveness check
 	// (GET /healthz)
 	GetHealthz(w http.ResponseWriter, r *http.Request)
@@ -114,6 +165,20 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(http.Handler) http.Handler
+
+// GetMe operation middleware
+func (siw *ServerInterfaceWrapper) GetMe(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetMe(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
 
 // GetHealthz operation middleware
 func (siw *ServerInterfaceWrapper) GetHealthz(w http.ResponseWriter, r *http.Request) {
@@ -265,11 +330,94 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/healthz", wrapper.GetHealthz)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/readyz", wrapper.GetReadyz)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/me", wrapper.GetMe)
 
 	return m
 }
 
 type ProblemApplicationProblemPlusJSONResponse Problem
+
+type GetMeRequestObject struct {
+}
+
+type GetMeResponseObject interface {
+	VisitGetMeResponse(w http.ResponseWriter) error
+}
+
+type GetMe200JSONResponse Me
+
+func (response GetMe200JSONResponse) VisitGetMeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMe401ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response GetMe401ApplicationProblemPlusJSONResponse) VisitGetMeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMe403ApplicationProblemPlusJSONResponse Problem
+
+func (response GetMe403ApplicationProblemPlusJSONResponse) VisitGetMeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMe503ApplicationProblemPlusJSONResponse Problem
+
+func (response GetMe503ApplicationProblemPlusJSONResponse) VisitGetMeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMedefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response GetMedefaultApplicationProblemPlusJSONResponse) VisitGetMeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
 
 type GetHealthzRequestObject struct {
 }
@@ -363,6 +511,9 @@ func (response GetReadyzdefaultApplicationProblemPlusJSONResponse) VisitGetReady
 
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
+	// GetMe Current user
+	// (GET /api/v1/me)
+	GetMe(ctx context.Context, request GetMeRequestObject) (GetMeResponseObject, error)
 	// GetHealthz Liveness check
 	// (GET /healthz)
 	GetHealthz(ctx context.Context, request GetHealthzRequestObject) (GetHealthzResponseObject, error)
@@ -408,6 +559,30 @@ type strictHandler struct {
 	ssi         StrictServerInterface
 	middlewares []StrictMiddlewareFunc
 	options     StrictHTTPServerOptions
+}
+
+// GetMe operation middleware
+func (sh *strictHandler) GetMe(w http.ResponseWriter, r *http.Request) {
+	var request GetMeRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetMe(ctx, request.(GetMeRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetMe")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetMeResponseObject); ok {
+		if err := validResponse.VisitGetMeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
 }
 
 // GetHealthz operation middleware

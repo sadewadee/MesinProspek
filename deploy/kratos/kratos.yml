@@ -1,0 +1,109 @@
+# Ory Kratos for every app stack: local, staging and production (docs/04 §9). deploy.sh copies this
+# directory next to compose.yaml; the stacks mount it at /etc/kratos.
+#
+# Same origin: Caddy routes /.ory/* to the public API (:4433); the admin API (:4434) stays inside the
+# Docker networks. UI URLs are paths of the Next.js app on that origin.
+# Values that differ per environment or are secret come from the environment (Kratos reads a key
+# a.b.c from the variable A_B_C), never from this file:
+#   DSN                                Kratos database (postgres://kratos:…@postgres:5432/kratos)
+#   SERVE_PUBLIC_BASE_URL              <MSP_PUBLIC_URL>/.ory/ (the server stacks derive it in Compose)
+#   SECRETS_COOKIE, SECRETS_CIPHER     comma-separated; new secret first, old ones after (docs/09 RB-12)
+#   COURIER_SMTP_CONNECTION_URI        SMTP of the courier (local: Mailpit)
+#   COURIER_SMTP_FROM_ADDRESS          sender address
+#   SELFSERVICE_METHODS_OIDC_ENABLED, SELFSERVICE_METHODS_OIDC_CONFIG_PROVIDERS
+#                                      Google login; off unless both are set
+# Values: deploy/.env.example (servers), deploy/.env.local.example (local).
+
+version: v26.2.0
+
+serve:
+  public:
+    port: 4433
+  admin:
+    port: 4434
+
+selfservice:
+  default_browser_return_url: /
+  allowed_return_urls:
+    - /
+
+  methods:
+    password:
+      enabled: true
+    totp:
+      enabled: true
+      config:
+        issuer: MesinProspek
+    code:
+      # Codes for verification and recovery only, not for passwordless login.
+      enabled: true
+    oidc:
+      enabled: false
+      config:
+        providers: []
+
+  flows:
+    error:
+      ui_url: /auth-error
+    login:
+      ui_url: /login
+      after:
+        password:
+          hooks:
+            # Unverified accounts are sent to verification instead of getting a session.
+            - hook: require_verified_address
+    registration:
+      ui_url: /signup
+      style: unified # email and password on one screen
+      after:
+        password:
+          hooks:
+            # Session right away, then the verification screen: until the email is verified the API
+            # answers 403 EMAIL_NOT_VERIFIED (docs/04 §9) and the app shows only that screen (docs/03 SCR-01).
+            - hook: session
+            - hook: show_verification_ui
+        oidc:
+          hooks:
+            - hook: session
+    verification:
+      enabled: true
+      use: code
+      ui_url: /verify
+      after:
+        default_browser_return_url: /
+    recovery:
+      enabled: true
+      use: code
+      ui_url: /recovery
+    settings:
+      ui_url: /account
+      privileged_session_max_age: 15m
+      required_aal: highest_available
+    logout:
+      after:
+        default_browser_return_url: /login
+
+identity:
+  default_schema_id: default
+  schemas:
+    - id: default
+      url: file:///etc/kratos/identity.schema.json
+
+session:
+  cookie:
+    same_site: Lax
+  whoami:
+    # Accounts with TOTP must use it (docs/04 §9); /sessions/whoami answers 403 for their aal1 sessions.
+    required_aal: highest_available
+
+ciphers:
+  algorithm: xchacha20-poly1305
+
+courier:
+  smtp:
+    from_name: MesinProspek
+
+log:
+  level: info
+  format: json
+  leak_sensitive_values: false

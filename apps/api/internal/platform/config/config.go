@@ -6,6 +6,7 @@ package config
 import (
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"strings"
 )
@@ -21,6 +22,13 @@ type Config struct {
 	// MigrateDatabaseURL connects as the schema owner msp_owner; only
 	// `msp migrate` uses it.
 	MigrateDatabaseURL string
+	// PublicURL is the origin of the app as browsers see it, normalised to
+	// scheme://host[:port], e.g. https://app.example.com. State-changing API
+	// requests must carry it as Origin (docs/04 §9).
+	PublicURL string
+	// KratosPublicURL is the Kratos public API inside the Docker network,
+	// e.g. http://kratos:4433, without a trailing slash.
+	KratosPublicURL string
 }
 
 // Load reads the configuration from the process environment and validates
@@ -37,6 +45,8 @@ func parse(command string, getenv func(string) string) (Config, error) {
 		DatabaseURL:        strings.TrimSpace(getenv("MSP_DATABASE_URL")),
 		MigrateDatabaseURL: strings.TrimSpace(getenv("MSP_MIGRATE_DATABASE_URL")),
 	}
+	publicURL := strings.TrimSpace(getenv("MSP_PUBLIC_URL"))
+	kratosURL := strings.TrimSpace(getenv("MSP_KRATOS_PUBLIC_URL"))
 
 	switch cfg.Env {
 	case "local", "staging", "production":
@@ -52,11 +62,37 @@ func parse(command string, getenv func(string) string) (Config, error) {
 	if command == "migrate" && cfg.MigrateDatabaseURL == "" {
 		return Config{}, fmt.Errorf("config: MSP_MIGRATE_DATABASE_URL is required for msp migrate")
 	}
-	if command == "api" && cfg.DatabaseURL == "" {
-		return Config{}, fmt.Errorf("config: MSP_DATABASE_URL is required for msp api")
+	if command == "api" {
+		if cfg.DatabaseURL == "" {
+			return Config{}, fmt.Errorf("config: MSP_DATABASE_URL is required for msp api")
+		}
+		u, err := httpURL("MSP_PUBLIC_URL", publicURL)
+		if err != nil {
+			return Config{}, err
+		}
+		if (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" || u.User != nil {
+			return Config{}, fmt.Errorf("config: MSP_PUBLIC_URL must be an origin like https://app.example.com, got %q", publicURL)
+		}
+		cfg.PublicURL = u.Scheme + "://" + strings.ToLower(u.Host)
+		if _, err := httpURL("MSP_KRATOS_PUBLIC_URL", kratosURL); err != nil {
+			return Config{}, err
+		}
+		cfg.KratosPublicURL = strings.TrimSuffix(kratosURL, "/")
 	}
 
 	return cfg, nil
+}
+
+// httpURL parses the absolute http(s) URL raw of the variable name.
+func httpURL(name, raw string) (*url.URL, error) {
+	if raw == "" {
+		return nil, fmt.Errorf("config: %s is required for msp api", name)
+	}
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return nil, fmt.Errorf("config: %s must be an absolute http(s) URL, got %q", name, raw)
+	}
+	return u, nil
 }
 
 func valueOr(v, fallback string) string {

@@ -8,9 +8,16 @@ info:
     Product endpoints live under /api/v1; health checks sit outside the prefix.
 servers:
   - url: /
+# Every operation needs a Kratos session unless it says otherwise (docs/04 §9). State-changing
+# requests also need `Origin` = MSP_PUBLIC_URL and, with a body, `Content-Type: application/json`;
+# otherwise 403 FORBIDDEN.
+security:
+  - kratosSession: []
 tags:
   - name: health
     description: Liveness and readiness checks.
+  - name: auth
+    description: The signed-in user.
 paths:
   /healthz:
     get:
@@ -18,6 +25,7 @@ paths:
       operationId: getHealthz
       summary: Liveness check
       description: The process is alive. Has no dependencies.
+      security: []
       responses:
         "200":
           description: Alive.
@@ -33,6 +41,7 @@ paths:
       operationId: getReadyz
       summary: Readiness check
       description: The process can serve traffic (database reachable, migrations current).
+      security: []
       responses:
         "200":
           description: Ready.
@@ -48,7 +57,41 @@ paths:
                 $ref: "#/components/schemas/Problem"
         default:
           $ref: "#/components/responses/Problem"
+  /api/v1/me:
+    get:
+      tags: [auth]
+      operationId: getMe
+      summary: Current user
+      description: |
+        The identity of the Kratos session. Needs a session but not a verified email, so the web app
+        can send an unverified user to the verification screen; other operations answer
+        403 EMAIL_NOT_VERIFIED until the email is verified (FR-AUTH-01). Placeholder until WP-10
+        adds user, membership, role and balance.
+      responses:
+        "200":
+          description: The signed-in identity.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Me"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
 components:
+  securitySchemes:
+    kratosSession:
+      type: apiKey
+      in: cookie
+      name: ory_kratos_session
+      description: |
+        Session cookie of Ory Kratos (same origin, `/.ory/*`). Missing or invalid → 401
+        UNAUTHENTICATED; an account with TOTP on a session without it → 403 MFA_REQUIRED;
+        Kratos unreachable → 503 NOT_READY.
   responses:
     Problem:
       description: Error in RFC 9457 problem details format.
@@ -57,6 +100,23 @@ components:
           schema:
             $ref: "#/components/schemas/Problem"
   schemas:
+    Me:
+      type: object
+      required: [identity_id, email, verified, aal]
+      properties:
+        identity_id:
+          type: string
+          description: Kratos identity ID (UUID).
+        email:
+          type: string
+          description: Email address of the identity (Kratos trait `email`).
+        verified:
+          type: boolean
+          description: The email address is verified.
+        aal:
+          type: string
+          enum: [aal1, aal2]
+          description: Authenticator assurance level of the session; aal2 = with TOTP.
     Health:
       type: object
       required: [status]
@@ -100,3 +160,7 @@ components:
         - VALIDATION_FAILED
         - RATE_LIMITED
         - NOT_READY
+        - FORBIDDEN
+        - EMAIL_NOT_VERIFIED
+        - MFA_REQUIRED
+        - METHOD_NOT_ALLOWED

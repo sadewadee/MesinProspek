@@ -6,6 +6,19 @@ import (
 	"testing"
 )
 
+// apiEnv is a valid environment of `msp api` with key set to value. Nothing
+// listens on the database and Kratos addresses: `msp api` starts without them.
+func apiEnv(key, value string) map[string]string {
+	env := map[string]string{
+		"MSP_HTTP_ADDR":         "127.0.0.1:0",
+		"MSP_DATABASE_URL":      "postgres://msp_app@127.0.0.1:1/msp",
+		"MSP_PUBLIC_URL":        "http://localhost:8000",
+		"MSP_KRATOS_PUBLIC_URL": "http://127.0.0.1:1",
+	}
+	env[key] = value
+	return env
+}
+
 func TestRun(t *testing.T) {
 	tests := []struct {
 		name string
@@ -18,9 +31,10 @@ func TestRun(t *testing.T) {
 		{name: "not implemented yet", args: []string{"tool"}, want: 2},
 		{name: "worker stops on cancel", args: []string{"worker"}, want: 0},
 		{name: "invalid config", args: []string{"api"}, env: map[string]string{"MSP_ENV": "prod"}, want: 1},
-		{name: "api without database url", args: []string{"api"}, env: map[string]string{"MSP_DATABASE_URL": ""}, want: 1},
-		{name: "api with invalid database url", args: []string{"api"}, env: map[string]string{"MSP_DATABASE_URL": "postgres://%zz"}, want: 1},
-		{name: "api stops on cancel", args: []string{"api"}, env: map[string]string{"MSP_HTTP_ADDR": "127.0.0.1:0", "MSP_DATABASE_URL": "postgres://msp_app@127.0.0.1:1/msp"}, want: 0},
+		{name: "api without database url", args: []string{"api"}, env: apiEnv("MSP_DATABASE_URL", ""), want: 1},
+		{name: "api with invalid database url", args: []string{"api"}, env: apiEnv("MSP_DATABASE_URL", "postgres://%zz"), want: 1},
+		{name: "api without kratos url", args: []string{"api"}, env: apiEnv("MSP_KRATOS_PUBLIC_URL", ""), want: 1},
+		{name: "api stops on cancel", args: []string{"api"}, env: apiEnv("MSP_HTTP_ADDR", "127.0.0.1:0"), want: 0},
 		{name: "migrate without database url", args: []string{"migrate"}, env: map[string]string{"MSP_MIGRATE_DATABASE_URL": ""}, want: 1},
 		{name: "migrate with invalid database url", args: []string{"migrate"}, env: map[string]string{"MSP_MIGRATE_DATABASE_URL": "postgres://%zz"}, want: 1},
 	}

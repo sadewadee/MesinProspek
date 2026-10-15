@@ -2,9 +2,10 @@
 # First init of the app database, run once by the postgres image on an empty data volume, right after
 # 10-roles.sql (= apps/api/db/roles.sql, which creates msp_owner and msp_app). Finishes the one-time
 # cluster setup of docs/04 §4.4: database msp owned by msp_owner, PostGIS and pg_trgm created by the
-# superuser, and both role passwords. The passwords are read from the URLs in .env, so each secret has
-# one source: MSP_MIGRATE_DATABASE_URL (msp_owner) and MSP_DATABASE_URL (msp_app).
-# Later password changes: docs/09 RB-12. `msp migrate` then runs as msp_owner.
+# superuser, and both role passwords; plus role and database kratos for Kratos (docs/04 §9). The
+# passwords are read from the URLs in .env, so each secret has one source: MSP_MIGRATE_DATABASE_URL
+# (msp_owner), MSP_DATABASE_URL (msp_app) and DSN (kratos, the Kratos database URL).
+# Later password changes: docs/09 RB-12. `msp migrate` then runs as msp_owner, `kratos migrate sql` as kratos.
 set -euo pipefail
 
 # sql_password URL ROLE -> the URL's password, percent-decoded, as a quoted SQL literal.
@@ -21,6 +22,7 @@ sql_password() {
 }
 owner_pw=$(sql_password "${MSP_MIGRATE_DATABASE_URL:?set MSP_MIGRATE_DATABASE_URL in .env}" msp_owner)
 app_pw=$(sql_password "${MSP_DATABASE_URL:?set MSP_DATABASE_URL in .env}" msp_app)
+kratos_pw=$(sql_password "${DSN:?set DSN (Kratos database URL) in .env}" kratos)
 
 sql() { psql -v ON_ERROR_STOP=1 --username "${POSTGRES_USER:-postgres}" --no-password --no-psqlrc "$@"; }
 
@@ -29,6 +31,8 @@ sql --dbname postgres <<SQL
 ALTER ROLE msp_owner PASSWORD $owner_pw;
 ALTER ROLE msp_app PASSWORD $app_pw;
 CREATE DATABASE msp OWNER msp_owner;
+CREATE ROLE kratos LOGIN PASSWORD $kratos_pw;
+CREATE DATABASE kratos OWNER kratos;
 SQL
 
 # PostGIS is not a trusted extension: only a superuser can create it (apps/api/db/migrations/00001_baseline.sql).
@@ -36,5 +40,3 @@ sql --dbname msp <<'SQL'
 CREATE EXTENSION IF NOT EXISTS postgis;
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
 SQL
-
-# TODO(WP-08): role and database `kratos` for Kratos (docs/04 §9), password from its DSN in .env.
