@@ -56,6 +56,8 @@
 | Merge ke `main` | Semua di atas → deploy `staging` → smoke E2E **J-2** ke staging dengan akun test yang sudah terverifikasi | Gagal → revert MR penyebab |
 | Tag `vX.Y.Z` (sebelum rilis) | E2E J-2..J-7 di staging (berurutan) dengan data nyata & akun test terverifikasi (Chromium, Firefox, WebKit + viewport ponsel untuk profil & list, NFR-08), cek ID TC/GT/EC (§7), checklist gerbang §7 | Founder menyetujui |
 
+**Tag Playwright.** Test yang butuh Mailpit atau fixture yang hanya ada di stack CI diberi tag `@ci-only` (tidak jalan di staging); smoke test staging (J-2) diberi tag `@smoke`. `smoke-staging` memilih test dengan tag ini: `--grep @smoke` di `main`, `--grep-invert @ci-only` di tag rilis.
+
 **Staging satu host dengan production** (D-19). Test yang menyentuh staging wajib ringan: smoke dan E2E fungsional dijalankan berurutan (1 worker Playwright), pengukuran NFR memakai request berurutan (§7). **Tidak ada load test di staging pada F1**; load test baru di F3 di lingkungan terpisah (§8). Di staging, assertion E2E bersifat struktural (bagian tampil, claim type, tanggal data); angka persis hanya diuji di CI lewat fixture. J-7 di staging memakai 1 credit per jalan dari workspace test (credit diberi ops).
 
 **Catatan teknis penting**

@@ -1,0 +1,43 @@
+# E2E stack of the CI job `e2e` (.gitlab-ci.yml, docs/05 §2): the local stack plus a `playwright` service that
+# runs the journeys in apps/web/e2e with Chromium against http://caddy and reads email from Mailpit. Nothing is
+# published on the host. From the repo root:
+#   export COMPOSE_FILE=deploy/docker-compose.local.yml:deploy/docker-compose.e2e.yml
+#   docker compose build && docker compose run --rm playwright; docker compose down -v
+# `playwright` mounts the checkout and installs node_modules into it; the report lands in
+# apps/web/playwright-report and apps/web/test-results.
+
+name: msp-e2e
+
+services:
+  playwright:
+    image: mcr.microsoft.com/playwright:v1.64.1-noble   # version = @playwright/test in pnpm-lock.yaml
+    working_dir: /repo
+    volumes: ["..:/repo"]
+    init: true                                         # Playwright's Docker advice for Chromium
+    ipc: host
+    environment:
+      CI: "true"                                       # CI reporter, no test.only (apps/web/playwright.config.ts)
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+      MSP_E2E_BASE_URL: http://caddy
+      MSP_E2E_MAILPIT_URL: http://mailpit:8025
+    command:
+      - sh
+      - -c
+      - corepack enable && pnpm install --frozen-lockfile && pnpm --filter @msp/web exec playwright test --project=chromium
+    depends_on:
+      caddy: { condition: service_started }
+      web: { condition: service_healthy }
+      api: { condition: service_healthy }
+      kratos: { condition: service_healthy }
+      mailpit: { condition: service_started }
+
+  # The browser reaches the app at http://caddy, so Kratos and the API take that origin.
+  kratos:
+    environment: { SERVE_PUBLIC_BASE_URL: "http://caddy/.ory/" }
+  api:
+    environment: { MSP_PUBLIC_URL: "http://caddy" }
+
+  # No host ports: only the containers of this stack talk to each other.
+  caddy: { ports: !reset [] }
+  mailpit: { ports: !reset [] }
+  postgres: { ports: !reset [] }

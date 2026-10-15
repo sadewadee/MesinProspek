@@ -12,6 +12,7 @@ File untuk satu server (D-19, D-26) dan stack lokal. Desainnya ada di [06](../do
 | `postgres/` | Image Postgres + pgBackRest dan init pertama DB `msp` dan `kratos`. `roles.sql` adalah symlink ke `apps/api/db/roles.sql`, jadi salin dengan `cp -rL` |
 | `kratos/` | Konfigurasi Ory Kratos untuk semua stack (04 §9): `kratos.yml`, skema identitas (email), mapper Google. Nilai per environment dan secret datang dari `.env` (daftar di kepala `kratos.yml`) |
 | `docker-compose.local.yml`, `Caddyfile.local`, `.env.local.example` | Stack `local` di laptop (06 §2): service production dibangun dari source + `caddy` dan `mailpit`. Jalankan dari root repo: `docker compose -f deploy/docker-compose.local.yml up --build`, lalu buka `http://localhost:8000` (Mailpit `http://localhost:8025`). Nilai dummy dari `.env.local.example`; timpa di `.env.local` (tidak di-commit) |
+| `docker-compose.e2e.yml` | Overlay stack `local` untuk job CI `e2e` (05 §2): service `playwright` menjalankan `apps/web/e2e` dengan Chromium ke `http://caddy` dan membaca email dari Mailpit. Tanpa port di host. Cara menjalankannya ada di kepala file |
 | `admin-keys/<user>.pub` | Kunci SSH publik tiap admin. Nama file = nama user Linux |
 
 ## Bootstrap (founder)
