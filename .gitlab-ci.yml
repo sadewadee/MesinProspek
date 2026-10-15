@@ -1,0 +1,174 @@
+# GitLab CI/CD (docs/06-ci-cd.md §4). Jobs call the Makefile targets, so local = CI (docs/08 §0).
+# Runners (06 §2): tag `ci` = Docker executor in /opt/ops, privileged for docker:dind
+# (deploy/ops/runner-ci.template.toml); tag `deploy` = shell executor on the host as user deploy, protected
+# refs only. Each runs one job at a time. Only the founder merges changes to this file, deploy/ or scripts/ci/ (06 §3).
+#
+# MR:    check, govulncheck, mr-check
+# main:  check, govulncheck -> build, trivy -> deploy-staging (+ smoke-staging J-2)
+# v*:    deploy-staging (+ smoke-staging J-2..J-7) -> deploy-production (manual, founder). Rollback: run
+#        deploy-production again in the previous release's pipeline (09 RB-02).
+# TODO(WP-08): job `e2e` (Compose stack + Playwright Chromium on every MR, 05 §2) with deploy/docker-compose.e2e.yml.
+# TODO(WP-25): job `backup` on the daily pipeline schedule (06 §8), and "schedule" in workflow:rules.
+
+stages: [check, build, deploy-staging, deploy-production]
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "main" && $CI_PIPELINE_SOURCE != "schedule"
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/          # release tags: protected, created by the founder only
+
+default:
+  tags: [ci]
+  interruptible: true                                  # a newer pipeline on the same ref cancels this one
+
+.mr-main:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "main"
+
+.main:
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+
+.go:
+  # Go 1.26: golangci-lint and oapi-codegen (Makefile) need it. The image sets GOTOOLCHAIN=local: no download.
+  image: golang:1.26.9-bookworm
+  variables:
+    GOMODCACHE: $CI_PROJECT_DIR/.cache/go-mod
+    GOCACHE: $CI_PROJECT_DIR/.cache/go-build
+  cache:
+    key: { files: [apps/api/go.sum, pnpm-lock.yaml] }
+    paths: [.cache/, .pnpm-store/]
+
+check:
+  extends: [.mr-main, .go]
+  stage: check
+  services:
+    # Same digest as deploy/postgres/Dockerfile: integration tests run on the production Postgres + PostGIS.
+    - name: postgis/postgis:16-3.5@sha256:94146ac37bc61e2322f88016056c5920729cb8c64c8542ed590af8fc2abdac07
+      alias: postgres
+  variables:
+    POSTGRES_PASSWORD: test
+    # Superuser of the throwaway service; tests create and drop their own databases. CI=true (set by GitLab)
+    # makes a missing test database or PostGIS fail the tests instead of skipping them (STD-TEST-03).
+    MSP_TEST_DATABASE_URL: "postgres://postgres:test@postgres:5432/postgres?sslmode=disable"
+    GOLANGCI_LINT_CACHE: $CI_PROJECT_DIR/.cache/golangci-lint
+    COREPACK_HOME: $CI_PROJECT_DIR/.cache/corepack
+    COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+    NEXT_TELEMETRY_DISABLED: "1"
+  before_script:
+    - node=$(cat .nvmrc)                               # exact Node version, the same as locally
+    - curl -fsSL "https://nodejs.org/dist/v$node/node-v$node-linux-x64.tar.gz" | tar -xz -C /usr/local --strip-components=1
+    - corepack enable                                  # pnpm version from package.json "packageManager"
+    - pnpm install --frozen-lockfile --store-dir .pnpm-store
+  script:
+    # Generated code is committed and fresh (STD-API-02): no changed and no new files after `make generate`.
+    - make generate
+    - git diff --exit-code
+    - test -z "$(git status --porcelain)" || { git status --short; exit 1; }
+    - make lint
+    - make test                                        # unit + integration on the postgres service
+
+govulncheck:
+  extends: [.mr-main, .go]
+  stage: check
+  cache: { policy: pull }
+  # TODO: blocking again (06 §4) once go.mod has pgx >= v5.9.2 and x/text >= v0.41.0 (separate fix MR):
+  # GO-2026-5004, GO-2026-5970, GO-2026-6629 are reachable today.
+  allow_failure: true
+  script:
+    - cd apps/api && go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+
+mr-check:
+  extends: .go                                         # only for the image: already on the runner, has git
+  stage: check
+  cache: []
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  variables:
+    GIT_DEPTH: "0"                                     # the merge base must be in the clone
+  script:
+    - scripts/ci/mr-check.sh                           # title, description, migrations (STD-GIT-02/04, STD-DB-01)
+
+build:
+  extends: .main
+  stage: build
+  image: docker:29.8.2                                 # same Docker version as the server (deploy/bootstrap.sh)
+  services: ["docker:29.8.2-dind"]
+  variables:
+    DOCKER_HOST: tcp://docker:2376
+    DOCKER_TLS_CERTDIR: /certs                         # /certs/client is shared with the service (runner config)
+    DOCKER_TLS_VERIFY: "1"
+    DOCKER_CERT_PATH: /certs/client
+  script:
+    - for i in $(seq 30); do docker info >/dev/null 2>&1 && break; sleep 1; done
+    - echo "$CI_REGISTRY_PASSWORD" | docker login --username "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+    # <registry>/msp/<app>:<git-sha>, plus :main as the inline layer cache of the next build.
+    # Build context: api = apps/api, web = repo root (pnpm workspace).
+    - |
+      set -e
+      for app in api:apps/api web:.; do
+        name=${app%%:*} context=${app#*:}
+        docker build -f "apps/$name/Dockerfile" --cache-from "$CI_REGISTRY_IMAGE/$name:main" \
+          --build-arg BUILDKIT_INLINE_CACHE=1 \
+          -t "$CI_REGISTRY_IMAGE/$name:$CI_COMMIT_SHA" -t "$CI_REGISTRY_IMAGE/$name:main" "$context"
+        docker push --all-tags "$CI_REGISTRY_IMAGE/$name"
+      done
+
+trivy:                                                 # report only; the founder reads it before a release tag (06 §10)
+  extends: .main
+  stage: build
+  needs: [build]
+  image: { name: "aquasec/trivy:0.75.0", entrypoint: [""] }
+  allow_failure: true
+  variables:
+    TRIVY_USERNAME: $CI_REGISTRY_USER
+    TRIVY_PASSWORD: $CI_REGISTRY_PASSWORD
+    TRIVY_NO_PROGRESS: "true"
+  script:
+    - |
+      for app in api web; do
+        trivy image --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed "$CI_REGISTRY_IMAGE/$app:$CI_COMMIT_SHA"
+      done
+
+.deploy:
+  tags: [deploy]                                       # shell on the server as user deploy
+  interruptible: false                                 # never stop a deploy halfway
+  variables:
+    GIT_DEPTH: "1"
+  script:
+    - deploy/deploy.sh "$CI_ENVIRONMENT_NAME" "$CI_COMMIT_SHA"
+
+deploy-staging:
+  extends: .deploy
+  stage: deploy-staging
+  environment: staging
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_TAG
+
+smoke-staging:                                         # Playwright against staging with the verified test account
+  stage: deploy-staging
+  needs: [deploy-staging]
+  image: mcr.microsoft.com/playwright:v1.64.1-noble    # version = @playwright/test in pnpm-lock.yaml
+  environment: { name: staging, action: verify }       # staging variables: URL and test account
+  rules:                                               # runs once Playwright exists (WP-08)
+    - if: $CI_COMMIT_BRANCH == "main"
+      exists: ["apps/web/playwright.config.*"]
+      variables: { E2E_ARGS: "--project=chromium --grep @smoke" }   # J-2; J-1 needs Mailpit (e2e job only)
+    - if: $CI_COMMIT_TAG
+      exists: ["apps/web/playwright.config.*"]
+      variables: { E2E_ARGS: "--grep-invert @ci-only" }             # J-2..J-7, all browsers (05 §2)
+  script:
+    - corepack enable
+    - pnpm install --frozen-lockfile
+    - pnpm --filter @msp/web exec playwright test $E2E_ARGS
+
+deploy-production:
+  extends: .deploy
+  stage: deploy-production
+  environment: production
+  rules:
+    - if: $CI_COMMIT_TAG
+      when: manual                                     # only the founder can run jobs of a protected v* tag (06 §3)

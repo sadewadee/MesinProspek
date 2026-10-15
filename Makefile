@@ -2,6 +2,7 @@
 GOLANGCI_LINT := go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2
 OAPI_CODEGEN := go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.8.0
 SQLC := go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.30.0
+GITLEAKS := go run github.com/zricethezav/gitleaks/v8@v8.30.1
 
 .PHONY: generate lint test build
 
@@ -21,6 +22,8 @@ lint:
 	cd apps/api && $(SQLC) vet
 	pnpm -r --if-present lint
 	pnpm -r --if-present typecheck
+	$(GITLEAKS) git --log-opts=HEAD --redact --no-banner .   # STD-AGENT-06: no secret in the history of HEAD
+# TODO(WP-10): squawk (new migrations) and oasdiff breaking vs main (08 §0) arrive with the F1 migrations and contract.
 
 test:
 	cd apps/api && go test -race ./...
