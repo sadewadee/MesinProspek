@@ -4,7 +4,7 @@ Panduan wajib untuk setiap sesi Claude dan setiap agent yang bekerja di repo ini
 
 ## Goal produk (jangan melenceng)
 
-MesinProspek adalah **market intelligence untuk bisnis lokal Indonesia** (D-30). Dari data Google Maps yang diambil berulang dan data wilayah, produk memperkirakan **kunjungan, omzet, dan okupasi** usaha, menunjukkan **pola keramaian**, dan membantu memilih **lokasi, jam buka, dan harga** cabang baru. Setiap angka disertai bukti, asumsi, rentang, dan tanggal data. Pengguna utama: pemilik usaha dan investor. Fitur prospek (unlock kontak, export, webhook) tetap ada untuk penjual B2B.
+MesinProspek adalah **market intelligence untuk bisnis lokal Indonesia** (D-30). Dari data Google Maps yang diambil berulang dan data wilayah, produk memperkirakan **kunjungan, omzet, dan okupasi** usaha, menunjukkan **pola keramaian**, dan membantu memilih **lokasi, jam buka, dan harga** cabang baru. Setiap angka disertai bukti, asumsi, rentang, dan tanggal data. Pengguna F1: pemilik usaha dan investor. Fitur prospek untuk penjual B2B (ICP, opportunity, skor prioritas, unlock kontak, webhook) sudah dirancang tetapi baru dibangun di F2 (D-40); jangan dikerjakan di F1.
 
 Alur inti: **temukan → pahami → prioritaskan → tindak lanjuti**. Pekerjaan yang tidak memperkuat alur ini **tidak dikerjakan** tanpa persetujuan founder.
 

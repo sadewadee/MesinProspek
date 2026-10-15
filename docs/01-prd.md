@@ -4,8 +4,8 @@
 
 | Field | Value |
 |---|---|
-| Versi | 0.3 (lean). Posisi berubah dari sales intelligence menjadi market intelligence (D-30) |
-| Tanggal | 2026-10-11 |
+| Versi | 0.4 (lean). Market intelligence (D-30); F1 dirampingkan, fitur prospek ke F2 (D-40) |
+| Tanggal | 2026-10-15 |
 | Prinsip | **KISS**, **DRY**, **Make it work → make it right → make it fast** (D-23) |
 | Input | **DB gmaps**: kiriman mingguan ramping dari founder (hanya Indonesia, kolom yang dipakai, baris baru) dimuat ke server kita lalu dibaca read-only, berisi snapshot berulang per tempat (D-31, D-35, D-37) + data wilayah GeoAPI (D-25). **F1 melayani seluruh Indonesia** (D-28, D-34). MesinProspek tidak melakukan scraping; crawler website **PAUSED** (D-01) |
 | Pembangun | Agent AI (maks. 8 paralel) diorkestrasi Claude. Founder menyetujui tiap gerbang fase (D-22) |
@@ -23,15 +23,15 @@ MesinProspek adalah **market intelligence untuk bisnis lokal Indonesia**. Dari d
 - membantu memilih **lokasi, jam operasional, dan posisi harga** untuk cabang baru;
 - membandingkan usaha dengan **kompetitor dan tetangganya**.
 
-Setiap angka menunjukkan bukti, asumsi, rentang, dan tanggal datanya. Fitur prospek (unlock kontak, export, webhook) tetap ada sebagai salah satu cara menindaklanjuti.
+Setiap angka menunjukkan bukti, asumsi, rentang, dan tanggal datanya. Fitur prospek untuk penjual B2B (ICP, opportunity, skor prioritas, unlock kontak, webhook) sudah dirancang tetapi dibangun di F2 (D-40).
 
-Alur inti: **temukan** (bisnis atau wilayah) → **pahami** (estimasi, pola, bukti) → **prioritaskan** (peringkat wilayah, perbandingan, skor) → **tindak lanjuti** (keputusan lokasi/jam, narasi AI, unlock, export, webhook).
+Alur inti: **temukan** (bisnis atau wilayah) → **pahami** (estimasi, pola, bukti) → **prioritaskan** (peringkat wilayah, perbandingan lewat list) → **tindak lanjuti** (keputusan lokasi/jam, narasi AI, list + catatan, export CSV).
 
 ## 2. Masalah
 
 1. Pemilik usaha yang mau buka cabang atau mengubah jam buka menebak dari pengamatan sesaat. Data keramaian tetangga dan kompetitor ada, tetapi tersebar dan tidak pernah dihitung.
 2. Omzet kompetitor dan ukuran pasar tidak diketahui. Hitungan manual lambat dan mudah memakai data atau asumsi basi. Contoh Signa Cafe: tebakan laju ulasan dari umur cafe meleset sekitar 60%, sehingga omzet meleset sekitar 40%.
-3. Penjual B2B tidak tahu bisnis mana yang paling layak dihubungi dan kenapa.
+3. Penjual B2B tidak tahu bisnis mana yang paling layak dihubungi dan kenapa (dilayani di F2, D-40).
 
 ## 3. Persona
 
@@ -39,10 +39,10 @@ Alur inti: **temukan** (bisnis atau wilayah) → **pahami** (estimasi, pola, buk
 |---|---|---|
 | PER-01 | Pemilik usaha F&B atau multi-outlet | "Di mana dan jam berapa cabang baru sebaiknya buka? Bisakah konsep saya disalin ke sana?" |
 | PER-02 | Investor, analis, franchisor | "Berapa kira-kira kunjungan dan omzet usaha ini atau kompetitornya, dan seberapa yakin angkanya?" |
-| PER-03 | Penjual B2B (agency, vendor SaaS, sales manager) | "Bisnis dan wilayah mana yang paling layak dihubungi, dan kenapa?" |
+| PER-03 | Penjual B2B (agency, vendor SaaS, sales manager), **F2** | "Bisnis dan wilayah mana yang paling layak dihubungi, dan kenapa?" |
 | PER-04 | Ops internal MesinProspek | "Import lancar, parameter estimasi masuk akal, customer terlayani." |
 
-PER-01 dan PER-02 adalah pengguna utama F1 (D-30). PER-03 tetap dilayani lewat fitur prospek.
+PER-01 dan PER-02 adalah pengguna F1 (D-30). PER-03 dilayani lewat fitur prospek di F2 (D-40).
 
 ## 4. Tujuan & non-tujuan
 
@@ -51,10 +51,10 @@ PER-01 dan PER-02 adalah pengguna utama F1 (D-30). PER-03 tetap dilayani lewat f
 - User melihat pola keramaian per jam dan per hari.
 - User bisa menganalisis satu lokasi dan mendapat jam inti, saran jam buka, posisi harga, dan tingkat keyakinan. Analisis kedua sample case founder (Warung Kita, Signa Cafe) dapat direproduksi (§12).
 - Setiap nilai menunjukkan sumber dan claim type. Estimasi yang datanya kurang tampil "Belum dapat diperkirakan".
-- User bisa unlock kontak, export, atau mengirim ke webhook. Pemakaian credit tercatat benar.
+- User bisa menyimpan bisnis ke list dengan catatan, menyimpan pencarian, dan export CSV estimasi. Pemakaian credit tercatat benar.
 - Hasil pertama tampil ≤ 5 menit setelah daftar.
 
-**Non-tujuan:** scraping (data dikelola terpisah di DB gmaps), crawler website, CRM, outreach otomatis, aplikasi mobile native, dan isu hukum (ditangani tim legal, D-27).
+**Non-tujuan F1:** fitur prospek (F2, D-40), scraping (data dikelola terpisah di DB gmaps), crawler website, CRM, outreach otomatis, aplikasi mobile native, dan isu hukum (ditangani tim legal, D-27).
 
 ## 5. Prinsip produk
 
@@ -63,7 +63,7 @@ PER-01 dan PER-02 adalah pengguna utama F1 (D-30). PER-03 tetap dilayani lewat f
 3. **Ukur, jangan tebak.** Yang bisa diukur dari data diukur, misalnya laju ulasan dari snapshot. Asumsi hanya dipakai untuk yang tidak bisa diukur (review rate, faktor belanja, kapasitas hotel), dan semuanya diatur dari dashboard ops.
 4. **Estimasi selalu rentang + asumsi + tanggal.** Tidak ada angka omzet tunggal tanpa rentang, parameter yang dipakai, dan tanggal data.
 5. **Hanya janjikan yang bisa kita sediakan.** Semua fitur dibangun dari data yang kita punya (DB gmaps, GeoAPI, benchmark publik). Data internal usaha (omzet nyata, jumlah transaksi, kapasitas) tidak tersedia dan tidak dijanjikan.
-6. **Satu record kanonik, banyak tampilan** (DRY). Search, profil, analisis lokasi, export, dan webhook membaca model yang sama.
+6. **Satu record kanonik, banyak tampilan** (DRY). Search, profil, analisis lokasi, dan export membaca model yang sama.
 7. **Fitur kecil yang bekerja** lebih baik daripada fitur lengkap yang setengah jadi.
 
 ## 6. Fase rilis
@@ -71,7 +71,7 @@ PER-01 dan PER-02 adalah pengguna utama F1 (D-30). PER-03 tetap dilayani lewat f
 | Fase | Tema | Isi |
 |---|---|---|
 | **F1 — Make it work** | Alur inti end-to-end, bisa dijual ke customer awal | Semua FR di §9 |
-| **F2 — Make it right** | Kualitas, kelengkapan, kenyamanan | **Insight teks ulasan** (`user_reviews`, tanpa nama/foto pengulas): tema pujian/keluhan dan sebutan harga per orang, dikumpulkan dari ulasan unik lintas snapshot mingguan, sebagai pembanding belanja per tamu; pembanding BPS (TPK hotel, penjualan F&B per provinsi); estimasi kategori lain (ritel, jasa); perbandingan bebas antar bisnis dan antar wilayah; watch/alert perubahan; upload daftar customer + pencocokan; laporan data salah + koreksi ops; role Viewer/Manager; natural-language search; satu integrasi CRM; billing self-serve; pengelompokan multi-cabang; bahasa Inggris; error tracking |
+| **F2 — Make it right** | Kualitas, kelengkapan, kenyamanan | **Fitur prospek (D-40, sudah dirancang di §9.1, Lampiran A & B):** ICP/Offering dan onboarding "Cari prospek", opportunity + skor prioritas, unlock kontak + tampilan telepon, webhook, tag & assign, export XLSX; **Insight teks ulasan** (`user_reviews`, tanpa nama/foto pengulas): tema pujian/keluhan dan sebutan harga per orang, dikumpulkan dari ulasan unik lintas snapshot mingguan, sebagai pembanding belanja per tamu; pembanding BPS (TPK hotel, penjualan F&B per provinsi); estimasi kategori lain (ritel, jasa); perbandingan bebas antar bisnis dan antar wilayah; watch/alert perubahan; upload daftar customer + pencocokan; laporan data salah + koreksi ops; role Viewer/Manager; natural-language search; satu integrasi CRM; billing self-serve; pengelompokan multi-cabang; bahasa Inggris; error tracking |
 | **F3 — Make it fast** | Skala & ketahanan | Server aplikasi kedua (HA), replika DB, object storage S3, cache, deploy tanpa downtime, optimasi untuk data > 5 juta tempat, mesin search terpisah hanya bila Postgres tidak cukup |
 
 ## 7. Data input
@@ -86,7 +86,7 @@ DB gmaps adalah sumber dataset kita. Export JSON-LD-nya (D-24) membuang `popular
 | Nama, kategori utama, daftar kategori | Identitas, taksonomi, kelompok estimasi | Dwibahasa ("Restaurant" / "Restoran"). Daftar kategori membantu, mis. "Restoran" yang juga "Kafe" |
 | Alamat (lengkap & per bagian), kode negara | Alamat tampilan, filter negara | Kode negara ISO ("ID") |
 | Koordinat, zona waktu | Wilayah, jam lokal | Zona waktu IANA, mis. Bali = `Asia/Makassar` (WITA) |
-| Telepon, website, akun sosial, tautan menu | Kontak, kehadiran digital, opportunity | — |
+| Telepon, website, akun sosial, tautan menu | Kehadiran digital (website, sosial, menu). Telepon diimpor dan disimpan, **tidak ditampilkan di F1**, tidak pernah dikirim ke LLM; kontak & opportunity di F2 | — |
 | Jumlah ulasan, rating | Reputasi, **laju ulasan** antar snapshot | Bisa turun sedikit (ulasan dihapus) |
 | Distribusi bintang 1–5 | Penanda pola ulasan janggal | — |
 | Harga per orang | Belanja per tamu | Terisi ±0,8% baris secara global (Bali jauh lebih tinggi, lihat cakupan di bawah). Format bervariasi: "Rp 75–200K", "Rp 100–225 rb", "Rp 250,000+", "$$" |
@@ -117,7 +117,7 @@ Nilai yang tidak bisa diukur dari data diatur ops dari dashboard (D-29, D-32): r
 
 | Istilah | Arti |
 |---|---|
-| Bisnis | Satu tempat usaha (1 ID tempat). Dalam konteks penjualan disebut **prospek** |
+| Bisnis | Satu tempat usaha (1 ID tempat). Dalam fitur prospek (F2) disebut **prospek** |
 | Snapshot | Satu pengambilan data satu tempat pada satu waktu |
 | Laju ulasan | Ulasan baru per tahun, diukur dari snapshot (Lampiran E §E.1) |
 | Review rate | Persentase pengunjung yang menulis ulasan. Asumsi per kelompok estimasi, diatur ops |
@@ -126,10 +126,10 @@ Nilai yang tidak bisa diukur dari data diatur ops dari dashboard (D-29, D-32): r
 | Jam inti | Jam dengan keramaian ≥ 60% dari puncaknya (Lampiran E §E.4) |
 | Analisis lokasi | Analisis satu titik + radius untuk keputusan cabang (Lampiran F) |
 | Workspace | Akun pelanggan. Data workspace terisolasi |
-| Offering, ICP | Apa yang dijual workspace, dan kriteria target penjualannya (dipakai PER-03) |
-| Opportunity | Gap digital yang relevan dengan Offering, lengkap dengan alasan dan evidence |
+| Offering, ICP | Apa yang dijual workspace, dan kriteria target penjualannya (F2, PER-03) |
+| Opportunity | Gap digital yang relevan dengan Offering, lengkap dengan alasan dan evidence (F2) |
 | Claim type | Teramati (dari sumber) · Turunan (aturan) · Perkiraan (inferensi/estimasi) · Tidak diketahui |
-| Unlock | Membuka nilai kontak sebuah bisnis untuk workspace, permanen |
+| Unlock | Membuka nilai kontak sebuah bisnis untuk workspace, permanen (F2) |
 
 ---
 
@@ -139,11 +139,11 @@ Nilai yang tidak bisa diukur dari data diatur ops dari dashboard (D-29, D-32): r
 |---|---|---|
 | **AUTH** | | |
 | FR-AUTH-01 | Daftar/login via **Ory Kratos**: email + password, login Google, verifikasi email (D-20) | Tanpa verifikasi email, data tidak bisa diakses |
-| FR-AUTH-02 | Workspace dibuat saat daftar. Admin bisa mengundang anggota, dibatasi seat plan (anggota aktif + undangan tertunda; tanpa plan = 1 seat). Role: **Admin** (kelola anggota, ICP, webhook, lihat usage) dan **Member** (pakai fitur) | Aksi di luar role → 403; undangan melebihi seat ditolak |
+| FR-AUTH-02 | Workspace dibuat saat daftar. Admin bisa mengundang anggota, dibatasi seat plan (anggota aktif + undangan tertunda; tanpa plan = 1 seat). Role: **Admin** (kelola anggota, lihat usage) dan **Member** (pakai fitur) | Aksi di luar role → 403; undangan melebihi seat ditolak |
 | FR-AUTH-03 | Akun internal ops wajib MFA (TOTP) | Login ops tanpa MFA ditolak |
 | **DATA** | | |
 | FR-DATA-01 | Import dari DB gmaps (read-only, D-31): job `import` harian + `msp tool import --country ID` manual. Inkremental berdasarkan waktu scrape; import pertama membaca seluruh riwayat. Tempat di-upsert berdasarkan ID tempat. Snapshot disimpan per tempat per hari untuk riwayat. Laporan: snapshot baru, tempat baru, berubah, dilewati (negara lain), ditolak (per alasan) | Import ulang rentang waktu yang sama tidak membuat duplikat. Kolom sumber yang hilang → import gagal dengan pesan jelas |
-| FR-DATA-02 | Normalisasi sesuai BR-NORM: telepon, URL, kategori dwibahasa, jam buka, harga per orang, `popular_times`, distribusi rating, penggabungan snapshot | Unit test per aturan, termasuk semua format harga di §7.1 |
+| FR-DATA-02 | Normalisasi sesuai BR-NORM-03..06: kategori dwibahasa, jam buka, harga per orang, `popular_times`, distribusi rating, penggabungan snapshot. Telepon, website, dan akun sosial disimpan apa adanya (normalisasi BR-NORM-01/02 di F2) | Unit test per aturan, termasuk semua format harga di §7.1 |
 | FR-DATA-03 | Sync area GeoAPI (4 level, populasi, batas sederhana, atribusi) lewat `msp tool geo-sync` untuk negara aktif | Semua area level 1–4 Indonesia tersimpan |
 | FR-DATA-04 | Penetapan wilayah: koordinat → desa/kelurahan (+ kecamatan, kab/kota, provinsi) dengan point-in-polygon di database | ≥ 98% bisnis ber-koordinat mendapat kelurahan |
 | **EST — estimasi** | | |
@@ -157,32 +157,40 @@ Nilai yang tidak bisa diukur dari data diatur ops dari dashboard (D-29, D-32): r
 | FR-LOC-01 | Analisis lokasi (Lampiran F). Input: titik di peta atau alamat, radius, kelompok target, harga per orang rencana (opsional), dan bisnis pembanding (opsional: bisnis mana pun di data, mis. konsep yang ingin ditiru; tidak harus milik user). Analisis tetap lengkap tanpa pembanding. Output: tetangga dengan data cukup, pola keramaian tetangga vs pembanding, jam inti + saran jam buka, posisi harga, sumber pengunjung siang, dan tingkat keyakinan + saran cek lapangan. Analisis bisa disimpan dan dibuka ulang | Fixture Warung Kita menghasilkan saran jam buka 16.00–22.00 dan keyakinan "Rendah" (§12) |
 | **INTL** | | |
 | FR-INTL-01 | Setiap nilai yang tampil punya claim type dan sumber (BR-TRUST) | Evidence bisa dibuka dari profil |
-| FR-INTL-02 | Deteksi opportunity sesuai katalog Lampiran B | Tiap opportunity punya alasan yang bisa dibaca |
 | FR-INTL-03 | Metrik wilayah sesuai Lampiran C | Label "Populasi: perkiraan model Kontur 2023" selalu tampil |
-| FR-INTL-04 | ICP fit dan priority score sesuai Lampiran A, dengan breakdown faktor dan versi model | Hasil sama untuk input + versi yang sama |
-| FR-INTL-05 | Tombol "Relevan / Tidak relevan" pada opportunity dan pada kesimpulan analisis lokasi | Tersimpan per workspace |
-| **ICP** | | |
-| FR-ICP-01 | Onboarding: pilih tujuan → **Analisis lokasi** (langsung ke FR-LOC-01), **Kompetitor & omzet** (search + profil), atau **Cari prospek** (Offering → ICP dengan kriteria *wajib*/*preferensi* → hasil pertama) | Hasil pertama ≤ 5 menit sejak daftar |
-| FR-ICP-02 | Workspace bisa menyimpan beberapa ICP. Tiap user memilih satu ICP aktif | Ganti ICP → skor dan urutan berubah |
+| FR-INTL-05 | Tombol "Relevan / Tidak relevan" pada kesimpulan analisis lokasi (pada opportunity: F2) | Tersimpan per workspace |
+| **ONB** | | |
+| FR-ONB-01 | Onboarding: pilih tujuan → **Analisis lokasi** (langsung ke FR-LOC-01) atau **Kompetitor & omzet** (search + profil). Jalur "Cari prospek" (Offering → ICP) di F2 | Hasil pertama ≤ 5 menit sejak daftar |
 | **SRCH / PROF / GEO** | | |
-| FR-SRCH-01 | Search kata kunci (nama, kategori, alamat) + filter (kategori, kelompok estimasi, wilayah, rentang perkiraan omzet, punya pola keramaian, band skor, tipe opportunity, ada telepon/website/sosial, rating). Urut: skor, perkiraan kunjungan, perkiraan omzet, atau laju ulasan | Jumlah hasil konsisten dengan filter |
+| FR-SRCH-01 | Search kata kunci (nama, kategori, alamat) + filter (kategori, kelompok estimasi, wilayah, rentang perkiraan omzet, punya pola keramaian, ada website/sosial, rating). Urut: perkiraan kunjungan, perkiraan omzet, atau laju ulasan. Filter dan urutan skor/opportunity di F2 | Jumlah hasil konsisten dengan filter |
 | FR-SRCH-02 | Simpan pencarian (sekaligus berfungsi sebagai segment dinamis) | Pencarian tersimpan bisa dibuka ulang |
-| FR-PROF-01 | Profil bisnis: identitas, **perkiraan kunjungan & omzet** (atau okupasi untuk hotel), **pola keramaian**, riwayat ulasan, harga, jam buka, atribut tempat (populer untuk, tipe pengunjung, opsi layanan), penanda listing diklaim pemilik, skor + "Kenapa bisnis ini?" (bila ada ICP aktif), opportunity, kontak (ter-mask sampai unlock), kehadiran digital, konteks wilayah, evidence tiap nilai, tautan Google Maps, tombol "Analisis lokasi di sini" | Setiap nilai menampilkan claim type dan tanggal data |
-| FR-GEO-01 | Peringkat wilayah (kecamatan dan kelurahan dalam kab/kota) untuk satu kelompok estimasi (Lampiran C): populasi, jumlah & densitas bisnis sejenis, kompetisi, permintaan terbukti, rentang harga. Bila ada ICP aktif, ditambah jumlah prospek HOT/WARM. Peta berwarna dari tiles GeoAPI + tabel, drilldown ke daftar bisnis dan ke analisis lokasi | Peta selalu punya padanan tabel |
+| FR-PROF-01 | Profil bisnis: identitas, **perkiraan kunjungan & omzet** (atau okupasi untuk hotel), **pola keramaian**, riwayat ulasan, harga, jam buka, atribut tempat (populer untuk, tipe pengunjung, opsi layanan), penanda listing diklaim pemilik, kehadiran digital (website & akun sosial; telepon tidak ditampilkan di F1), konteks wilayah, evidence tiap nilai, tautan Google Maps, tombol "Analisis lokasi di sini" | Setiap nilai menampilkan claim type dan tanggal data |
+| FR-GEO-01 | Peringkat wilayah (kecamatan dan kelurahan dalam kab/kota) untuk satu kelompok estimasi (Lampiran C): populasi, jumlah & densitas bisnis sejenis, kompetisi, permintaan terbukti, rentang harga. Peta berwarna dari tiles GeoAPI + tabel, drilldown ke daftar bisnis dan ke analisis lokasi | Peta selalu punya padanan tabel |
 | **ACT** | | |
-| FR-ACT-01 | List, tag, catatan, dan pemilik (assign ke anggota) untuk bisnis. Kolom list bisa menampilkan estimasi, sehingga list juga berfungsi sebagai tabel perbandingan sederhana | — |
-| FR-ACT-02 | Unlock kontak: 1 credit per bisnis, permanen per workspace. Yang di-mask hanya **nomor telepon**; website dan akun sosial selalu terlihat | Unlock ganda tidak menagih ulang |
-| FR-ACT-03 | Export CSV/XLSX sebagai job async, maksimal 10.000 baris per job, termasuk kolom estimasi. Bila ada bisnis yang belum di-unlock, user ditawari **"Unlock & export"** dengan preview biaya | Export gagal bisa diulang tanpa biaya |
-| FR-ACT-04 | Webhook: daftar URL HTTPS (ditolak bila mengarah ke IP privat/internal), payload ber-tanda tangan HMAC, retry otomatis, log pengiriman, kirim bisnis terpilih | Uji SSRF lulus |
+| FR-ACT-01 | List dan catatan untuk bisnis. Kolom list bisa menampilkan estimasi, sehingga list juga berfungsi sebagai tabel perbandingan kompetitor. Tag dan assign ke anggota di F2 | — |
+| FR-ACT-03 | Export **CSV** sebagai job async, maksimal 10.000 baris per job: identitas, wilayah, website & akun sosial, dan kolom estimasi; **tanpa telepon**. XLSX dan "Unlock & export" di F2 | Export gagal bisa diulang |
 | FR-ACT-05 | **Narasi AI** untuk profil bisnis dan untuk analisis lokasi, dengan struktur: masalah, data, cara membaca, kesimpulan, batasan. **Claude**, fallback ke API **OpenAI-compatible** (D-15). Provider, model utama, dan model fallback **diatur dari halaman ops** (API key tetap secret di server, D-29). Hanya dari fakta yang sudah dihitung; setiap kalimat merujuk fakta. Cache 7 hari. Ada kill switch | Narasi tanpa rujukan fakta ditolak lalu dibuat ulang sekali |
 | **BILL** | | |
 | FR-BILL-01 | Satu ledger dengan dua meter: `credit` dan `ai_credit` (grant, debit, refund), idempotent. **Plan** (nama, harga tampilan, seat, credit & AI credit bulanan) dikelola dari halaman ops (D-29); credit bulanan diberikan otomatis tiap awal siklus sesuai plan workspace; ops juga bisa memberi credit manual. Workspace baru mendapat **grant awal satu kali** (default 1.000 credit dan 0 AI credit, diatur dari halaman ops, D-36), supaya analisis lokasi bisa langsung dicoba. Pembayaran tetap manual di F1. Saldo terlihat di workspace | Saldo = jumlah ledger per meter |
 | **OPS** | | |
-| FR-OPS-01 | Halaman ops: daftar workspace + grant credit, pengaturan plan, AI, **parameter estimasi**, dan **grant awal workspace baru**; status import dari DB gmaps (snapshot terakhir, jeda, laporan); kesehatan data (jumlah bisnis, % terisi per field termasuk harga dan `popular_times`, % bisnis dengan laju ulasan per metode A/B, % terpetakan wilayah); feature flag (AI, export, webhook); suppression list | Hanya akun ops |
-| FR-OPS-02 | Audit log append-only untuk login, undang anggota, unlock, export, webhook, grant credit, plan, pengaturan AI, parameter estimasi, flag, suppression | Tidak ada update/delete |
+| FR-OPS-01 | Halaman ops: daftar workspace + grant credit, pengaturan plan, AI, **parameter estimasi**, dan **grant awal workspace baru**; status import dari DB gmaps (snapshot terakhir, jeda, laporan); kesehatan data (jumlah bisnis, % terisi per field termasuk harga dan `popular_times`, % bisnis dengan laju ulasan per metode A/B, % terpetakan wilayah); feature flag (AI, export); suppression list | Hanya akun ops |
+| FR-OPS-02 | Audit log append-only untuk login, undang anggota, analisis lokasi, export, grant credit, plan, pengaturan AI, parameter estimasi, flag, suppression | Tidak ada update/delete |
 | **PRIV** | | |
 | FR-PRIV-01 | Isolasi data per workspace di database (row-level security), termasuk analisis lokasi yang disimpan | Test lintas workspace lulus |
-| FR-PRIV-02 | Nilai kontak di suppression list disembunyikan dari tampilan, export, dan webhook. Bisnis yang kontaknya ter-suppress tidak bisa di-unlock dan tidak ditagih | — |
+| FR-PRIV-02 | Bisnis atau URL di suppression list disembunyikan dari tampilan dan export. Aturan suppression untuk unlock kontak di F2 | — |
+
+### 9.1 Dirancang, dibangun di F2 (D-40)
+
+FR berikut tetap menjadi rancangan fitur prospek (PER-03) dan **tidak** dibangun di F1. ID dipertahankan agar rujukan di dokumen lain tetap utuh.
+
+| ID | Requirement | Acceptance (ringkas) |
+|---|---|---|
+| FR-INTL-02 | Deteksi opportunity sesuai katalog Lampiran B | Tiap opportunity punya alasan yang bisa dibaca |
+| FR-INTL-04 | ICP fit dan priority score sesuai Lampiran A, dengan breakdown faktor dan versi model | Hasil sama untuk input + versi yang sama |
+| FR-ICP-01 | Jalur onboarding "Cari prospek": pilih Offering → isi ICP (kategori, wilayah, kondisi digital, minimum rating/ulasan; tiap kriteria *wajib* atau *preferensi*) → hasil pertama | Hasil pertama ≤ 5 menit sejak daftar |
+| FR-ICP-02 | Workspace bisa menyimpan beberapa ICP. Tiap user memilih satu ICP aktif | Ganti ICP → skor dan urutan berubah |
+| FR-ACT-02 | Unlock kontak: 1 credit per bisnis, permanen per workspace. Yang di-mask hanya **nomor telepon**; website dan akun sosial selalu terlihat | Unlock ganda tidak menagih ulang |
+| FR-ACT-04 | Webhook: daftar URL HTTPS (ditolak bila mengarah ke IP privat/internal), payload ber-tanda tangan HMAC, retry otomatis, log pengiriman, kirim bisnis terpilih | Uji SSRF lulus |
 
 ---
 
@@ -190,11 +198,11 @@ Nilai yang tidak bisa diukur dari data diatur ops dari dashboard (D-29, D-32): r
 
 | ID | Aturan |
 |---|---|
-| BR-TRUST-01 | Claim type: **Teramati** (langsung dari snapshot), **Turunan** (aturan deterministik, mis. kategori, laju ulasan, jam inti), **Perkiraan** (memakai asumsi, mis. kunjungan, omzet, okupasi, "kemungkinan WhatsApp", opportunity), **Tidak diketahui** (field kosong) |
+| BR-TRUST-01 | Claim type: **Teramati** (langsung dari snapshot), **Turunan** (aturan deterministik, mis. kategori, laju ulasan, jam inti), **Perkiraan** (memakai asumsi, mis. kunjungan, omzet, okupasi), **Tidak diketahui** (field kosong) |
 | BR-TRUST-02 | Freshness dari tanggal snapshot tiap nilai: Baru ≤ 180 hari, Menua ≤ 365 hari, Usang > 365 hari. Estimasi selalu menampilkan "Data per <tanggal snapshot terbaru>" |
 | BR-TRUST-03 | "Tidak diketahui" tidak pernah ditampilkan sebagai kosong, "0", atau "—" |
-| BR-NORM-01 | Telepon → E.164 sesuai negara tempat, nilai mentah tetap disimpan. Nomor seluler Indonesia (+628…) → "Kemungkinan WhatsApp" (Perkiraan) |
-| BR-NORM-02 | URL website diklasifikasi: domain sendiri · profil sosial (instagram.com, facebook.com, tiktok.com) · link aggregator (linktr.ee, dll.) · link pesan (wa.me) · subdomain gratis (wixsite, blogspot, dll.) · kosong. Daftar pola disimpan sekali sebagai data (DRY) |
+| BR-NORM-01 | **(F2)** Telepon → E.164 sesuai negara tempat, nilai mentah tetap disimpan. Nomor seluler Indonesia (+628…) → "Kemungkinan WhatsApp" (Perkiraan) |
+| BR-NORM-02 | **(F2)** URL website diklasifikasi: domain sendiri · profil sosial (instagram.com, facebook.com, tiktok.com) · link aggregator (linktr.ee, dll.) · link pesan (wa.me) · subdomain gratis (wixsite, blogspot, dll.) · kosong. Daftar pola disimpan sekali sebagai data (DRY) |
 | BR-NORM-03 | Kategori sumber (Inggris atau Indonesia) dipetakan lewat **satu tabel mapping** ke taksonomi MSP dua level dan ke kelompok estimasi (`makan`, `kafe`, `hotel`, `lainnya`). Kategori utama yang menentukan; daftar kategori hanya dipakai bila kategori utama tidak dikenal (mis. "Restoran" yang juga "Kafe" tetap `makan`) |
 | BR-NORM-04 | Harga per orang → rentang Rupiah `min`–`max`. Contoh: "Rp 25–50K" → 25.000–50.000, "Rp 100–225 rb" → 100.000–225.000, "Rp 1–25.000" → 1–25.000. Rentang terbuka "Rp 250,000+" → min 250.000 tanpa max. Simbol "$"/"$$" atau format tak dikenal → "Tidak diketahui" |
 | BR-NORM-05 | Penggabungan snapshot: nilai terkini tiap field = nilai **tidak kosong terbaru** di antara snapshot, dengan tanggal snapshot-nya sendiri. Riwayat disimpan satu baris per tempat per hari (snapshot terakhir hari itu) untuk jumlah ulasan, rating, distribusi bintang, dan harga |
@@ -202,11 +210,11 @@ Nilai yang tidak bisa diukur dari data diatur ops dari dashboard (D-29, D-32): r
 | BR-EST-01 | Estimasi hanya dihitung bila data minimumnya ada (Lampiran E). Bila tidak, tampil "Belum dapat diperkirakan" beserta alasannya (mis. "riwayat < 30 hari dan ulasan terbaru < 10", "harga tidak diketahui"). Tidak ada fallback ke tebakan umur usaha |
 | BR-EST-02 | Kunjungan dan omzet selalu ditampilkan sebagai rentang rendah–tengah–tinggi, dibulatkan (kunjungan ke ratusan, omzet ke Rp0,1 miliar bila ≥ Rp1 miliar, selain itu ke Rp10 juta) |
 | BR-EST-03 | `popular_times` antar tempat hanya dibandingkan **bentuknya** (pola dan proporsi), bukan angka mentahnya |
-| BR-SCORE-01 | Rumus di Lampiran A. Faktor yang nilainya tidak diketahui dikeluarkan dan bobotnya dibagi ulang. `coverage` = bobot faktor yang diketahui / total bobot |
-| BR-SCORE-02 | Band: **HOT** ≥ 80, **WARM** 60–79, **COLD** < 60. Bila coverage < 0,6 atau kriteria ICP *wajib* tidak diketahui → maksimal WARM, dengan label "Data terbatas" |
-| BR-SCORE-03 | Persentil memakai `percent_rank()` Postgres dalam kelompok pembanding (kategori × kab/kota) |
-| BR-OPP-01 | Klaim "tidak ada X" hanya dibuat bila field X terisi ≥ 50% di kategori × kab/kota yang sama (minimal 20 bisnis). Bila tidak, opportunity tersebut tidak dibuat |
-| BR-CRED-01 | Operasi berbayar ada di Lampiran D. Unlock kontak: 1 credit/bisnis, permanen. Export dan kirim ke webhook gratis; untuk bisnis yang belum di-unlock, unlock dijalankan dulu (dengan preview biaya), lalu export/kirim berjalan, dan bila gagal cukup diulang tanpa biaya. Narasi AI yang gagal dan analisis lokasi yang hasilnya "Tidak dapat dianalisis" tidak ditagih. Semua debit memakai idempotency key. Refund dilakukan manual oleh ops |
+| BR-SCORE-01 | **(F2)** Rumus di Lampiran A. Faktor yang nilainya tidak diketahui dikeluarkan dan bobotnya dibagi ulang. `coverage` = bobot faktor yang diketahui / total bobot |
+| BR-SCORE-02 | **(F2)** Band: **HOT** ≥ 80, **WARM** 60–79, **COLD** < 60. Bila coverage < 0,6 atau kriteria ICP *wajib* tidak diketahui → maksimal WARM, dengan label "Data terbatas" |
+| BR-SCORE-03 | **(F2)** Persentil memakai `percent_rank()` Postgres dalam kelompok pembanding (kategori × kab/kota) |
+| BR-OPP-01 | **(F2)** Klaim "tidak ada X" hanya dibuat bila field X terisi ≥ 50% di kategori × kab/kota yang sama (minimal 20 bisnis). Bila tidak, opportunity tersebut tidak dibuat |
+| BR-CRED-01 | Operasi berbayar ada di Lampiran D. F1: analisis lokasi baru 1 credit (tidak ditagih bila "Tidak dapat dianalisis") dan narasi AI 1 AI credit (tidak ditagih bila gagal). Semua debit memakai idempotency key. Refund dilakukan manual oleh ops. Unlock kontak (1 credit/bisnis, permanen) dan "Unlock & export/kirim" berlaku di F2 |
 | BR-AI-01 | Ke LLM hanya dikirim fakta level bisnis dan hasil hitungan. Nomor telepon tidak dikirim |
 
 ## 11. Non-functional requirements
@@ -217,20 +225,20 @@ Nilai yang tidak bisa diukur dari data diatur ops dari dashboard (D-29, D-32): r
 | NFR-02 | Export 10.000 baris ≤ 2 menit. Narasi AI ≤ 20 s. Import harian inkremental selesai sebelum jam kerja |
 | NFR-03 | Ketersediaan F1 99% per bulan (satu server untuk semua, D-19). Naik ke 99,5% di F3 |
 | NFR-04 | Backup: RPO ≤ 15 menit, RTO ≤ 8 jam (F1). Restore diuji sebelum rilis F1 |
-| NFR-05 | HTTPS, isolasi workspace (RLS), secret tidak ada di repo, koneksi ke DB gmaps memakai akun read-only, pengecekan SSRF untuk webhook |
+| NFR-05 | HTTPS, isolasi workspace (RLS), secret tidak ada di repo, koneksi ke DB gmaps memakai akun read-only (pengecekan SSRF webhook di F2) |
 | NFR-06 | WCAG 2.2 AA dasar: kontras, keyboard, status tidak hanya dengan warna. Grafik keramaian punya padanan tabel |
 | NFR-07 | Bahasa Indonesia (F1), format Rupiah/angka/tanggal id-ID. Waktu sistem Asia/Jakarta; jam buka dan pola keramaian dalam zona waktu lokal tempat (BR-NORM-06) |
 | NFR-08 | Browser: 2 versi terakhir Chrome, Edge, Firefox, Safari. Desktop utama; profil dan list bisa dipakai di ponsel |
-| NFR-09 | Test otomatis untuk logika inti (normalisasi, estimasi, analisis lokasi, skor, opportunity, credit, isolasi workspace). Coverage paket inti ≥ 80% |
+| NFR-09 | Test otomatis untuk logika inti (normalisasi, estimasi, analisis lokasi, credit, isolasi workspace). Coverage paket inti ≥ 80% |
 
 ## 12. Gerbang rilis F1
 
-1. Alur end-to-end berjalan di staging dengan data nyata: import dari DB gmaps → wilayah → estimasi → search → profil → analisis lokasi → narasi AI → unlock → export/webhook.
+1. Alur end-to-end berjalan di staging dengan data nyata: import dari DB gmaps → wilayah → estimasi → search → profil → analisis lokasi → narasi AI → list + catatan → export CSV.
 2. **Sample case founder direproduksi** sebagai test otomatis (golden test) dengan data dari kasus aslinya:
    - **Signa Cafe:** snapshot 1.336 ulasan (10 Feb 2026) dan 1.507 ulasan (24 Sep 2026) → laju ≈ 276/tahun. Harga "Rp 100–225 rb", faktor belanja 0,8, review rate 2% / 1,5% / 1% → kunjungan ≈ 13.800 / 18.400 / 27.600 per tahun dan omzet ≈ **Rp1,8 / 2,4 / 3,6 miliar** per tahun. Bintang 5 = 87,5% → penanda FR-EST-05 tampil. Pola keramaian (data asli 7 hari): puncak rata-rata jam 20, jam inti 08–22 → "Ramai sepanjang hari"; puncak Selasa jam 13 (= 100).
    - **Warung Kita (Jl. Pulau Kawe):** pola KR dan Joglo dari kasus asli, dengan Joglo sebagai pembanding. Jam inti tetangga 17–21 → saran jam buka **16.00–22.00**. Jam inti pembanding mencakup 12–14 tetapi tetangga tidak. Satu tetangga sejenis → keyakinan **Rendah** + saran cek lapangan. Harga rencana Rp25–50 rb vs KR Rp50–100 rb → **lebih murah**.
 3. Setiap nilai di profil dan analisis lokasi menampilkan claim type, sumber, dan tanggal data.
-4. Test otomatis lulus, termasuk isolasi workspace, SSRF webhook, dan idempotensi credit.
+4. Test otomatis lulus, termasuk isolasi workspace dan idempotensi credit.
 5. Restore backup sudah dicoba sekali dan berhasil, **dari salinan off-site** (SFTP/FTPS, D-39), bukan dari repo lokal.
 6. Founder mencoba onboarding: hasil pertama ≤ 5 menit.
 
@@ -246,11 +254,11 @@ Nilai yang tidak bisa diukur dari data diatur ops dari dashboard (D-29, D-32): r
 | Data basi (contoh: catatan lama tentang Pulau Kawe ternyata keliru) | Estimasi selalu dihitung dari snapshot terbaru dan menampilkan tanggal data; dihitung ulang setelah setiap import |
 | Populasi adalah perkiraan model, bukan sensus | Label jelas di UI dan laporan |
 | Satu server untuk production, staging, GitLab, CI, dan monitoring (D-19) | Batas CPU/RAM per container, runner CI 1 job sekaligus, uptime monitor eksternal, backup DB & GitLab off-site, rebuild dari skrip bootstrap (RTO 8 jam). Pisahkan GitLab/CI ke server lain bila contention terukur (F3) |
-| Opportunity atau kesimpulan dirasa tidak relevan | Tombol feedback (FR-INTL-05), penyesuaian parameter |
+| Kesimpulan analisis lokasi dirasa tidak relevan | Tombol feedback (FR-INTL-05), penyesuaian parameter |
 
 ---
 
-## Lampiran A — Priority score `priority-2.0.0` (fitur prospek, PER-03)
+## Lampiran A — Priority score `priority-2.0.0` (F2, fitur prospek PER-03)
 
 Disederhanakan dari MVP Pack Rev 1.2 §9.
 
@@ -265,7 +273,7 @@ Disederhanakan dari MVP Pack Rev 1.2 §9.
 
 `priority = Σ(bobot × nilai) / Σ(bobot faktor yang diketahui)`. Bobot bisa diubah per Offering lewat satu file konfigurasi berversi.
 
-## Lampiran B — Katalog opportunity v0
+## Lampiran B — Katalog opportunity v0 (F2)
 
 `skor = severity × relevansi`. Relevansi = 1 bila tag Offering primer cocok, 0,6 bila sekunder, 0 bila tidak relevan (gap tetap terlihat di kartu digital, tapi tidak disebut opportunity).
 
@@ -296,7 +304,7 @@ Dihitung per kelurahan dan kecamatan, per kelompok estimasi. Satuan densitas **p
 | Rentang harga | Median dan sebaran titik tengah harga bisnis sekelompok (bila ≥ 3 punya harga) |
 | Data terbatas | Populasi < 500 atau jumlah bisnis < 5 → metrik tetap tampil, tetapi `market_score` tidak dihitung |
 | `market_score` | 0,40·pct(kunjungan rata-rata per bisnis sekelompok) + 0,35·pct(populasi) + 0,25·(100 − kompetisi). Faktor yang tidak diketahui dikeluarkan dan bobotnya dibagi ulang (pola BR-SCORE-01) |
-| Peringkat wilayah | Urut `market_score`. Bila ada ICP aktif, juga ditampilkan jumlah prospek HOT + WARM |
+| Peringkat wilayah | Urut `market_score`. (F2: jumlah prospek HOT + WARM untuk ICP aktif) |
 
 Kunjungan rata-rata per bisnis yang tinggi dengan kompetisi rendah berarti permintaan sudah terbukti tetapi belum jenuh. Untuk bisnis kelompok `lainnya` (mis. prospek PER-03), metrik wilayahnya dihitung dari semua bisnis di area.
 
@@ -304,9 +312,9 @@ Kunjungan rata-rata per bisnis yang tinggi dengan kompetisi rendah berarti permi
 
 | Operasi | Biaya |
 |---|---|
-| Search, profil (termasuk estimasi dan pola keramaian), peta, peringkat wilayah, membuka ulang analisis yang sudah disimpan, export & kirim webhook untuk bisnis yang sudah di-unlock | Gratis |
+| Search, profil (termasuk estimasi dan pola keramaian), peta, peringkat wilayah, list + catatan, membuka ulang analisis yang sudah disimpan, export CSV | Gratis |
 | Menjalankan analisis lokasi baru | 1 credit. **Tidak ditagih** bila hasilnya "Tidak dapat dianalisis" |
-| Unlock kontak (termasuk "Unlock & export/kirim") | 1 credit per bisnis |
+| (F2) Unlock kontak, termasuk "Unlock & export/kirim" | 1 credit per bisnis |
 | Grant awal workspace baru | +1.000 credit satu kali (default, diatur ops; D-36) |
 | Narasi AI | 1 AI credit (gratis bila diambil dari cache, tidak ditagih bila gagal) |
 

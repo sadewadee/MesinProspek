@@ -15,11 +15,11 @@
 | Blok | Isi |
 |---|---|
 | **Masalah** | (1) Pemilik usaha memilih lokasi dan jam buka cabang dari pengamatan sesaat. (2) Omzet kompetitor dan ukuran pasar tidak diketahui; hitungan manual lambat dan mudah memakai asumsi basi. (3) Penjual B2B tidak tahu bisnis mana yang layak dihubungi. Rincian di PRD §2 |
-| **Segmen** | **Utama (D-30):** pemilik usaha F&B dan multi-outlet (PER-01); investor, analis, dan franchisor (PER-02). **Sekunder:** penjual B2B ke bisnis lokal (PER-03). *Early adopter:* pemilik F&B 2–10 outlet di kota tier 1–2 yang sedang merencanakan cabang, dan franchisor yang menilai lokasi calon mitra |
+| **Segmen** | **Utama (D-30):** pemilik usaha F&B dan multi-outlet (PER-01); investor, analis, dan franchisor (PER-02). **F2:** penjual B2B ke bisnis lokal (PER-03, D-40). *Early adopter:* pemilik F&B 2–10 outlet di kota tier 1–2 yang sedang merencanakan cabang, dan franchisor yang menilai lokasi calon mitra |
 | **Nilai unik** | "Perkiraan kunjungan dan omzet usaha mana pun, lengkap dengan rentang, asumsi, dan bukti, plus analisis lokasi dan jam buka untuk cabang berikutnya." |
-| **Solusi** | Estimasi kunjungan dan omzet (okupasi untuk hotel) dari laju ulasan yang diukur; pola keramaian per jam; analisis lokasi (jam inti, saran jam buka, posisi harga, tingkat keyakinan); peringkat wilayah per kelurahan; narasi AI. Fitur prospek (unlock, export, webhook) untuk PER-03 |
+| **Solusi** | Estimasi kunjungan dan omzet (okupasi untuk hotel) dari laju ulasan yang diukur; pola keramaian per jam; analisis lokasi (jam inti, saran jam buka, posisi harga, tingkat keyakinan); peringkat wilayah per kelurahan; narasi AI; list + catatan dan export CSV. Fitur prospek untuk PER-03 (unlock, webhook, skor) di F2 (D-40) |
 | **Channel** | Jaringan founder; komunitas dan asosiasi pengusaha kuliner dan waralaba; konsultan bisnis/waralaba dan broker properti komersial sebagai perujuk; konten edukasi per kota (cara membaca keramaian, memilih jam buka); komunitas agency untuk segmen sekunder |
-| **Pendapatan** | Langganan bulanan per plan (seat + kuota credit) ditambah top-up credit. Credit dipakai untuk analisis lokasi baru dan unlock kontak |
+| **Pendapatan** | Langganan bulanan per plan (seat + kuota credit) ditambah top-up credit. Credit F1 dipakai untuk analisis lokasi baru (unlock kontak menyusul di F2) |
 | **Biaya** | 1 dedicated server (semua layanan), backup off-site, API AI, domain/SMTP, waktu founder. Data dari DB gmaps yang dikelola founder terpisah (§4.2) |
 | **Metrik kunci** | Aktivasi (hasil pertama ≤ 5 menit); analisis lokasi per workspace per minggu; kredibilitas estimasi (§5); % kesimpulan analisis lokasi dan opportunity yang dinilai "Relevan" (FR-INTL-05); konversi beta → berbayar; churn bulanan |
 | **Keunggulan** | Riwayat snapshot berulang per tempat (Signa Cafe: 171 snapshot, Februari–September 2026) yang tidak bisa dibuat ulang ke belakang oleh pendatang baru, sehingga laju ulasan diukur, bukan ditebak. Pola keramaian, harga, dan wilayah per kelurahan ada dalam satu model. Setiap angka menunjukkan asumsi dan buktinya |
@@ -33,7 +33,7 @@
 | Estimasi untuk usaha lokal | Umumnya tidak ada | Umumnya jumlah kunjungan, bukan omzet | Rentang kunjungan dan omzet + asumsi + tanggal data; okupasi hotel |
 | Keputusan lokasi & jam buka | Tidak ada | Analisis area dagang, umumnya untuk ritel dan properti skala besar | Analisis per titik: jam inti tetangga, saran jam buka, posisi harga, tingkat keyakinan |
 | Transparansi | Status verifikasi kontak | Bervariasi per penyedia | Claim type, sumber, dan parameter untuk setiap angka |
-| Tindak lanjut | Kontak, umumnya email | Laporan dan dashboard | Narasi AI; unlock telepon/WhatsApp, export, webhook |
+| Tindak lanjut | Kontak, umumnya email | Laporan dan dashboard | Narasi AI, list + catatan, export CSV (unlock telepon dan webhook di F2) |
 
 **Batas yang kami sampaikan terus terang:** estimasi bergantung pada asumsi review rate (1% vs 2% = 2×), pola keramaian hanya ada di ±13% tempat, dan harga di ±0,8% (PRD §13). Karena itu yang dijual adalah rentang dan bukti, bukan angka pasti. Analisis lokasi dengan keyakinan Rendah selalu disertai saran cek lapangan.
 
@@ -41,7 +41,7 @@
 
 > Harga, seat, dan kuota **diatur dari dashboard ops** (D-29), jadi bisa diubah kapan saja tanpa deploy. Tabel ini hanya nilai awal untuk diisi ke dashboard dan divalidasi saat beta.
 
-Credit dipakai untuk analisis lokasi baru dan unlock kontak, AI credit untuk narasi AI. Tarifnya hanya ditetapkan di PRD Lampiran D (BR-CRED-01). Tabel ini hanya berisi harga dan kuota.
+Di F1 credit dipakai untuk analisis lokasi baru dan AI credit untuk narasi AI; unlock kontak menyusul di F2. Tarifnya hanya ditetapkan di PRD Lampiran D (BR-CRED-01). Tabel ini hanya berisi harga dan kuota.
 
 | Plan | Harga/bulan | Seat | Credit/bulan | AI credit/bulan | Untuk siapa |
 |---|---|---|---|---|---|
@@ -97,7 +97,7 @@ Titik impas infra ≈ biaya tetap ÷ (harga rata-rata − biaya AI rata-rata). D
 | Peserta | **Sudah ada** (Q-07). Seluruh Indonesia (D-34); rekrut peserta di kota yang data ulasannya sudah cukup: saat ini Bali (riwayat snapshot), dan seluruh Indonesia setelah scraper mengambil ulasan terbaru (D-38). Pastikan peserta mencakup segmen utama D-30 (pemilik F&B/multi-outlet, investor/franchisor), bukan hanya penjual B2B: **[isi jumlah per segmen]** |
 | Penawaran | Gratis 30 hari, plan Growth, plus sesi onboarding 30 menit. Diskon 50% selama 3 bulan pertama bila lanjut berbayar |
 | Umpan balik | Tombol "Relevan / Tidak relevan" pada opportunity dan kesimpulan analisis lokasi (FR-INTL-05), wawancara singkat mingguan, dan catatan dari ops. MesinProspek tidak meminta atau menyimpan omzet nyata peserta |
-| Metrik sukses beta | ≥ 70% peserta mendapat hasil pertama ≤ 5 menit · **Kredibilitas estimasi:** ≥ 70% peserta menilai estimasi dan analisis lokasi "masuk akal" (wawancara + tombol feedback) · ≥ 60% kesimpulan analisis lokasi dan opportunity dinilai "Relevan" · workspace penjual B2B: ≥ 50 prospek ditindaklanjuti per minggu · **≥ 50% peserta lanjut berbayar** |
+| Metrik sukses beta | ≥ 70% peserta mendapat hasil pertama ≤ 5 menit · **Kredibilitas estimasi:** ≥ 70% peserta menilai estimasi dan analisis lokasi "masuk akal" (wawancara + tombol feedback) · ≥ 60% kesimpulan analisis lokasi dinilai "Relevan" · **≥ 50% peserta lanjut berbayar** |
 | Keputusan setelah beta | Kunci harga dan nama plan (D-09); putuskan apakah estimasi cukup kredibel untuk dijual ke investor/franchisor; tentukan prioritas F2 dari permintaan nyata (pembanding BPS, kategori lain, pantau kompetitor); sesuaikan bobot skor dan katalog opportunity untuk PER-03 |
 
 ## 6. Yang perlu diputuskan founder
