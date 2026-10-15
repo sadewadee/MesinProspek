@@ -90,7 +90,7 @@ Konfigurasi lint:
 | STD-FE-01 | Styling hanya lewat token (CSS variable `--msp-*`) dan preset Tailwind dari `packages/design-tokens`. Dilarang hex/rgb/px mentah dan arbitrary value Tailwind (`[…]`) | lint (grep hex/px/`[…]` di `apps/web`) |
 | STD-FE-02 | Pakai Server Component secara default. `"use client"` hanya untuk interaktivitas (state, event, browser API) dan ditaruh sedalam mungkin di pohon komponen | review |
 | STD-FE-03 | Data API hanya diambil lewat client hasil generate (`packages/api-client`). Di client component, client ini dipanggil lewat TanStack Query. Tanpa `fetch` manual ke API | lint (ESLint `no-restricted-globals: fetch` di luar wrapper) |
-| STD-FE-04 | Form memakai react-hook-form + zod (`zodResolver`). Error ditampilkan per field dalam bahasa Indonesia. Error server (problem+json) dipetakan ke field | review |
+| STD-FE-04 | Form memakai react-hook-form + zod (`zodResolver`). Error ditampilkan per field dalam bahasa Indonesia. Error server (problem+json) dipetakan ke field. Pengecualian: form flow Kratos (SCR-01) dirender dari node flow dan divalidasi Kratos, dengan pesan Kratos diterjemahkan per ID pesan (04 §9) | review |
 | STD-FE-05 | Angka, Rupiah, dan tanggal diformat hanya lewat satu helper `Intl` (`id-ID`, `Asia/Jakarta`, NFR-07) | lint (ESLint `no-restricted-properties`: `toLocaleString`, `toFixed` di luar helper) |
 | STD-FE-06 | Status tidak pernah ditunjukkan hanya dengan warna: selalu ikon + label teks (NFR-06, 02 §1). Prop `label` wajib di komponen badge/status. Unknown tampil sebagai "Tidak diketahui" | TypeScript (prop wajib), review |
 

@@ -40,7 +40,7 @@
 
 | SCR | Layar | Route (usulan) | Role | FR |
 |---|---|---|---|---|
-| SCR-01 | Masuk & daftar (flow Kratos) | `/login`, `/signup`, `/verify`, `/recovery`, `/account`, `/invite/[token]` | Semua | FR-AUTH-01, -02, -03 |
+| SCR-01 | Masuk & daftar (flow Kratos) | `/login`, `/signup`, `/verify`, `/recovery`, `/account`, `/auth-error` (error flow Kratos, dengan kode referensi), `/invite/[token]` | Semua | FR-AUTH-01, -02, -03 |
 | SCR-02 | Onboarding: pilih tujuan → hasil pertama | `/onboarding` | Admin | FR-ONB-01, FR-AUTH-02 |
 | SCR-03 | Bisnis (search + filter + hasil) | `/businesses` | Admin, Member | FR-SRCH-01, -02, FR-EST-02/03 (kolom), FR-ACT-01, -03 |
 | SCR-04 | Profil bisnis | `/businesses/[id]` | Admin, Member | FR-PROF-01, FR-EST-01..05, FR-INTL-01, -03, FR-DATA-02, FR-ACT-01, -05, FR-PRIV-02 |

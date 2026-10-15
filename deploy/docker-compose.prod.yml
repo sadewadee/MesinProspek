@@ -45,7 +45,7 @@ services:
     image: oryd/kratos:v26.2.0
     # Config: kratos/kratos.yml (deploy.sh copies deploy/kratos/); secrets and DSN from .env. The courier
     # (verification and recovery email) runs inside the server process.
-    command: ["serve", "-c", "/etc/kratos/kratos.yml", "--watch-courier"]
+    command: ["serve", "-c", "/etc/kratos/kratos.yml", "--watch-courier", "--sqa-opt-out"]   # no usage telemetry to Ory
     env_file: .env
     environment:
       SERVE_PUBLIC_BASE_URL: ${MSP_PUBLIC_URL:?set MSP_PUBLIC_URL in .env}/.ory/   # Caddy routes /.ory/* here

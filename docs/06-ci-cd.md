@@ -2,10 +2,10 @@
 
 | Field | Value |
 |---|---|
-| Versi | 0.3 (lean) · 2026-10-11. Sumber data = DB gmaps read-only (D-31), kiriman mingguan ramping founder dimuat ke `gmaps-db` (D-35, D-37) |
+| Versi | 0.4 (lean) · 2026-10-15. Pipeline, deploy, dan Compose dirujuk ke file repo (tidak disalin). Sumber data = DB gmaps read-only (D-31), kiriman mingguan ramping founder dimuat ke `gmaps-db` (D-35, D-37) |
 | Basis | [README](README.md) (stack F1, kosakata), [PRD](01-prd.md) NFR-03/04/05/09 + §12 + §13, D-14, D-18, D-19, D-22, D-26, D-29, D-31, D-35, D-37, D-39 ([00 §7](00-analisis-dokumen-awal.md)). Terkait: [04](04-technical-design.md) §2.1 (kapasitas), [05](05-test-strategy.md) (isi test), [08](08-engineering-standards.md) (`make`, migrasi), [09](09-runbook-operasional.md) (operasi) |
 
-> KISS: satu server, GitLab CE + dua runner (CI dan deploy) + Docker Compose + skrip shell. Contoh YAML dan skrip bersifat ilustratif. Semua image dan tool di-pin ke versi eksak; angka versi di contoh hanya contoh.
+> KISS: satu server, GitLab CE + dua runner (CI dan deploy) + Docker Compose + skrip shell. Dokumen ini menjelaskan desain dan alasannya; isi persisnya ada di file repo (`.gitlab-ci.yml`, `deploy/`, `scripts/ci/`) yang dirujuk tiap bagian. Semua image dan tool di-pin ke versi eksak di file-file itu.
 
 ## 1. Prinsip
 
@@ -41,6 +41,7 @@ Satu dedicated server di Indonesia untuk semuanya (D-19, D-26). Direktori Compos
 | `api` | 2 · 3 GB | 0,5 · 1 GB |
 | `web` | 1 · 2 GB | 0,5 · 1,5 GB |
 | `kratos` | 0,5 · 0,5 GB | 0,5 · 0,5 GB |
+| `kratos-migrate` (one-shot) | 0,5 · 0,25 GB | 0,5 · 0,25 GB |
 
 Di `/opt/ops`: `caddy` 0,5 · 0,5 GB, `gitlab` 4 · 8 GB, job CI 2 · 4 GB + service `dind` 2 · 4 GB, monitoring 1 · 2 GB, dan `gmaps-db` 2 · 4 GB.
 
@@ -61,201 +62,49 @@ Di `/opt/ops`: `caddy` 0,5 · 0,5 GB, `gitlab` 4 · 8 GB, job CI 2 · 4 GB + ser
 
 ## 4. Pipeline (`.gitlab-ci.yml`)
 
-| Stage | Kapan | Isi |
-|---|---|---|
-| `check` | MR, `main` | `make generate` + `git diff --exit-code`, `make lint`, `make test` (08 §0), `govulncheck`, cek MR. Job `e2e`: stack Compose + Playwright Chromium (05). Test import membaca DB sumber fixture (05): database kedua di service `postgres` yang sama, tanpa service tambahan |
-| `build` | `main` | Image `api` & `web` → registry GitLab dengan tag SHA (cache inline dari image `:main`). Laporan `trivy image` HIGH/CRITICAL (tidak memblokir) |
-| `deploy-staging` | `main` otomatis; tag `v*` | Runner `deploy`: `deploy/deploy.sh` di `/opt/msp-staging`. Lalu `smoke-staging` (runner `ci`): J-2 dengan akun test yang sudah terverifikasi (`main`), atau J-2..J-7 di semua browser dengan akun yang sama (tag). J-1 hanya di job `e2e` (Mailpit) |
-| `deploy-production` | tag `vX.Y.Z`, manual, Maintainer | Runner `deploy`: `deploy/deploy.sh` di `/opt/msp`. Smoke manual per 09 RB-01 |
-| `rollback` | manual, Maintainer | Retry job `deploy-production` di pipeline tag sebelumnya (09 RB-02). Langkahnya sama dengan deploy, jadi tidak perlu job terpisah (DRY) |
-| *schedule* | harian 01:00 WIB | Job `backup` (§8): pgBackRest + GitLab ke disk lokal. Salinan off-site dibuat cron host `msp-offsite`, bukan pipeline |
+Isi persis job ada di `.gitlab-ci.yml`; kepala file merangkum job per jenis pipeline (MR, `main`, tag `v*`). Job memanggil target `make` yang sama dengan lokal (08 §0).
 
-```yaml
-# .gitlab-ci.yml (ilustratif)
-stages: [check, build, deploy-staging, deploy-production]
-workflow:
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event" || $CI_PIPELINE_SOURCE == "schedule"
-    - if: $CI_COMMIT_BRANCH == "main" || $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
-default: { tags: [ci] }                       # runner Docker; job deploy memakai tag `deploy`
-variables:
-  API_IMAGE: $CI_REGISTRY_IMAGE/api:$CI_COMMIT_SHA     # = <registry>/msp/api:<git-sha>
-  WEB_IMAGE: $CI_REGISTRY_IMAGE/web:$CI_COMMIT_SHA
-.mr-main:
-  stage: check
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-    - if: $CI_COMMIT_BRANCH == "main" && $CI_PIPELINE_SOURCE == "push"
-.main: { rules: [{ if: $CI_COMMIT_BRANCH == "main" && $CI_PIPELINE_SOURCE == "push" }] }
-check:
-  extends: .mr-main
-  image: golang:1.25-bookworm                 # tool Go via `go tool` (go.mod), tool JS via pnpm-lock
-  services: [{ name: "postgis/postgis:16-3.5", alias: postgres }]
-  variables:
-    POSTGRES_PASSWORD: test
-    MSP_TEST_DATABASE_URL: "postgres://postgres:test@postgres:5432/postgres?sslmode=disable"   # superuser khusus test; test membuat & menghapus DB sendiri. CI=true dari GitLab membuat test DB/PostGIS yang hilang gagal, bukan skip
-    # DB sumber fixture (05): database kedua di service yang sama, dibuat & di-seed oleh setup test
-    MSP_SOURCE_DATABASE_URL: "postgres://postgres:test@postgres:5432/gmaps_fixture?sslmode=disable"
-    GOMODCACHE: $CI_PROJECT_DIR/.cache/go-mod
-    GOCACHE: $CI_PROJECT_DIR/.cache/go-build
-  cache: { key: { files: [apps/api/go.sum, pnpm-lock.yaml] }, paths: [.cache/, .pnpm-store/] }
-  before_script:                              # .nvmrc = versi eksak Node, mis. 24.11.0
-    - curl -fsSL "https://nodejs.org/dist/v$(cat .nvmrc)/node-v$(cat .nvmrc)-linux-x64.tar.gz" | tar -xz -C /usr/local --strip-components=1
-    - corepack enable && pnpm install --frozen-lockfile --store-dir .pnpm-store && git fetch -q origin main
-  script:
-    - make generate && git diff --exit-code   # oapi-codegen, client TS, sqlc, tokens.css tidak basi
-    - make lint                               # termasuk gitleaks (08 §0)
-    - make test                               # go test -race + PostGIS, gate coverage, Vitest
-    - (cd apps/api && go tool govulncheck ./...)
-    - if [ -n "$CI_MERGE_REQUEST_IID" ]; then scripts/ci/mr-check.sh; fi   # judul/deskripsi MR, migrasi lama
-e2e:
-  extends: .mr-main
-  image: docker:28
-  services: ["docker:28-dind"]
-  # e2e.yml: env test (termasuk DB sumber fixture di `postgres`), network `edge` dan `gmaps` tidak external, cache_from image :main, service `playwright`
-  script: [docker compose -f deploy/docker-compose.prod.yml -f deploy/docker-compose.e2e.yml up --build --exit-code-from playwright]
-build:
-  extends: .main
-  stage: build
-  image: docker:28
-  services: ["docker:28-dind"]
-  script:
-    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
-    - |
-      for app in api web; do                  # cache inline dari :main → build kecil dan cepat
-        docker build -f apps/$app/Dockerfile --cache-from "$CI_REGISTRY_IMAGE/$app:main" --build-arg BUILDKIT_INLINE_CACHE=1 \
-          -t "$CI_REGISTRY_IMAGE/$app:$CI_COMMIT_SHA" -t "$CI_REGISTRY_IMAGE/$app:main" .
-        docker push --all-tags "$CI_REGISTRY_IMAGE/$app"
-      done
-trivy:                                        # laporan saja; dibaca founder sebelum tag rilis
-  extends: .main
-  stage: build
-  needs: [build]
-  image: { name: "aquasec/trivy:0.67.0", entrypoint: [""] }
-  variables: { TRIVY_USERNAME: $CI_REGISTRY_USER, TRIVY_PASSWORD: $CI_REGISTRY_PASSWORD }
-  script:
-    - for i in "$API_IMAGE" "$WEB_IMAGE"; do trivy image --severity HIGH,CRITICAL --ignore-unfixed "$i"; done
-.deploy:
-  tags: [deploy]                              # shell di server, hanya ref terproteksi
-  script: [deploy/deploy.sh "$CI_COMMIT_SHA"]
-deploy-staging:
-  extends: .deploy
-  stage: deploy-staging
-  rules:
-    - if: $CI_COMMIT_BRANCH == "main" && $CI_PIPELINE_SOURCE == "push"
-    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
-  environment: staging
-smoke-staging:
-  stage: deploy-staging
-  needs: [deploy-staging]
-  image: mcr.microsoft.com/playwright:v1.56.0-noble   # versi = @playwright/test di lockfile
-  rules:
-    - if: $CI_COMMIT_BRANCH == "main" && $CI_PIPELINE_SOURCE == "push"
-      variables: { E2E_ARGS: "--project=chromium --grep @smoke" }   # J-2; J-1 butuh Mailpit (hanya di stack test)
-    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
-      variables: { E2E_ARGS: "--grep-invert @ci-only" }              # J-2..J-7, semua browser
-  environment: { name: staging, action: verify }                     # variabel staging: URL + akun test
-  script:
-    - corepack enable && pnpm install --frozen-lockfile
-    - pnpm --filter ./apps/web exec playwright test $E2E_ARGS
-deploy-production:
-  extends: .deploy
-  stage: deploy-production
-  rules: [{ if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/, when: manual }]
-  environment: production
-backup:                                       # pipeline schedule harian
-  tags: [deploy]
-  stage: check
-  rules: [{ if: $CI_PIPELINE_SOURCE == "schedule" }]
-  environment: { name: production, action: access }
-  script: [deploy/backup.sh]
-```
+| Stage | Job | Kapan | Isi |
+|---|---|---|---|
+| `check` | `check` | MR, `main` | `make generate` lalu tidak boleh ada file berubah atau file baru; `make lint` (termasuk gitleaks); `make test` (unit + integrasi pada service `postgres` dengan image Postgres + PostGIS yang sama dengan production, `CI=true`); dependency rentan: `govulncheck` dan `pnpm audit --prod` (04 §15.8). Test import membaca DB sumber fixture sebagai database kedua di service yang sama (05), tanpa service tambahan |
+| | `mr-check` | MR | `scripts/ci/mr-check.sh`: judul Conventional Commits, deskripsi MR `feat`/`fix` menyebut WP + ID PRD (08 STD-GIT-02/04), migrasi yang sudah ada di `main` tidak diubah dan nomor migrasi baru di atas yang terakhir di `main` (STD-DB-01). Job terpisah karena butuh clone penuh |
+| | `e2e` | MR, `main` | Stack Compose lokal + Playwright Chromium (05), termasuk J-1 dengan Mailpit |
+| `build` | `build` | `main` | Image `api` (context `apps/api`) dan `web` (context root repo, workspace pnpm) → registry GitLab dengan tag git SHA, plus `:main` sebagai cache inline build berikutnya |
+| | `trivy` | `main` | Laporan HIGH/CRITICAL kedua image. Tidak memblokir; dibaca founder sebelum tag (§10) |
+| `deploy-staging` | `deploy-staging` | `main` otomatis; tag `v*` | Runner `deploy`: `deploy/deploy.sh staging <sha>` di `/opt/msp-staging` |
+| | `smoke-staging` | setelah `deploy-staging` | Runner `ci`, Playwright ke staging dengan akun test yang sudah terverifikasi: test bertanda `@smoke` (J-2) di `main`; semua test kecuali `@ci-only` (J-2..J-7) di semua browser pada tag. J-1 butuh Mailpit, jadi hanya di `e2e` |
+| `deploy-production` | `deploy-production` | tag `vX.Y.Z`, manual, founder | Runner `deploy`: `deploy/deploy.sh production <sha>` di `/opt/msp`. Smoke manual per 09 RB-01 |
+| — | rollback | manual, founder | **Retry** job `deploy-production` di pipeline tag sebelumnya (09 RB-02). Langkahnya sama dengan deploy, jadi tidak perlu job terpisah (DRY) |
+| — | `backup` | *schedule* harian 01:00 WIB (WP-25) | pgBackRest + GitLab ke disk lokal (§8). Salinan off-site dibuat cron host `msp-offsite`, bukan pipeline |
 
-**`deploy/deploy.sh <git-sha>`** dijalankan runner `deploy` langsung di server, untuk staging, production, dan rollback. Variabel per environment: `DEPLOY_DIR` (`/opt/msp-staging` atau `/opt/msp`) dan `MSP_APP_HOST`.
-1. Tulis `.env`: setiap key di `deploy/.env.example` diisi dari variabel CI, ditambah `MSP_IMAGE_REPO=$CI_REGISTRY_IMAGE` dan `MSP_IMAGE_TAG=<git-sha>`. Salin ke `$DEPLOY_DIR`: `.env` (chmod 600), `docker-compose.prod.yml` sebagai `compose.yaml` (agar perintah 09 jalan tanpa `-f`), `docker-compose.staging.yml` sebagai `compose.staging.yaml`, `kratos/`, dan `postgres/`.
-2. `cd $DEPLOY_DIR`, `docker login` dengan deploy token `read_registry`, lalu `docker compose pull --ignore-buildable`.
-3. `docker compose run --rm worker msp migrate`, lalu `docker compose run --rm kratos migrate sql -e --yes`. Bila gagal, deploy berhenti dan versi lama tetap jalan.
-4. `docker compose up -d --build --wait --wait-timeout 300`. `--build` hanya membangun ulang `postgres` bila Dockerfile-nya berubah.
-5. `curl -fsS https://$MSP_APP_HOST/readyz`. Bila gagal, job merah dan founder memutuskan rollback (09 RB-02).
+**`deploy/deploy.sh <staging|production> <image-tag>`** dijalankan runner `deploy` langsung di server, untuk deploy dan rollback. Direktorinya tetap: `/opt/msp-staging` atau `/opt/msp`. Langkahnya (detail di kepala skrip):
+1. Tulis `.env` (izin 600) dari variabel CI sesuai `deploy/.env.example` (§7), ditambah `MSP_ENV`, `MSP_IMAGE_REPO=$CI_REGISTRY_IMAGE`, `MSP_IMAGE_TAG=<git-sha>`, dan `COMPOSE_FILE`. Key wajib yang belum ada menghentikan deploy dan disebut namanya. Salin `docker-compose.prod.yml` sebagai `compose.yaml` (agar perintah 09 jalan tanpa `-f`), `docker-compose.staging.yml` sebagai `compose.staging.yaml`, `kratos/`, dan `postgres/` (`cp -rL`).
+2. `docker login` dengan deploy token `gitlab-deploy-token` (`read_registry`), lalu `docker compose pull --ignore-buildable`.
+3. `docker compose run --rm worker msp migrate`, lalu `docker compose run --rm kratos-migrate` (`kratos migrate sql`). Bila gagal, deploy berhenti dan container lama tetap jalan (09 RB-01 langkah 3).
+4. `docker compose up -d --build --wait --wait-timeout 300 --remove-orphans`. `--build` hanya membangun ulang `postgres` bila Dockerfile-nya berubah.
+5. `curl $MSP_PUBLIC_URL/readyz` lewat Caddy. Bila gagal, job merah dan founder memutuskan rollback (09 RB-02).
 
 - Mengganti container menimbulkan jeda beberapa detik. Ini diterima untuk NFR-03 (99%); zero-downtime ada di F3.
 - **Build once untuk web.** Jangan memakai `NEXT_PUBLIC_*` yang nilainya berbeda per environment, karena nilainya ter-inline saat build. API dipanggil lewat path relatif `/api/v1`.
-- Di MR, image dibangun oleh job `e2e` tanpa push; push ke registry hanya dari `main`. Pipeline tag tidak membangun ulang image: `pull` gagal bila image SHA tidak ada.
+- Push ke registry hanya dari `main`. Pipeline tag tidak membangun ulang image: tag dibuat di commit `main` yang hijau (§10), jadi image SHA-nya sudah ada; `pull` gagal bila tidak ada.
 
 ## 5. Docker Compose & Caddy
 
-```yaml
-# deploy/docker-compose.prod.yml (ringkas). Dipakai staging & production. Semua service: restart: unless-stopped
-# Setiap service: deploy.resources.limits = kolom production §2; staging menimpanya lewat docker-compose.staging.yml
-x-app: &app
-  image: ${MSP_IMAGE_REPO}/api:${MSP_IMAGE_TAG}       # api & worker = image yang sama
-  env_file: .env
-  depends_on: { postgres: { condition: service_healthy } }
-services:
-  web:                                                # tanpa env_file: web tidak memegang secret
-    image: ${MSP_IMAGE_REPO}/web:${MSP_IMAGE_TAG}
-    networks: [default, edge]
-    healthcheck: { test: ["CMD", "wget", "-qO-", "http://localhost:3000/"], interval: 5s }
-  api: { <<: *app, command: ["msp", "api"], networks: [default, edge], healthcheck: { test: ["CMD", "wget", "-qO-", "http://localhost:8080/readyz"], interval: 5s } }   # :9090 metrik → Prometheus
-  worker: { <<: *app, command: ["msp", "worker"], networks: [default, gmaps], stop_grace_period: 60s }   # job River sempat selesai; gmaps → gmaps-db
-  kratos: { image: "oryd/kratos:v1.3.1", command: ["serve", "-c", "/etc/kratos/kratos.yml"], env_file: .env, volumes: ["./kratos:/etc/kratos:ro"], networks: [default, edge] }
-  postgres:
-    build: ./postgres                                 # FROM postgis/postgis:16-3.5 + apt pgbackrest
-    image: msp-postgres:16
-    env_file: .env                                    # POSTGRES_PASSWORD, PGBACKREST_* (prod)
-    volumes: ["pgdata:/var/lib/postgresql/data", "./pgbackrest:/var/lib/pgbackrest"]   # repo pgBackRest lokal (§8); staging: kosong
-    healthcheck: { test: ["CMD", "pg_isready", "-U", "postgres"], interval: 5s }
-networks:
-  edge: { name: "edge-${MSP_ENV}", external: true }   # dibuat stack /opt/ops (§2)
-  gmaps: { name: gmaps, external: true }              # dibuat stack /opt/ops, berisi gmaps-db (§2)
-volumes: { pgdata: {} }
-```
+Isi persisnya ada di file berikut; komentar di dalamnya menjelaskan tiap pilihan.
 
-```yaml
-# deploy/ops/compose.yaml (cuplikan gmaps-db; service ops lain tidak ditampilkan)
-# deploy.resources.limits = nilai /opt/ops di §2
-services:
-  gmaps-db:                                           # kiriman DB gmaps terbaru (D-37); tanpa ports:
-    image: postgres:16                                # kiriman CSV, tidak bergantung versi Postgres founder
-    environment: { POSTGRES_DB: gmaps, POSTGRES_PASSWORD: "${MSP_GMAPS_DB_PASSWORD}" }   # superuser, /opt/ops/.env
-    volumes: ["gmaps-data:/var/lib/postgresql/data", "./gmaps-dump:/dump:ro"]           # file kiriman (09 RB-15)
-    networks: [gmaps]
-    healthcheck: { test: ["CMD", "pg_isready", "-U", "postgres"], interval: 5s }
-networks:
-  gmaps: { name: gmaps }                              # worker production & staging bergabung (external)
-volumes: { gmaps-data: {} }
-```
+| File | Isi |
+|---|---|
+| `deploy/docker-compose.prod.yml` | Stack aplikasi staging & production: `web`, `api` dan `worker` (image `api` yang sama), `kratos`, `kratos-migrate` (one-shot `kratos migrate sql`), `postgres` (build dari `deploy/postgres/`: PostGIS + pgBackRest). Semua `restart: unless-stopped` dengan `deploy.resources.limits` = kolom production §2 |
+| `deploy/docker-compose.staging.yml` | Batas resource staging (§2) |
+| `deploy/docker-compose.local.yml` | Stack lokal dari source: service production ditambah `caddy`, `mailpit`, dan one-shot `migrate`. Cara pakai di `deploy/README.md` |
+| `deploy/ops/compose.yaml` | Stack `/opt/ops`, termasuk `gmaps-db` |
+| `deploy/ops/Caddyfile` | Satu Caddy untuk semua domain |
 
-```caddyfile
-# deploy/ops/Caddyfile. Satu Caddy untuk semua domain; target = nama container (project = nama direktori README)
-(app) {                                  # {args[0]} = msp (production) atau msp-staging
-	@api path /api/* /healthz /readyz
-	reverse_proxy @api {args[0]}-api-1:8080
-	handle_path /.ory/* {
-		reverse_proxy {args[0]}-kratos-1:4433   # public base_url = https://<host>/.ory/; admin 4434 tidak dirutekan
-	}
-	reverse_proxy {args[0]}-web-1:3000      # metrik :9090 tidak dirutekan
-}
-app.{$MSP_DOMAIN} {
-	import app msp
-}
-staging.{$MSP_DOMAIN} {
-	import app msp-staging
-}
-gitlab.{$MSP_DOMAIN} {
-	reverse_proxy gitlab:80                 # GitLab: listen_https = false, TLS di Caddy
-}
-registry.{$MSP_DOMAIN} {
-	reverse_proxy gitlab:5050
-}
-grafana.{$MSP_DOMAIN} {
-	@luar not remote_ip {$MSP_ADMIN_IPS}    # allowlist = IP admin SSH (09 §2)
-	respond @luar 403
-	reverse_proxy grafana:3000
-}
-```
-
-Image `api` berbasis Alpine (ada `wget` untuk healthcheck). Image `web` memakai Next.js `output: "standalone"`.
+Aturan yang dijaga file-file itu:
+- **Secret seperlunya.** `web` tanpa `env_file` (hanya `MSP_KRATOS_PUBLIC_URL`), karena web tidak memegang secret. `postgres` hanya menerima key yang dibacanya, bukan seluruh `.env`, agar deploy tag baru tidak membuat ulang container DB.
+- **Rute Caddy** (`app.<domain>` → project `msp`, `staging.<domain>` → `msp-staging`): `/api/*`, `/healthz`, `/readyz` → `api:8080`; `/.ory/*` → `kratos:4433` (public base URL Kratos = `<MSP_PUBLIC_URL>/.ory/`; admin `:4434` tidak dirutekan); selebihnya → `web:3000`. Metrik `:9090` tidak dirutekan. Grafana hanya dari IP admin.
+- **`gmaps-db`** tanpa `ports:`, hanya di network `gmaps` (§2).
+- **Healthcheck** memakai `wget`: image `api` berbasis Alpine, image `web` memakai Next.js `output: "standalone"`. Kratos dijalankan dengan `--sqa-opt-out`, jadi tidak mengirim telemetri ke Ory.
 
 ## 6. Migrasi DB
 
@@ -283,23 +132,7 @@ Off-site = **server SFTP/FTPS milik founder di Indonesia** (D-39, memenuhi D-14)
 - **WAL kontinu.** Diaktifkan sekali di production: `sudo install -d -o 999 -g 999 -m 750 /opt/msp/pgbackrest` (999 = uid `postgres` di image), `ALTER SYSTEM SET archive_mode = on`, `archive_command = 'pgbackrest --stanza=msp archive-push %p'`, `archive_timeout = '60s'`, lalu restart dan `pgbackrest stanza-create`. WAL masuk repo lokal paling lambat ±1 menit. Karena pengaturan ini tersimpan di data dir, staging tidak mengarsip, dan restore dengan `--archive-mode=off` (09 RB-10) juga tidak.
 - **GitLab.** Tanpa backup ini, satu-satunya salinan repo, variabel CI, dan registry ada di server ini. `gitlab-backup create CRON=1` menulis ke `/var/opt/gitlab/backups`, yaitu bind mount `/opt/ops/gitlab-backups/`, lalu disalin ke off-site oleh skrip yang sama. Retensi = `backup_keep_time` (singkat, mis. 3 hari), sama untuk lokal dan off-site. File backup GitLab tidak dienkripsi; variabel CI di dalamnya terenkripsi dengan kunci di `gitlab-secrets.json`, yang tidak ikut backup.
 - **Salinan off-site (rclone).** Cron root `/etc/cron.d/msp-offsite` menjalankan `/opt/ops/offsite.sh` (keduanya dari `deploy/ops/`) **tiap 5 menit di host**, bukan lewat GitLab, jadi tetap jalan walau GitLab mati. Remote rclone `offsite` (backend `sftp`, atau `ftp` dengan `explicit_tls = true` untuk FTPS; untuk SFTP isi `known_hosts_file` agar host key diverifikasi) ada di `/opt/ops/rclone.conf` (§7).
-  ```bash
-  # deploy/ops/offsite.sh (ilustratif). Cron: */5 * * * * root /opt/ops/offsite.sh 2>&1 | logger -t msp-offsite
-  export RCLONE_CONFIG=/opt/ops/rclone.conf
-  R=/opt/msp/pgbackrest G=/opt/ops/gitlab-backups T=/opt/ops/textfile   # T → node-exporter --collector.textfile.directory
-  ok() { echo "msp_offsite_last_success_timestamp_seconds{part=\"$1\"} $(date +%s)" > "$T/.$1" && mv "$T/.$1" "$T/offsite_$1.prom"; }
-  # Sumber kosong (server baru, repo terhapus) tidak pernah disinkron: sync ikut menghapus di tujuan
-  [ -s $R/archive/msp/archive.info ] && [ -s $R/backup/msp/backup.info ] || exit 1
-  # 1. WAL: kecil, tiap run, tidak menunggu upload besar di langkah 2 (RPO)
-  flock -n /run/lock/msp-offsite-wal rclone sync $R/archive offsite:msp/pgbackrest/archive && ok wal
-  # 2. Backup pgBackRest + GitLab; dilewati selama run sebelumnya masih mengunggah (mis. full mingguan)
-  ls $G/*_gitlab_backup.tar >/dev/null 2>&1 || exit 1
-  flock -n /run/lock/msp-offsite-backup sh -ec "
-    rclone sync $R/backup offsite:msp/pgbackrest/backup
-    rclone sync $G offsite:msp/gitlab-backups
-    # rclone sync $R b2:<bucket>/msp/pgbackrest    # salinan kedua B2: NONAKTIF sampai Q-19 dijawab tim legal
-  " && ok backup
-  ```
+  Urutan di `offsite.sh`: (1) repo lokal yang kosong (server baru, repo terhapus) tidak pernah disinkron, karena `sync` ikut menghapus di tujuan; (2) WAL disinkron setiap run tanpa menunggu upload besar; (3) backup pgBackRest + GitLab dilewati selama run sebelumnya masih mengunggah (mis. full mingguan). Tiap bagian yang berhasil menulis metrik `msp_offsite_last_success_timestamp_seconds{part="wal"|"backup"}` ke textfile collector `node-exporter` (09 AL-12). Baris salinan kedua B2 ada di skrip dalam keadaan nonaktif.
   **RPO off-site.** WAL masuk repo lokal ≤ ±1 menit dan tersalin pada run berikutnya (≤ 5 menit). Bila seluruh server hilang, data yang hilang normalnya **±5–10 menit terakhir**, masih di dalam RPO ≤ 15 menit (NFR-04). Bila server off-site tidak terjangkau, backup dan WAL tetap aman di lokal dan tersalin begitu tersambung lagi; selama itu RPO bila server hilang tidak terjamin, dan AL-12 berbunyi (09). `rclone sync` ikut menghapus di tujuan, jadi salinan off-site bukan arsip yang kebal hapus: isi repo lokal tidak pernah dihapus manual (09 RB-13).
 - **Salinan kedua Backblaze B2: nonaktif.** Backblaze tidak punya region di Indonesia (US West/East, EU Central, CA East), jadi salinan ini menunggu jawaban tim legal (Q-19). Isinya hanya repo pgBackRest yang sudah terenkripsi; backup GitLab tidak ikut. Menyalakannya cukup dengan remote `b2` dan baris B2 di `offsite.sh` (09 §1.2), tanpa perubahan lain.
 - **Jadwal.** Pipeline schedule harian 01:00 WIB menjalankan job `backup` → `deploy/backup.sh` di runner `deploy`: di `/opt/msp` `pgbackrest backup` (`--type=full` hari Minggu, `diff` hari lain) → `check` → `info`, lalu di `/opt/ops` `gitlab-backup create`. Keduanya menulis ke disk lokal; `msp-offsite` menyalinnya. Job gagal bila salah satu langkah gagal atau backup pgBackRest terakhir > 26 jam, dan GitLab mengirim email ke founder. WAL tetap terarsip dan tersalin walau GitLab mati.
@@ -309,7 +142,7 @@ Off-site = **server SFTP/FTPS milik founder di Indonesia** (D-39, memenuhi D-14)
 ## 9. Bootstrap server
 
 `deploy/bootstrap.sh` bersifat idempotent dan dijalankan dari clone repo: `scp -r deploy root@<ip>:` lalu `ssh root@<ip> bash deploy/bootstrap.sh`. Karena login root dimatikan setelah run pertama, run berikutnya memakai user admin + `sudo`.
-- **Postgres pertama kali** (volume data kosong): `deploy/postgres/init-msp.sh` menjalankan `apps/api/db/roles.sql` (lewat symlink `deploy/postgres/roles.sql`; `deploy.sh` menyalin dengan `cp -rL`), membuat database `msp` milik `msp_owner`, membuat `postgis` + `pg_trgm` sebagai superuser, dan mengisi password kedua role dari `MSP_MIGRATE_DATABASE_URL` dan `MSP_DATABASE_URL` di `.env`. Setelah itu `msp migrate` berjalan sebagai `msp_owner`.
+- **Postgres pertama kali** (volume data kosong): `deploy/postgres/init-msp.sh` menjalankan `apps/api/db/roles.sql` (lewat symlink `deploy/postgres/roles.sql`; `deploy.sh` menyalin dengan `cp -rL`), membuat database `msp` milik `msp_owner`, membuat `postgis` + `pg_trgm` sebagai superuser, mengisi password kedua role dari `MSP_MIGRATE_DATABASE_URL` dan `MSP_DATABASE_URL` di `.env`, serta membuat role dan database `kratos` dengan password dari `DSN`. Setelah itu `msp migrate` berjalan sebagai `msp_owner` dan `kratos-migrate` sebagai `kratos`.
 - **User**: satu user per admin dari `deploy/admin-keys/<user>.pub` (sudo tanpa password, kunci SSH), dan user `deploy` (grup `docker`, setara root) untuk runner `deploy`. Direktori Compose (README) dimiliki `deploy`.
 - **SSH** kunci saja (`PasswordAuthentication no`, `PermitRootLogin no`). **Firewall `ufw`**: tolak semua koneksi masuk kecuali 80/443, dan 22 dari allowlist IP admin.
 - **Update**: `unattended-upgrades` untuk security update; reboot manual di jam sepi (09 §6). **Docker**: Engine + plugin compose dari repo apt resmi; rotasi log `json-file` (`max-size: 50m`, `max-file: 3`).

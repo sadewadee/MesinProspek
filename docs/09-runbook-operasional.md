@@ -10,7 +10,7 @@ Satu dedicated server di Indonesia. Semua domain lewat satu `caddy` di `/opt/ops
 
 | Direktori Compose | Service | URL |
 |---|---|---|
-| `/opt/msp` (production) | `web`, `api`, `worker`, `kratos`, `postgres` (+ pgBackRest, stanza `msp`, repo lokal `/opt/msp/pgbackrest`) | `https://app.<domain>` · health `/healthz`, `/readyz` · halaman ops `/ops` |
+| `/opt/msp` (production) | `web`, `api`, `worker`, `kratos`, `postgres` (+ pgBackRest, stanza `msp`, repo lokal `/opt/msp/pgbackrest`); one-shot `kratos-migrate` saat deploy | `https://app.<domain>` · health `/healthz`, `/readyz` · halaman ops `/ops` |
 | `/opt/msp-staging` (staging) | sama dengan production | `https://staging.<domain>` |
 | `/opt/ops` | `caddy`, `gitlab` (+ container registry), `gitlab-runner` (runner `ci`), `prometheus`, `alertmanager`, `grafana`, `node-exporter`, `gmaps-db` (kiriman DB gmaps terbaru, dibaca staging dan production; file kiriman terbaru di `/opt/ops/gmaps-dump/`) | `https://gitlab.<domain>`, `https://registry.<domain>`, `https://grafana.<domain>`. `gmaps-db` tanpa URL dan tanpa port |
 | host (systemd) | `gitlab-runner` (runner `deploy`, shell, user `deploy`) | — |

@@ -60,7 +60,7 @@ services:
   kratos:
     <<: *kratos
     # --dev: cookies without Secure on plain-HTTP localhost. The courier sends email to Mailpit.
-    command: ["serve", "-c", "/etc/kratos/kratos.yml", "--dev", "--watch-courier"]
+    command: ["serve", "-c", "/etc/kratos/kratos.yml", "--dev", "--watch-courier", "--sqa-opt-out"]
     depends_on:
       postgres: { condition: service_healthy }
       kratos-migrate: { condition: service_completed_successfully }
